@@ -360,7 +360,7 @@ const translations = {
   'auth.password': { th: 'รหัสผ่าน', en: 'Password' },
   'auth.confirmPassword': { th: 'ยืนยันรหัสผ่าน', en: 'Confirm Password' },
   'auth.passwordMismatch': { th: 'รหัสผ่านไม่ตรงกัน', en: 'Passwords do not match' },
-  'auth.appName': { th: 'Triple Viral', en: 'Triple Viral' },
+  'auth.appName': { th: 'Triple School', en: 'Triple School' },
   'auth.appSubtitle': { th: 'Content Scheduler', en: 'Content Scheduler' },
   'auth.loginFailed': { th: 'เข้าสู่ระบบไม่สำเร็จ', en: 'Login failed' },
   'auth.registerFailed': { th: 'สมัครสมาชิกไม่สำเร็จ', en: 'Registration failed' },
@@ -692,7 +692,7 @@ const translations = {
   'subwall.securePayment': { th: 'ชำระเงินปลอดภัยผ่าน Stripe ยกเลิกได้ทุกเมื่อ', en: 'Secure payment powered by Stripe. Cancel anytime.' },
 
   // ============ Subscription Success ============
-  'subsuccess.welcome': { th: 'ยินดีต้อนรับสู่ Triple Viral!', en: 'Welcome to Triple Viral!' },
+  'subsuccess.welcome': { th: 'ยินดีต้อนรับสู่ Triple School!', en: 'Welcome to Triple School!' },
   'subsuccess.activeDesc': { th: 'สมัครสมาชิกเรียบร้อย เริ่มสร้างคอนเทนต์อัตโนมัติได้เลย!', en: 'Your subscription is now active. Let\'s start automating your content!' },
   'subsuccess.whatsIncluded': { th: 'สิ่งที่คุณได้รับ', en: 'What\'s included' },
   'subsuccess.feat1': { th: 'ตั้งเวลาโพสต์ไม่จำกัดทุกแพลตฟอร์ม', en: 'Unlimited scheduled posts across all platforms' },
@@ -995,10 +995,10 @@ const translations = {
 
   // ============ Guide ============
   'guide.title': { th: 'คู่มือการใช้งาน', en: 'User Guide' },
-  'guide.subtitle': { th: 'คู่มือการเชื่อม API Key โปรแกรม Triple Viral', en: 'API Key Connection Guide for Triple Viral' },
+  'guide.subtitle': { th: 'คู่มือการเชื่อม API Key โปรแกรม Triple School', en: 'API Key Connection Guide for Triple School' },
   'guide.button': { th: 'คู่มือ', en: 'Guide' },
   'guide.introTitle': { th: 'การเชื่อม API Key', en: 'Connecting API Keys' },
-  'guide.introDesc': { th: 'คู่มือนี้จะแนะนำวิธีการเชื่อม API Key ทั้ง 3 ตัว เพื่อให้โปรแกรม Triple Viral ทำงานได้อย่างเต็มประสิทธิภาพ', en: 'This guide will walk you through connecting all 3 API keys to make Triple Viral fully functional.' },
+  'guide.introDesc': { th: 'คู่มือนี้จะแนะนำวิธีการเชื่อม API Key ทั้ง 3 ตัว เพื่อให้โปรแกรม Triple School ทำงานได้อย่างเต็มประสิทธิภาพ', en: 'This guide will walk you through connecting all 3 API keys to make Triple School fully functional.' },
 
   // Payment proof
   'affiliate.viewProof': { th: 'ดูหลักฐาน', en: 'View Proof' },

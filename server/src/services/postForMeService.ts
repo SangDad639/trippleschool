@@ -7,7 +7,7 @@
  *   2. PUT file bytes to the signed URL
  *   3. POST /v1/social-posts with media list + platform_configurations
  *
- * Per-user keys are stored in users.postforme_api_key (already in trippleviral schema).
+ * Per-user keys are stored in users.postforme_api_key (already in trippleschool schema).
  * AI-disclosure flag (is_ai_generated=true) is set on TikTok per their compliance policy.
  */
 import fs from 'fs';

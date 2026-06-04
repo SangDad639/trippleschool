@@ -2,7 +2,7 @@
  * Generation pricing (KIE credits) — server mirror.
  *
  * เครดิตที่โชว์ในป๊อปอัพยืนยัน = เครดิตของ KIE key ตัว user เองที่จะโดนหักตอน gen
- * (KIE หักจาก key ของ user โดยตรง). Trippleviral ไม่หักเครดิตของตัวเองสำหรับ image/video gen.
+ * (KIE หักจาก key ของ user โดยตรง). Trippleschool ไม่หักเครดิตของตัวเองสำหรับ image/video gen.
  *
  * Mirror ของ src/lib/generationPricing.ts — ต้องอัปเดตคู่กันเสมอ.
  * ฝั่ง server เก็บไว้เป็นแหล่งความจริงสำหรับ logic ใด ๆ ที่ต้องคิดเครดิตในอนาคต
@@ -40,20 +40,20 @@ export const PROMPT_DIRECT_PLATFORM_PRICING: Record<string, { seconds: number; e
 };
 
 // ============================================================================
-// Trippleviral hybrid charge — markup applied when system KIE key is used.
+// Trippleschool hybrid charge — markup applied when system KIE key is used.
 // ============================================================================
 
 /**
- * Multiplier applied to KIE base price when trippleviral charges the user
+ * Multiplier applied to KIE base price when trippleschool charges the user
  * (i.e. user has no personal kie_api_key + system fallback active).
  *
  * Free tier (user provides own key) → multiplier irrelevant, KIE bills user directly.
- * Paid tier (system key) → trippleviral_credits = ceil(kie_credits × 2.5).
+ * Paid tier (system key) → trippleschool_credits = ceil(kie_credits × 2.5).
  */
 export const CREDIT_MULTIPLIER = 2.5;
 
 /**
- * Convert a KIE-base credit cost into the trippleviral credit charge for the
+ * Convert a KIE-base credit cost into the trippleschool credit charge for the
  * paid tier. Always returns a positive integer (Math.ceil) so we don't
  * undercharge fractional cases (e.g. 3 × 2.5 = 7.5 → 8).
  */

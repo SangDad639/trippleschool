@@ -68,6 +68,10 @@ import CheckoutComplete from "@/pages/CheckoutComplete";
 import PendingApproval from "@/pages/PendingApproval";
 import ViralTemplateDetail from "@/pages/ViralTemplateDetail";
 import IdolTemplateDetail from "@/pages/IdolTemplateDetail";
+import CourseDetail from "@/pages/CourseDetail";
+import CourseLearn from "@/pages/CourseLearn";
+import AdminCourses from "@/pages/AdminCourses";
+import AdminEnrollments from "@/pages/AdminEnrollments";
 import GuideButton from "@/components/GuideButton";
 import WelcomePopup from "@/components/WelcomePopup";
 
@@ -160,7 +164,7 @@ const AuthPage = () => {
     <div className="page-wrapper flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl sm:text-3xl font-bold text-primary">Triple Viral</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-primary">Triple School</h1>
           <p className="text-muted-foreground mt-2">Content Scheduler</p>
         </div>
 
@@ -521,6 +525,22 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/admin/courses"
+        element={
+          <ProtectedRoute>
+            <AdminCourses />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/enrollments"
+        element={
+          <ProtectedRoute>
+            <AdminEnrollments />
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/affiliate"
         element={
           <ProtectedRoute>
@@ -625,6 +645,23 @@ function AppRoutes() {
             <SchedulerProvider>
               <Kling3MotionControl />
             </SchedulerProvider>
+          </ProtectedRoute>
+        }
+      />
+      {/* Course detail + learn - separate routes before /app/* wildcard */}
+      <Route
+        path="/app/courses/:slug"
+        element={
+          <ProtectedRoute>
+            <CourseDetail />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/app/courses/:slug/learn/:lessonId"
+        element={
+          <ProtectedRoute>
+            <CourseLearn />
           </ProtectedRoute>
         }
       />

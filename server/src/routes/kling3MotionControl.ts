@@ -151,8 +151,8 @@ router.post(
       if (!videoFile) return res.status(400).json({ error: 'video file is required' });
 
       // Hybrid 2-tier key resolution:
-      //   - user has personal kie_api_key  → use it, NO trippleviral credit charge
-      //   - no personal key + system env   → use system key, CHARGE trippleviral credits
+      //   - user has personal kie_api_key  → use it, NO trippleschool credit charge
+      //   - no personal key + system env   → use system key, CHARGE trippleschool credits
       //   - neither                        → 400
       const userKey = await getUserKieKey(userId);
       const systemKey = process.env.KIE_API_KEY || null;

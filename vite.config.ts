@@ -16,8 +16,8 @@ export default defineConfig({
   preview: {
     host: "0.0.0.0",
     allowedHosts: [
-      "www.tripleviral.com",
-      "tripleviral.com",
+      "www.tripleschool.com",
+      "tripleschool.com",
       // Railway dev/standby preview
       ".railway.app",
       "viral-fe-develop.up.railway.app",

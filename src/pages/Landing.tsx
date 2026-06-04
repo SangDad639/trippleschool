@@ -147,7 +147,7 @@ const Landing = () => {
                 <path d="M13 2L4.5 13.5H11.5L11 22L19.5 10.5H12.5L13 2Z" fill="#FFD700" stroke="#FFD700" strokeWidth="0.5" strokeLinejoin="round"/>
               </svg>
             </div>
-            <span className="text-xl font-bold">Triple Viral</span>
+            <span className="text-xl font-bold">Triple School</span>
           </div>
           <div className="hidden md:flex items-center gap-8">
             <a href="#features" className="text-muted-foreground hover:text-foreground transition-colors">
@@ -472,7 +472,7 @@ const Landing = () => {
       {/* Footer */}
       <footer className="py-8 px-4 border-t border-border">
         <div className="container mx-auto text-center text-muted-foreground">
-          <p>&copy; 2025 Triple Viral. All rights reserved.</p>
+          <p>&copy; 2025 Triple School. All rights reserved.</p>
         </div>
       </footer>
     </div>

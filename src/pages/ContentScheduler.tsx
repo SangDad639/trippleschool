@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Calendar, CalendarDays, Settings2, LayoutDashboard, Library, User, Users, LogOut, Globe, Film, ChevronLeft, ChevronRight, Headphones } from 'lucide-react';
+import { Calendar, CalendarDays, Settings2, LayoutDashboard, Library, User, Users, LogOut, Globe, Film, ChevronLeft, ChevronRight, Headphones, GraduationCap } from 'lucide-react';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -19,6 +19,8 @@ import { AiAgentTab } from '@/components/story-agent/AiAgentTab';
 import HistoryTab from '@/components/scheduler/HistoryTab';
 import ImageGallery from '@/components/scheduler/ImageGallery';
 import VideoGallery from '@/components/scheduler/VideoGallery';
+import Courses from '@/pages/Courses';
+import MyCourses from '@/pages/MyCourses';
 import TabMegaMenu, { MegaMenuColumn } from '@/components/scheduler/TabMegaMenu';
 import type { SchedulerChannel, ScheduleSlot, Variable } from '@/types/scheduler';
 import { VariableEditorModal } from '@/components/scheduler/VariableEditorModal';
@@ -1510,30 +1512,12 @@ const ContentSchedulerContent: React.FC = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Banners (admin-managed) — fetched from API
-  const [banners, setBanners] = useState<Array<{ slug: string; banner: string; title_th: string; title_en: string }>>([]);
-  useEffect(() => {
-    api.getPublicBanners()
-      .then((rows: any[]) => {
-        if (Array.isArray(rows)) setBanners(rows.map(r => ({ slug: r.slug, banner: r.banner || '', title_th: r.title_th || '', title_en: r.title_en || '' })));
-      })
-      .catch(() => { /* silent — slider just stays empty */ });
-  }, []);
+  // (Banner slider removed — trippleschool is a courses platform)
 
   const getActiveTab = () => {
     const path = location.pathname;
-    if (path.includes('/viral-templates')) return 'viral-templates';
-    if (path.includes('/idol-templates')) return 'idol-templates';
-    if (path.includes('/image-templates')) return 'image-templates';
-    if (path.includes('/prompts')) return 'prompts';
-    if (path.includes('/channels')) return 'channels';
-    if (path.includes('/schedule')) return 'schedule';
-    if (path.includes('/history')) return 'history';
-    if (path.includes('/images')) return 'images';
-    if (path.includes('/videos')) return 'videos';
-    if (path.includes('/dashboard')) return 'dashboard';
-    if (path.includes('/ai-agent')) return 'ai-agent';
-    return 'viral-templates';
+    if (path.includes('/my-courses')) return 'my-courses';
+    return 'courses';
   };
   const activeTab = getActiveTab();
 
@@ -1541,10 +1525,10 @@ const ContentSchedulerContent: React.FC = () => {
     navigate(`/app/${value}`);
   };
 
-  // Redirect /app → /app/viral-templates
+  // Redirect /app → /app/courses
   useEffect(() => {
     if (location.pathname === '/app' || location.pathname === '/app/') {
-      navigate('/app/viral-templates', { replace: true });
+      navigate('/app/courses', { replace: true });
     }
   }, [location.pathname, navigate]);
 
@@ -1743,7 +1727,7 @@ const ContentSchedulerContent: React.FC = () => {
               <path d="M13 2L4.5 13.5H11.5L11 22L19.5 10.5H12.5L13 2Z" fill="#FFD700" stroke="#FFD700" strokeWidth="0.5" strokeLinejoin="round"/>
             </svg>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold">Triple Viral</h1>
+          <h1 className="text-xl sm:text-2xl font-bold">Triple School</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {(user?.isAdmin || ['basballcmmilk@gmail.com', 'xommon101@gmail.com'].includes(user?.email || '')) && (
@@ -1876,112 +1860,24 @@ const ContentSchedulerContent: React.FC = () => {
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <div className="flex items-center gap-4 mb-6 overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
           <TabsList className="inline-flex w-max">
-            <TabsTrigger value="viral-templates" className="flex items-center gap-2">
-              <Film className="h-4 w-4" />
-              {t('nav.viralTemplates')}
+            <TabsTrigger value="courses" className="flex items-center gap-2">
+              <GraduationCap className="h-4 w-4" />
+              คอร์สเรียน
             </TabsTrigger>
-            <TabsTrigger value="idol-templates" className="flex items-center gap-2">
-              <Users className="h-4 w-4" />
-              {t('nav.idolTemplates')}
-            </TabsTrigger>
-            <TabsTrigger value="prompts" className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />
-              {t('nav.prompts')}
-            </TabsTrigger>
-            <TabsTrigger value="channels" className="flex items-center gap-2">
-              <Settings2 className="h-4 w-4" />
-              {t('nav.channels')}
-            </TabsTrigger>
-            <TabsTrigger value="schedule" className="flex items-center gap-2" disabled={!currentChannel}>
-              <Calendar className="h-4 w-4" />
-              {t('nav.schedule')}
-              {currentChannel && (
-                <span className="text-xs bg-primary/20 px-2 py-0.5 rounded ml-1">
-                  {currentChannel.name}
-                </span>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="history" className="flex items-center gap-2">
-              <History className="h-4 w-4" />
-              {t('nav.history')}
-            </TabsTrigger>
-            <div aria-hidden className="mx-1.5 h-5 w-px bg-gradient-to-b from-transparent via-border to-transparent" />
-            <TabMegaMenu
-              trigger={
-                <TabsTrigger value="images" className="flex items-center gap-2">
-                  <ImageIcon className="h-4 w-4" />
-                  {language === 'th' ? 'รูปภาพ' : 'Image'}
-                </TabsTrigger>
-              }
-              columns={imageMegaMenu(language, navigate)}
-            />
-            <TabMegaMenu
-              trigger={
-                <TabsTrigger value="videos" className="flex items-center gap-2">
-                  <Video className="h-4 w-4" />
-                  {language === 'th' ? 'วิดีโอ' : 'Video'}
-                </TabsTrigger>
-              }
-              columns={videoMegaMenu(language, navigate)}
-            />
-            <TabsTrigger value="image-templates" className="flex items-center gap-2">
-              <ImageIcon className="h-4 w-4" />
-              {language === 'th' ? 'Image Template' : 'Image Template'}
-            </TabsTrigger>
-            <TabsTrigger value="ai-agent" className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4" />
-              {language === 'th' ? 'AI Agent' : 'AI Agent'}
+            <TabsTrigger value="my-courses" className="flex items-center gap-2">
+              <Library className="h-4 w-4" />
+              คอร์สของฉัน
             </TabsTrigger>
           </TabsList>
         </div>
 
-        {/* Slide Banner */}
-        <div className="mb-6 space-y-3">
-          <div className="relative group/slider">
-            <button
-              onClick={() => {
-                const el = document.getElementById('banner-slider');
-                if (el) el.scrollBy({ left: -320, behavior: 'smooth' });
-              }}
-              className="absolute left-0 top-1/2 -translate-y-1/2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg transition-opacity opacity-0 group-hover/slider:opacity-100"
-            >
-              <ChevronLeft className="h-5 w-5" />
-            </button>
-            <div id="banner-slider" className="overflow-x-auto scrollbar-hide scroll-smooth">
-              <div className="flex gap-3 min-w-max">
-                {banners.map((b) => {
-                  const title = language === 'th' ? b.title_th : (b.title_en || b.title_th);
-                  return (
-                    <div
-                      key={b.slug}
-                      className="w-[240px] h-[136px] sm:w-[300px] sm:h-[170px] rounded-xl border border-[#FFB300]/30 bg-card shrink-0 overflow-hidden cursor-pointer relative group"
-                      onClick={() => navigate(`/update/${b.slug}`)}
-                    >
-                      {b.banner ? (
-                        <img src={b.banner} alt={title} className="absolute inset-0 w-full h-full object-cover group-hover:brightness-50 transition-all" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">{title}</div>
-                      )}
-                      <div className="absolute bottom-0 left-0 right-0 p-3 translate-y-full group-hover:translate-y-0 transition-transform bg-gradient-to-t from-black/90 to-transparent z-10">
-                        <p className="text-xs font-semibold text-[#FFB300]">{title}</p>
-                        <p className="text-[10px] text-gray-400 mt-0.5">{language === 'th' ? 'คลิกเพื่อดูรายละเอียด' : 'Click for details'}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                const el = document.getElementById('banner-slider');
-                if (el) el.scrollBy({ left: 320, behavior: 'smooth' });
-              }}
-              className="absolute right-0 top-1/2 -translate-y-1/2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-lg transition-opacity opacity-0 group-hover/slider:opacity-100"
-            >
-              <ChevronRight className="h-5 w-5" />
-            </button>
-          </div>
-        </div>
+        <TabsContent value="courses" className="mt-0">
+          <Courses />
+        </TabsContent>
+
+        <TabsContent value="my-courses" className="mt-0">
+          <MyCourses />
+        </TabsContent>
 
         <TabsContent value="dashboard" className="mt-0">
           <DashboardTab />

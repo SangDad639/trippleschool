@@ -70,8 +70,8 @@ INSERT INTO update_banners
 VALUES (
   'how-to-triple-viral',
   '9 เม.ย. 2569', 'Apr 9, 2026',
-  'วิธีใช้งาน Triple Viral', 'How to Triple Viral',
-  'คู่มือการใช้งาน Triple Viral แบบ Step-by-Step', 'How to Triple Viral - Step-by-Step Guide',
+  'วิธีใช้งาน Triple School', 'How to Triple School',
+  'คู่มือการใช้งาน Triple School แบบ Step-by-Step', 'How to Triple School - Step-by-Step Guide',
   '/Person_pointing_at_202604091357.jpeg', '',
   $details_tv$[
     {"text":{"th":"เริ่มต้นใช้งาน","en":"Getting Started"},"videoUrl":"https://www.youtube.com/watch?v=q9d9Bp1Fyp8"}
@@ -91,7 +91,7 @@ VALUES (
   'postforme-setup',
   '28 มี.ค. 2569', 'Mar 28, 2026',
   'วิธีการสร้าง API และ เชื่อมแพลตฟอร์มต่างๆ', 'How to Create API & Connect Platforms',
-  'คลิปสอนชำระเงิน และ สร้าง API Key เพื่อนำไปเชื่อมกับเว็บ Triple Viral', 'Tutorial: Payment & Create API Key to Connect with Triple Viral',
+  'คลิปสอนชำระเงิน และ สร้าง API Key เพื่อนำไปเชื่อมกับเว็บ Triple School', 'Tutorial: Payment & Create API Key to Connect with Triple School',
   '/banner1.jpg', '',
   $details_pfm$[
     {"text":{"th":"การชำระเงิน และ สร้าง API Key","en":"Payment & API Key Creation"},"videoUrl":"https://www.youtube.com/playlist?list=PLpp3Sum6WE9gyI4X3BQjmi9KBsST3zhzH"},

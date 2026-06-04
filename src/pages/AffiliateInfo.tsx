@@ -61,7 +61,7 @@ const AffiliateInfo = () => {
                     />
                   </svg>
                 </div>
-                <span className="text-base font-bold">Triple Viral</span>
+                <span className="text-base font-bold">Triple School</span>
               </div>
             </div>
             <Button onClick={() => navigate('/register')} className="gap-2" size="sm">
@@ -138,7 +138,7 @@ const AffiliateInfo = () => {
               </button>
             </div>
             <p className="text-sm text-zinc-500 mt-3">
-              {language === 'th' ? 'เริ่มสร้างรายได้กับ Triple Viral วันนี้' : 'Start earning with Triple Viral today'}
+              {language === 'th' ? 'เริ่มสร้างรายได้กับ Triple School วันนี้' : 'Start earning with Triple School today'}
             </p>
           </div>
         </div>

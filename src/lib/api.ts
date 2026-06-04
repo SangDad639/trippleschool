@@ -1,4 +1,4 @@
-// Triple Viral API Client - Scheduler focused
+// Triple School API Client - Scheduler focused
 
 class ApiClient {
   private token: string | null = null;
@@ -2931,6 +2931,120 @@ class ApiClient {
         }
       }
     }
+  }
+
+  // ============================================
+  // Courses (Course Learning System)
+  // ============================================
+
+  async getCourses(params?: { featured?: boolean; difficulty?: string; search?: string }) {
+    const qs = new URLSearchParams();
+    if (params?.featured) qs.set('featured', 'true');
+    if (params?.difficulty) qs.set('difficulty', params.difficulty);
+    if (params?.search) qs.set('search', params.search);
+    const q = qs.toString();
+    return this.request(`/api/courses${q ? `?${q}` : ''}`);
+  }
+  async getCourse(slug: string) {
+    return this.request(`/api/courses/${encodeURIComponent(slug)}`);
+  }
+  async getCourseFull(slug: string) {
+    return this.request(`/api/courses/${encodeURIComponent(slug)}/full`);
+  }
+  async getAdminCourses() {
+    return this.request('/api/courses/admin/all');
+  }
+  async createCourse(data: Record<string, unknown>) {
+    return this.request('/api/courses', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateCourse(id: number, data: Record<string, unknown>) {
+    return this.request(`/api/courses/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteCourse(id: number) {
+    return this.request(`/api/courses/${id}`, { method: 'DELETE' });
+  }
+  async uploadCourseThumbnail(file: File): Promise<{ url: string }> {
+    const formData = new FormData();
+    formData.append('thumbnail', file);
+    return this.request('/api/courses/upload-thumbnail', { method: 'POST', body: formData });
+  }
+  // Sections
+  async getCourseSections(courseId: number) {
+    return this.request(`/api/courses/${courseId}/sections`);
+  }
+  async createSection(courseId: number, data: { title: string; description?: string; section_order?: number }) {
+    return this.request(`/api/courses/${courseId}/sections`, { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateSection(sectionId: number, data: Record<string, unknown>) {
+    return this.request(`/api/courses/sections/${sectionId}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteSection(sectionId: number) {
+    return this.request(`/api/courses/sections/${sectionId}`, { method: 'DELETE' });
+  }
+  async reorderSections(courseId: number, sectionIds: number[]) {
+    return this.request(`/api/courses/${courseId}/sections/reorder`, { method: 'PUT', body: JSON.stringify({ sectionIds }) });
+  }
+  async assignLessonsToSection(sectionId: number, lessonIds: number[]) {
+    return this.request(`/api/courses/sections/${sectionId}/lessons/assign`, { method: 'PUT', body: JSON.stringify({ lessonIds }) });
+  }
+  async unassignLesson(lessonId: number) {
+    return this.request(`/api/courses/lessons/${lessonId}/unassign`, { method: 'PUT' });
+  }
+  // Lessons
+  async getCourseLessons(courseId: number) {
+    return this.request(`/api/courses/${courseId}/lessons`);
+  }
+  async createLesson(courseId: number, data: Record<string, unknown>) {
+    return this.request(`/api/courses/${courseId}/lessons`, { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateLesson(lessonId: number, data: Record<string, unknown>) {
+    return this.request(`/api/courses/lessons/${lessonId}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteLesson(lessonId: number) {
+    return this.request(`/api/courses/lessons/${lessonId}`, { method: 'DELETE' });
+  }
+  async reorderLessons(courseId: number, lessonIds: number[]) {
+    return this.request(`/api/courses/${courseId}/lessons/reorder`, { method: 'PUT', body: JSON.stringify({ lessonIds }) });
+  }
+  // Enrollments (learner)
+  async enrollCourse(courseId: number, slip?: File) {
+    const formData = new FormData();
+    if (slip) formData.append('slip', slip);
+    return this.request(`/api/enrollments/${courseId}/enroll`, { method: 'POST', body: formData });
+  }
+  async getMyEnrollments(status?: string) {
+    return this.request(`/api/enrollments/mine${status ? `?status=${status}` : ''}`);
+  }
+  async getEnrollmentStatus(courseId: number) {
+    return this.request(`/api/enrollments/status/${courseId}`);
+  }
+  async updateEnrollmentProgress(enrollmentId: number, data: { completed_lesson_id?: number; last_lesson_id?: number }) {
+    return this.request(`/api/enrollments/${enrollmentId}/progress`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  // Enrollments (admin)
+  async getAdminEnrollments(params?: { status?: string; course_id?: number; limit?: number; offset?: number }) {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.course_id) qs.set('course_id', String(params.course_id));
+    if (params?.limit != null) qs.set('limit', String(params.limit));
+    if (params?.offset != null) qs.set('offset', String(params.offset));
+    const q = qs.toString();
+    return this.request(`/api/enrollments/admin/all${q ? `?${q}` : ''}`);
+  }
+  async getEnrollmentStats() {
+    return this.request('/api/enrollments/admin/stats');
+  }
+  async approveEnrollment(id: number) {
+    return this.request(`/api/enrollments/admin/${id}/approve`, { method: 'PUT' });
+  }
+  async rejectEnrollment(id: number, reason?: string) {
+    return this.request(`/api/enrollments/admin/${id}/reject`, { method: 'PUT', body: JSON.stringify({ reason }) });
+  }
+  async revokeEnrollment(id: number, reason?: string) {
+    return this.request(`/api/enrollments/admin/${id}/revoke`, { method: 'PUT', body: JSON.stringify({ reason }) });
+  }
+  async bulkApproveEnrollments(enrollment_ids: number[]) {
+    return this.request('/api/enrollments/admin/bulk-approve', { method: 'POST', body: JSON.stringify({ enrollment_ids }) });
   }
 }
 

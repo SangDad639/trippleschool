@@ -2,7 +2,7 @@
  * Generation pricing (KIE credits).
  *
  * ราคาเครดิตที่โชว์ในป๊อปอัพยืนยัน = เครดิตของ "KIE key ตัว user เอง" ที่จะโดนหักตอน gen
- * (KIE หักจาก key ของ user โดยตรง). Trippleviral ไม่หักเครดิตของตัวเองสำหรับ image/video gen.
+ * (KIE หักจาก key ของ user โดยตรง). Trippleschool ไม่หักเครดิตของตัวเองสำหรับ image/video gen.
  *
  * Mirror ของ server/src/config/generationPricing.ts — ต้องอัปเดตคู่กันเสมอ.
  */
@@ -26,12 +26,12 @@ export const GROK_EXTEND_CREDITS = 20;
 export const KLING_CREDIT_PER_SEC = 20;
 
 /**
- * Markup applied when Trippleviral charges its own credits (system KIE key
+ * Markup applied when Trippleschool charges its own credits (system KIE key
  * tier). Mirror of server `CREDIT_MULTIPLIER` — keep in sync.
  */
 export const CREDIT_MULTIPLIER = 2.5;
 
-/** Convert KIE base credits → Trippleviral credit charge (ceil, never < 0). */
+/** Convert KIE base credits → Trippleschool credit charge (ceil, never < 0). */
 export function chargeCredits(kieBaseCredits: number): number {
   if (!Number.isFinite(kieBaseCredits) || kieBaseCredits <= 0) return 0;
   return Math.ceil(kieBaseCredits * CREDIT_MULTIPLIER);

@@ -45,7 +45,7 @@ const SubscriptionTransfer = () => {
     (searchParams.get('plan') as 'monthly' | 'yearly') || 'yearly'
   );
   const isMonthly = selectedPlan === 'monthly';
-  const planName = isMonthly ? 'Triple Viral Monthly' : 'Triple Viral Yearly';
+  const planName = isMonthly ? 'Triple School Monthly' : 'Triple School Yearly';
   const price = isMonthly ? '600' : '3000';
   const priceDisplay = isMonthly ? '฿600' : '฿3,000';
   const originalPrice = isMonthly ? null : '฿7,200';

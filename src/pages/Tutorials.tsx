@@ -99,7 +99,7 @@ const Tutorials = () => {
                   <path d="M13 2L4.5 13.5H11.5L11 22L19.5 10.5H12.5L13 2Z" fill="#FFD700" stroke="#FFD700" strokeWidth="0.5" strokeLinejoin="round"/>
                 </svg>
               </div>
-              <span className="text-base font-bold">Triple Viral</span>
+              <span className="text-base font-bold">Triple School</span>
             </div>
           </div>
           <Button onClick={() => navigate('/register')} className="gap-2" size="sm">
@@ -114,7 +114,7 @@ const Tutorials = () => {
         <div className="mb-10">
           <img
             src="/ChatGPT Image Apr 24, 2026, 12_03_53 PM.png"
-            alt="Triple Viral Course"
+            alt="Triple School Course"
             className="w-full rounded-2xl"
           />
         </div>
@@ -180,7 +180,7 @@ const Tutorials = () => {
             ) : (
               <iframe
                 src="https://www.youtube.com/embed/tm7lfySa6cM"
-                title="Triple Viral Tutorial"
+                title="Triple School Tutorial"
                 className="w-full h-full"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
@@ -218,7 +218,7 @@ const Tutorials = () => {
             ) : (
               <iframe
                 src="https://www.youtube.com/embed/q9d9Bp1Fyp8"
-                title="Triple Viral Tutorial 2"
+                title="Triple School Tutorial 2"
                 className="w-full h-full"
                 allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                 allowFullScreen
@@ -247,7 +247,7 @@ const Tutorials = () => {
         <div className="mt-10">
           <img
             src="/ChatGPT Image Apr 24, 2026, 01_00_22 PM.png"
-            alt="Triple Viral Banner"
+            alt="Triple School Banner"
             className="w-full rounded-2xl"
           />
         </div>
@@ -256,7 +256,7 @@ const Tutorials = () => {
         <div className="mt-6">
           <img
             src="/ChatGPT Image Apr 24, 2026, 01_26_41 PM.png"
-            alt="Triple Viral Banner 2"
+            alt="Triple School Banner 2"
             className="w-full rounded-2xl"
           />
         </div>

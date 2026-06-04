@@ -186,8 +186,8 @@ highly photorealistic, indistinguishable from real iPhone photo`,
   {
     id: 'how-to-triple-viral',
     date: { th: '9 เม.ย. 2569', en: 'Apr 9, 2026' },
-    title: { th: 'วิธีใช้งาน Triple Viral', en: 'How to Triple Viral' },
-    detailTitle: { th: 'คู่มือการใช้งาน Triple Viral แบบ Step-by-Step', en: 'How to Triple Viral - Step-by-Step Guide' },
+    title: { th: 'วิธีใช้งาน Triple School', en: 'How to Triple School' },
+    detailTitle: { th: 'คู่มือการใช้งาน Triple School แบบ Step-by-Step', en: 'How to Triple School - Step-by-Step Guide' },
     banner: '/Person_pointing_at_202604091357.jpeg',
     details: [
       {
@@ -200,7 +200,7 @@ highly photorealistic, indistinguishable from real iPhone photo`,
     id: 'postforme-setup',
     date: { th: '28 มี.ค. 2569', en: 'Mar 28, 2026' },
     title: { th: 'วิธีการสร้าง API และ เชื่อมแพลตฟอร์มต่างๆ', en: 'How to Create API & Connect Platforms' },
-    detailTitle: { th: 'คลิปสอนชำระเงิน และ สร้าง API Key เพื่อนำไปเชื่อมกับเว็บ Triple Viral', en: 'Tutorial: Payment & Create API Key to Connect with Triple Viral' },
+    detailTitle: { th: 'คลิปสอนชำระเงิน และ สร้าง API Key เพื่อนำไปเชื่อมกับเว็บ Triple School', en: 'Tutorial: Payment & Create API Key to Connect with Triple School' },
     banner: '/banner1.jpg',
     details: [
       {

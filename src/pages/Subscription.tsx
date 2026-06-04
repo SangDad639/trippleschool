@@ -287,7 +287,7 @@ const Subscription = () => {
                   <Check className="h-5 w-5 text-green-500" />
                   <span className="font-medium text-green-500">{t('subscription.activeSubscription')}</span>
                 </div>
-                <h1 className="text-4xl font-bold">Triple Viral</h1>
+                <h1 className="text-4xl font-bold">Triple School</h1>
                 <div className="flex items-center justify-center gap-3 text-muted-foreground">
                   <CalendarDays className="h-4 w-4" />
                   <span>{t('subscription.nextBilling')}: {formatDate(subscription.currentPeriodEnd)}</span>
@@ -489,7 +489,7 @@ const Subscription = () => {
             <div className="text-center space-y-4">
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card border border-[#FFB300]/50">
                 <Sparkles className="h-5 w-5 text-[#FFB300] animate-glow-pulse" />
-                <span className="font-medium">Triple Viral</span>
+                <span className="font-medium">Triple School</span>
               </div>
               <h1 className="text-4xl font-bold">{t('subscription.unlock')}</h1>
               <p className="text-muted-foreground max-w-xl mx-auto">

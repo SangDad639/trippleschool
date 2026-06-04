@@ -83,9 +83,9 @@ const sections: Section[] = [
         ],
       },
       {
-        title: { th: 'นำ API Key เชื่อมเข้า Triple Viral', en: 'Connect API Key to Triple Viral' },
+        title: { th: 'นำ API Key เชื่อมเข้า Triple School', en: 'Connect API Key to Triple School' },
         steps: [
-          { text: { th: 'เข้ามาที่เว็บ Triple Viral และล็อกอินเข้าสู่ระบบให้เรียบร้อย', en: 'Go to Triple Viral website and log in' }, images: [] },
+          { text: { th: 'เข้ามาที่เว็บ Triple School และล็อกอินเข้าสู่ระบบให้เรียบร้อย', en: 'Go to Triple School website and log in' }, images: [] },
           { text: { th: 'กดที่ชื่อโปรไฟล์ขวาบน และกดเข้าไปที่ Settings', en: 'Click your profile name at top-right, then go to Settings' }, images: ['/api/scheduler/channels/guide/img19.png'] },
           { text: { th: 'หัวข้อ AI Provider ให้ Select Provider เป็น OpenRouter', en: 'Under AI Provider, select OpenRouter as the provider' }, images: ['/api/scheduler/channels/guide/img20.png'] },
           { text: { th: 'ใส่ API Key ที่ Copy เก็บไว้ลงไปในช่อง และทำการกดเซฟที่ icon สีเหลืองข้างๆ', en: 'Paste the API Key you copied into the field and click the yellow save icon' }, images: ['/api/scheduler/channels/guide/img21.png'] },
@@ -131,9 +131,9 @@ const sections: Section[] = [
         ],
       },
       {
-        title: { th: 'เชื่อม API Key เข้าเว็บ Triple Viral', en: 'Connect API Key to Triple Viral' },
+        title: { th: 'เชื่อม API Key เข้าเว็บ Triple School', en: 'Connect API Key to Triple School' },
         steps: [
-          { text: { th: 'เข้ามาที่เว็บ Triple Viral', en: 'Go to Triple Viral' }, images: [] },
+          { text: { th: 'เข้ามาที่เว็บ Triple School', en: 'Go to Triple School' }, images: [] },
           { text: { th: 'กดที่โปรไฟล์ขวาบน → ตั้งค่า', en: 'Click profile at top-right → Settings' }, images: ['/api/scheduler/channels/guide/kie_profile.jpg'] },
           { text: { th: 'เลื่อนลงมา หาช่อง KIE API Key', en: 'Scroll down to find the KIE API Key field' }, images: ['/api/scheduler/channels/guide/kie_slot.jpg'] },
           { text: { th: 'นำ API Key ที่ Copy ไว้ มาใส่ในช่อง และทำการกด Save ปุ่มสีเหลือง', en: 'Paste the copied API Key and click the yellow Save button' }, images: ['/api/scheduler/channels/guide/kie_save.jpg'] },
@@ -177,9 +177,9 @@ const sections: Section[] = [
         ],
       },
       {
-        title: { th: 'เชื่อม API Key เข้าเว็บ Triple Viral', en: 'Connect API Key to Triple Viral' },
+        title: { th: 'เชื่อม API Key เข้าเว็บ Triple School', en: 'Connect API Key to Triple School' },
         steps: [
-          { text: { th: 'เข้ามาที่เว็บ Triple Viral และล็อกอินเข้าสู่ระบบให้เรียบร้อย', en: 'Go to Triple Viral website and log in' }, images: [] },
+          { text: { th: 'เข้ามาที่เว็บ Triple School และล็อกอินเข้าสู่ระบบให้เรียบร้อย', en: 'Go to Triple School website and log in' }, images: [] },
           { text: { th: 'กดที่โปรไฟล์ขวาบน และกดเข้าไปที่ Settings', en: 'Click your profile at top-right, then go to Settings' }, images: ['/api/scheduler/channels/guide/img33.png'] },
           { text: { th: 'นำ API Key มาใส่ในช่อง VidGo API Key และกดปุ่มสีเหลือง', en: 'Paste the API Key in the VidGo API Key field and click the yellow save button' }, images: ['/api/scheduler/channels/guide/img34.png'] },
         ],
@@ -214,14 +214,14 @@ const sections: Section[] = [
         ],
       },
       {
-        title: { th: 'ขั้นตอนสร้าง API Key เพื่อนำไปเชื่อมเข้าเว็บ Triple Viral', en: 'Create API Key to connect to Triple Viral' },
+        title: { th: 'ขั้นตอนสร้าง API Key เพื่อนำไปเชื่อมเข้าเว็บ Triple School', en: 'Create API Key to connect to Triple School' },
         steps: [
           { text: { th: 'กดเลือกหัวข้อ API Keys แทบซ้ายมือ', en: 'Click API Keys on the left sidebar' }, images: [] },
           { text: { th: 'กด + Create Key ทางด้านขวาบน', en: 'Click + Create Key at the top-right' }, images: ['/guide/late_apikey_01.png'] },
           { text: { th: 'Key Name (ให้ทำการตั้งชื่ออะไรก็ได้)', en: 'Key Name (enter any name you like)' }, images: [] },
           { text: { th: 'กด Create Key', en: 'Click Create Key' }, images: ['/guide/late_apikey_02.png'] },
           { text: { th: 'ให้กด Icon Copy ที่วงสีแดงเอาไว้', en: 'Click the Copy icon (red circle) and save it' }, images: ['/guide/late_apikey_03.png'] },
-          { text: { th: 'ให้เข้ามาที่เว็บ Triple Viral กดโปรไฟล์ขวาบน และเลือกตั้งค่า', en: 'Go to Triple Viral, click your profile at top-right and select Settings' }, images: ['/guide/late_apikey_04.png'] },
+          { text: { th: 'ให้เข้ามาที่เว็บ Triple School กดโปรไฟล์ขวาบน และเลือกตั้งค่า', en: 'Go to Triple School, click your profile at top-right and select Settings' }, images: ['/guide/late_apikey_04.png'] },
           { text: { th: 'หาช่อง Late API Key', en: 'Find the Late API Key section' }, images: ['/guide/late_apikey_05.png'] },
           { text: { th: 'ให้นำ API Key ที่ Copy มาลงในช่อง และกด Icon Save สีเหลือง', en: 'Paste the API Key in the field and click the yellow Save icon' }, images: ['/guide/late_apikey_06.png'] },
         ],
@@ -233,7 +233,7 @@ const sections: Section[] = [
           { text: { th: 'กดปุ่ม + Connect ที่แพลตฟอร์มตามที่ต้องการ', en: 'Click "+ Connect" on the platform you want' }, images: ['/api/scheduler/channels/guide/late02.png'] },
           { text: { th: 'หลังจากกด Connect ให้ Log in เข้าแพลตฟอร์มที่เลือก ตามขั้นตอนไปจนเสร็จ', en: 'After clicking Connect, log in to the selected platform and follow the steps until complete' } },
           { text: { th: 'หากทำตามขั้นตอนที่ 2 และ 3 เสร็จแล้ว ให้กดที่ปุ่ม Icon Copy ของแพลตฟอร์มที่เชื่อม (ตรงที่วงสีแดง)', en: 'Once steps 2 and 3 are complete, click the Copy icon of the connected platform (circled in red)' }, images: ['/api/scheduler/channels/guide/late03.png'] },
-          { text: { th: 'เข้ามาที่เว็บ Triple Viral และกดไปที่เมนู "ช่อง"', en: 'Go to Triple Viral and navigate to "Channels" menu' }, images: ['/api/scheduler/channels/guide/late07.png'] },
+          { text: { th: 'เข้ามาที่เว็บ Triple School และกดไปที่เมนู "ช่อง"', en: 'Go to Triple School and navigate to "Channels" menu' }, images: ['/api/scheduler/channels/guide/late07.png'] },
           { text: { th: 'กดเพิ่มช่อง', en: 'Click "Add Channel"' }, images: ['/api/scheduler/channels/guide/late08.png'] },
           { text: { th: 'ใส่ชื่อช่อง และเลือกบริการโพสต์เป็น Late (zernio.com)', en: 'Enter channel name and select Late (zernio.com) as posting service' }, images: ['/api/scheduler/channels/guide/late04.png'] },
           { text: { th: 'ใส่ Account ID ตามแพลตฟอร์มที่ Copy มาลงไปในช่อง', en: 'Paste the Account ID into the matching platform field' }, images: ['/api/scheduler/channels/guide/late05.png'] },
@@ -296,7 +296,7 @@ const sections: Section[] = [
           { text: { th: 'หลังจากกดเชื่อมเสร็จแล้ว ให้กดที่คำว่า View Accounts', en: 'After connecting, click "View Accounts"' }, images: ['/api/scheduler/channels/guide/img71.png'] },
           { text: { th: 'ให้เรามากดที่ปุ่ม 3 จุด ด้านขวาสุดของแถว', en: 'Click the 3-dot menu at the far right of the row' }, images: ['/api/scheduler/channels/guide/fb_11_dot.jpg'] },
           { text: { th: 'เลือก Copy connection ID และทำการเซฟเก็บไว้', en: 'Select "Copy connection ID" and save it' }, images: ['/api/scheduler/channels/guide/img73.png'] },
-          { text: { th: 'เข้ามาที่เว็บ Triple Viral และกดเลือกไปที่ Channels', en: 'Go to Triple Viral and navigate to Channels' }, images: ['/api/scheduler/channels/guide/img74.png'] },
+          { text: { th: 'เข้ามาที่เว็บ Triple School และกดเลือกไปที่ Channels', en: 'Go to Triple School and navigate to Channels' }, images: ['/api/scheduler/channels/guide/img74.png'] },
           { text: { th: 'กดปุ่ม Add Channel ที่ด้านมุมขวา', en: 'Click Add Channel at the top-right' }, images: ['/api/scheduler/channels/guide/img75.png'] },
           { text: { th: 'ระบบจะเด้งหน้าต่างขึ้นมา ให้ทำการตั้งชื่อ Channel ให้เรียบร้อย', en: 'A dialog appears — enter a channel name' }, images: ['/api/scheduler/channels/guide/img76.png'] },
           { text: { th: 'ให้ทำการกดติ๊กที่ Post for Me (postforme.dev)', en: 'Check "Post for Me (postforme.dev)"' }, images: ['/api/scheduler/channels/guide/img77_v2.png'] },
@@ -308,14 +308,14 @@ const sections: Section[] = [
         ],
       },
       {
-        title: { th: 'สร้าง API Key & เชื่อมเข้า Triple Viral', en: 'Create API Key & Connect to Triple Viral' },
+        title: { th: 'สร้าง API Key & เชื่อมเข้า Triple School', en: 'Create API Key & Connect to Triple School' },
         steps: [
           { text: { th: 'ให้เรากลับไปที่เว็บ https://www.postforme.dev/ และกดเลือกไปที่เมนู API Keys', en: 'Go back to https://www.postforme.dev/ and click the API Keys menu' }, images: ['/api/scheduler/channels/guide/img79.png'] },
           { text: { th: 'ให้มากดที่ปุ่มสีฟ้า Create API Key อยู่ด้านขวาบน', en: 'Click the blue "Create API Key" button at top-right' }, images: ['/api/scheduler/channels/guide/img80.png'] },
           { text: { th: 'ให้ Copy เลข API Key เก็บไว้', en: 'Copy the API Key and save it' }, images: ['/api/scheduler/channels/guide/img81.png'] },
           { text: { th: 'ให้กดเข้า Billing แถบล่างซ้ายมือของ PostForMe', en: 'Click on Billing at the bottom-left menu of PostForMe' }, images: ['/api/scheduler/channels/guide/billing.jpg'] },
           { text: { th: 'ให้ดูตรง Upcoming Invoice จะมี เดือน/วัน/ปี แสดง ให้จำในส่วนนี้ไว้', en: 'Look at the Upcoming Invoice section which shows the billing date (month/day/year). Remember this date.' }, images: ['/api/scheduler/channels/guide/date.jpg'] },
-          { text: { th: 'ให้กลับมาที่เว็บ Triple Viral กดโปรไฟล์ด้านขวาบน และเลือก Settings', en: 'Go back to Triple Viral, click your profile at top-right, then Settings' }, images: ['/api/scheduler/channels/guide/img82.png'] },
+          { text: { th: 'ให้กลับมาที่เว็บ Triple School กดโปรไฟล์ด้านขวาบน และเลือก Settings', en: 'Go back to Triple School, click your profile at top-right, then Settings' }, images: ['/api/scheduler/channels/guide/img82.png'] },
           { text: { th: 'เลื่อนลงมาข้างล่างสุด จะเห็นช่องใส่ Post for Me API Key\n• ใส่ชื่อเดียวกับชื่อ Project ที่สร้างไว้ใน Post for Me\n• ให้นำ API Key ที่สร้างใส่ลงไป\n• วันหมดอายุ จากขั้นตอนที่ 5', en: 'Scroll to the bottom to find the Post for Me API Key field.\n• Enter the same name as your Project in Post for Me\n• Paste the API Key\n• Set the expiry date from step 5' }, images: ['/api/scheduler/channels/guide/info.jpg'] },
           { text: { th: 'หลังจากใส่เสร็จทั้งหมดแล้วให้กดปุ่ม Icon save สีเหลือง', en: 'After filling in all fields, click the yellow save icon button' }, images: ['/api/scheduler/channels/guide/save.jpg'] },
         ],

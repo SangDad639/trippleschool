@@ -84,8 +84,8 @@ async function callOpenRouter(
     baseURL: OPENROUTER_BASE,
     defaultHeaders: {
       // OpenRouter ranking headers (optional but recommended)
-      'HTTP-Referer': 'https://tripleviral.com',
-      'X-Title': 'Triple Viral AI Agent',
+      'HTTP-Referer': 'https://tripleschool.com',
+      'X-Title': 'Triple School AI Agent',
     },
   });
   const resp = await client.chat.completions.create({

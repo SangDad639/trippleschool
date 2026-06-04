@@ -1601,8 +1601,8 @@ Reply ONLY with a JSON array of 1 object, no other text:
         {
           slug: 'how-to-triple-viral',
           date_th: '9 เม.ย. 2569', date_en: 'Apr 9, 2026',
-          title_th: 'วิธีใช้งาน Triple Viral', title_en: 'How to Triple Viral',
-          detail_title_th: 'คู่มือการใช้งาน Triple Viral แบบ Step-by-Step', detail_title_en: 'How to Triple Viral - Step-by-Step Guide',
+          title_th: 'วิธีใช้งาน Triple School', title_en: 'How to Triple School',
+          detail_title_th: 'คู่มือการใช้งาน Triple School แบบ Step-by-Step', detail_title_en: 'How to Triple School - Step-by-Step Guide',
           banner: '/Person_pointing_at_202604091357.jpeg',
           details: [{ text: { th: 'เริ่มต้นใช้งาน', en: 'Getting Started' }, videoUrl: 'https://www.youtube.com/watch?v=q9d9Bp1Fyp8' }],
         },
@@ -1610,7 +1610,7 @@ Reply ONLY with a JSON array of 1 object, no other text:
           slug: 'postforme-setup',
           date_th: '28 มี.ค. 2569', date_en: 'Mar 28, 2026',
           title_th: 'วิธีการสร้าง API และ เชื่อมแพลตฟอร์มต่างๆ', title_en: 'How to Create API & Connect Platforms',
-          detail_title_th: 'คลิปสอนชำระเงิน และ สร้าง API Key เพื่อนำไปเชื่อมกับเว็บ Triple Viral', detail_title_en: 'Tutorial: Payment & Create API Key to Connect with Triple Viral',
+          detail_title_th: 'คลิปสอนชำระเงิน และ สร้าง API Key เพื่อนำไปเชื่อมกับเว็บ Triple School', detail_title_en: 'Tutorial: Payment & Create API Key to Connect with Triple School',
           banner: '/banner1.jpg',
           details: [
             { text: { th: 'การชำระเงิน และ สร้าง API Key', en: 'Payment & API Key Creation' }, videoUrl: 'https://www.youtube.com/playlist?list=PLpp3Sum6WE9gyI4X3BQjmi9KBsST3zhzH' },

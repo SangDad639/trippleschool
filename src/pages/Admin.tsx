@@ -934,6 +934,18 @@ const Admin = () => {
               >
                 Manage Banners
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/admin/courses')}
+              >
+                คอร์สเรียน
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/admin/enrollments')}
+              >
+                อนุมัติสมัครเรียน
+              </Button>
             </div>
           </div>
 

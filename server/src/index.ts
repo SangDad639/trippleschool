@@ -38,6 +38,8 @@ import couponsRoutes from './routes/coupons.js';
 import storyAgentRoutes from './routes/storyAgent.js';
 import storyAgentChatRoutes from './routes/storyAgentChat.js';
 import userSkillsRoutes from './routes/userSkills.js';
+import coursesRoutes from './routes/courses.js';
+import enrollmentsRoutes from './routes/enrollments.js';
 import pool from './db.js';
 import { startAutoRetryJob } from './jobs/autoRetryJob.js';
 import { startStoryAgentRunner } from './jobs/storyAgentRunnerJob.js';
@@ -161,6 +163,8 @@ app.use('/api/coupons', couponsRoutes);
 app.use('/api/story-agent', storyAgentRoutes);
 app.use('/api/story-agent/chat', storyAgentChatRoutes);
 app.use('/api/skills', userSkillsRoutes);
+app.use('/api/courses', coursesRoutes);
+app.use('/api/enrollments', enrollmentsRoutes);
 
 // Initialize database tables
 async function initializeDatabase() {

@@ -5,7 +5,7 @@
  * track (trimmed to match video duration), and burns Thai/English captions per
  * scene as a hard-subtitle. Uploads result to Dropbox and returns the shared URL.
  *
- * Reuses ffmpeg-static + Dropbox utility already in trippleviral.
+ * Reuses ffmpeg-static + Dropbox utility already in trippleschool.
  *
  * Caption rendering: ffmpeg `subtitles` filter consumes an SRT file we generate
  * on the fly from per-scene { text, start, duration } tuples.

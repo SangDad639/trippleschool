@@ -1,7 +1,7 @@
 /**
  * CreditBadge — small pill showing the user's credit balance with a subtle
  * flash animation when the value changes (green for increase, red for
- * decrease). Adapted from sora-spark-forge's version using trippleviral's
+ * decrease). Adapted from sora-spark-forge's version using trippleschool's
  * Tailwind theme tokens.
  *
  * Drop this anywhere — it pulls `user.credits` from AuthContext directly

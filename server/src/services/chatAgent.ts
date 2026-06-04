@@ -80,7 +80,7 @@ export interface RunChatArgs {
   onEvent: (event: ChatStreamEvent) => void;
 }
 
-const SYSTEM_PROMPT_BASE = `คุณเป็น AI Agent ของระบบ TripleViral สำหรับช่วย user สร้างคลิป Reels/Shorts ผ่านการแชท
+const SYSTEM_PROMPT_BASE = `คุณเป็น AI Agent ของระบบ TripleSchool สำหรับช่วย user สร้างคลิป Reels/Shorts ผ่านการแชท
 
 ## บทบาทของคุณ
 

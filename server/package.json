@@ -1,7 +1,7 @@
 {
-  "name": "trippleviral-server",
+  "name": "trippleschool-server",
   "version": "1.0.0",
-  "description": "Backend API for Tripple Viral Content Scheduler",
+  "description": "Backend API for Triple School Content Scheduler",
   "main": "dist/index.js",
   "type": "module",
   "scripts": {

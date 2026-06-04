@@ -97,8 +97,8 @@ const CheckoutComplete = () => {
             </h1>
             <p className="text-muted-foreground text-lg">
               {l(
-                'ยินดีต้อนรับเข้าสู่ Triple Viral',
-                'Welcome to Triple Viral'
+                'ยินดีต้อนรับเข้าสู่ Triple School',
+                'Welcome to Triple School'
               )}
             </p>
           </div>

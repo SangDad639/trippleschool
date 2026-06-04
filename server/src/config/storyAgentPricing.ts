@@ -1,7 +1,7 @@
 /**
  * Credit costs for the AI Agent pipeline.
  *
- * Trippleviral charges credits only for the LLM-driven "thinking" stages —
+ * Trippleschool charges credits only for the LLM-driven "thinking" stages —
  * KIE / ElevenLabs / Post For Me calls are billed by those external services
  * directly through the user's own API keys (which the user pays for).
  *

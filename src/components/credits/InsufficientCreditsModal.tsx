@@ -1,7 +1,7 @@
 /**
  * InsufficientCreditsModal — shown when a generation route returns
  * `errorCode: 'insufficient_credits'`. Adapted from sora-spark-forge's
- * version; uses trippleviral's accent color (#FFB300) and Dialog primitives.
+ * version; uses trippleschool's accent color (#FFB300) and Dialog primitives.
  */
 import { AlertCircle, CircleDollarSign } from 'lucide-react';
 import { Button } from '@/components/ui/button';

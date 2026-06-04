@@ -124,7 +124,7 @@ const SubscriptionWall = () => {
         <div className="text-center space-y-3 mb-8">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-card border border-[#FFB300]/50">
             <Sparkles className="h-5 w-5 text-[#FFB300]" />
-            <span className="font-medium text-white">Triple Viral</span>
+            <span className="font-medium text-white">Triple School</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-white">{t('subwall.chooseYourPlan')}</h1>
           <p className="text-gray-400 max-w-md mx-auto">
