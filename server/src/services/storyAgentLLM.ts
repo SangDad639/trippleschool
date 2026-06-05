@@ -84,7 +84,7 @@ async function callOpenRouter(
     baseURL: OPENROUTER_BASE,
     defaultHeaders: {
       // OpenRouter ranking headers (optional but recommended)
-      'HTTP-Referer': 'https://tripleschool.com',
+      'HTTP-Referer': 'https://www.trippleschool.com',
       'X-Title': 'Triple School AI Agent',
     },
   });
