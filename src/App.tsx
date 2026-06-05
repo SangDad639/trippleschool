@@ -33,6 +33,8 @@ import SubscriptionWarningBanner from "@/components/SubscriptionWarningBanner";
 import AdminNotificationBanner from "@/components/AdminNotificationBanner";
 import { LateDeprecationBanner } from "@/components/LateDeprecationBanner";
 import Landing from "@/pages/Landing";
+import Storefront from "@/pages/Storefront";
+import PublicHeader from "@/components/PublicHeader";
 import ContentScheduler from "@/pages/ContentScheduler";
 import Subscription from "@/pages/Subscription";
 import SubscriptionSuccess from "@/pages/SubscriptionSuccess";
@@ -365,6 +367,13 @@ function AppRoutes() {
   const { user, loading } = useAuth();
   usePageTracking(); // Track page views on route change
 
+  // After login/register, return to the page the user came from when a safe
+  // internal `?next=` path is present (e.g. a course they tried to enroll in),
+  // otherwise fall back to the app dashboard.
+  const [searchParams] = useSearchParams();
+  const nextParam = searchParams.get('next');
+  const loginRedirect = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : '/app';
+
   console.log('[AppRoutes]', { loading, user: user?.id });
 
   if (loading) {
@@ -377,18 +386,36 @@ function AppRoutes() {
 
   return (
     <Routes>
-      {/* Public landing page - accessible to everyone */}
+      {/* Public storefront (course gallery) - homepage, accessible to everyone */}
       <Route
         path="/"
+        element={<Storefront />}
+      />
+      {/* Marketing page relocated from "/" so the header's Features/Pricing
+          anchors (/about#features, /about#pricing) keep working */}
+      <Route
+        path="/about"
         element={<Landing />}
+      />
+      {/* Public course detail - browse without login; buying/enrolling prompts login */}
+      <Route
+        path="/courses/:slug"
+        element={
+          <>
+            <PublicHeader />
+            <div className="pt-[72px]">
+              <CourseDetail />
+            </div>
+          </>
+        }
       />
       <Route
         path="/login"
-        element={user ? <Navigate to="/app" replace /> : <AuthPage />}
+        element={user ? <Navigate to={loginRedirect} replace /> : <AuthPage />}
       />
       <Route
         path="/register"
-        element={user ? <Navigate to="/app" replace /> : <AuthPage />}
+        element={user ? <Navigate to={loginRedirect} replace /> : <AuthPage />}
       />
       <Route
         path="/pending-approval"

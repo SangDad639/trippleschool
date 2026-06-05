@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
@@ -88,8 +88,13 @@ const difficultyLabels: Record<string, string> = {
 const CourseDetail = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const isAuthenticated = !!user;
+  // Public visitors reach this page at /courses/:slug; logged-in users reach it
+  // at /app/courses/:slug. Send "back" to the matching course list.
+  const isAppContext = location.pathname.startsWith('/app');
+  const coursesListPath = isAppContext ? '/app/courses' : '/';
   const [course, setCourse] = useState<Course | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [isEnrolled, setIsEnrolled] = useState(false);
@@ -123,13 +128,19 @@ const CourseDetail = () => {
     } catch (error) {
       console.error('Failed to load course:', error);
       toast.error('โหลดคอร์สไม่สำเร็จ');
-      navigate('/app/courses');
+      navigate(coursesListPath);
     } finally {
       setLoading(false);
     }
   };
 
   const handleOpenEnrollDialog = () => {
+    // Browsing is public, but enrolling requires an account — send unauthenticated
+    // visitors to login and bring them back to this course afterwards.
+    if (!isAuthenticated) {
+      navigate(`/login?next=${encodeURIComponent(location.pathname)}`);
+      return;
+    }
     setSlipFile(null);
     setSlipPreview(null);
     setEnrollDialogOpen(true);
@@ -222,7 +233,7 @@ const CourseDetail = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="max-w-5xl mx-auto px-4 py-6">
-        <Button variant="ghost" onClick={() => navigate('/app/courses')} className="mb-4 text-gray-400 hover:text-white">
+        <Button variant="ghost" onClick={() => navigate(coursesListPath)} className="mb-4 text-gray-400 hover:text-white">
           <ArrowLeft className="h-4 w-4 mr-2" />
           กลับไปหน้าคอร์สทั้งหมด
         </Button>
