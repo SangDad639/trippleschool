@@ -5,16 +5,19 @@ import { api } from '@/lib/api';
 import PublicHeader from '@/components/PublicHeader';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
   Loader2,
   Search,
   BookOpen,
-  Clock,
   User,
   Star,
   ArrowRight,
+  ArrowUpRight,
   GraduationCap,
+  Presentation,
+  Sparkles,
 } from 'lucide-react';
 
 interface Course {
@@ -47,13 +50,14 @@ const difficultyLabels: Record<string, string> = {
   advanced: 'ขั้นสูง',
 };
 
-function PriceTag({ course, size = 'sm' }: { course: Course; size?: 'sm' | 'lg' }) {
-  const cls = size === 'lg' ? 'text-xl' : 'text-sm';
+const PLATFORMS = ['TikTok', 'YouTube Shorts', 'Instagram Reels', 'Facebook Reels', 'X'];
+
+function PriceTag({ course }: { course: Course }) {
   if (course.price > 0) {
     const discounted = course.discount_price !== null && course.discount_price < course.price;
     return (
-      <div className="flex items-center gap-2">
-        <span className={`text-primary font-bold ${cls}`}>
+      <div className="flex items-center gap-1.5">
+        <span className="text-primary font-bold text-sm">
           ฿{(discounted ? course.discount_price! : course.price).toLocaleString()}
         </span>
         {discounted && (
@@ -62,12 +66,13 @@ function PriceTag({ course, size = 'sm' }: { course: Course; size?: 'sm' | 'lg' 
       </div>
     );
   }
-  return <span className={`text-green-400 font-bold ${cls}`}>ฟรี</span>;
+  return <span className="text-green-400 font-bold text-sm">ฟรี</span>;
 }
 
 const Storefront = () => {
   const navigate = useNavigate();
   const { language } = useLanguage();
+  const isTh = language === 'th';
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -90,6 +95,8 @@ const Storefront = () => {
   };
 
   const openCourse = (slug: string) => navigate(`/courses/${slug}`);
+  const scrollToCourses = () =>
+    document.getElementById('courses')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   const query = searchQuery.trim().toLowerCase();
   const filtered = query
@@ -101,144 +108,157 @@ const Storefront = () => {
       )
     : courses;
 
-  const featured = !query ? courses.filter((c) => c.is_featured) : [];
-  const heroCourse = featured[0];
-  const sideFeatured = featured.slice(1, 4);
+  // Featured courses lead the grid, then the rest — keeps "popular" up top.
+  const sorted = [...filtered].sort((a, b) => Number(b.is_featured) - Number(a.is_featured));
 
   return (
     <div className="page-wrapper min-h-screen">
       <PublicHeader />
 
-      <main className="container mx-auto px-4 pt-28 pb-16 max-w-6xl">
-        {/* Heading + search */}
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl md:text-4xl font-bold mb-3 flex items-center justify-center gap-2">
-            <GraduationCap className="h-8 w-8 text-primary" />
-            {language === 'th' ? 'คอร์สเรียนทั้งหมด' : 'All Courses'}
-          </h1>
-          <p className="text-muted-foreground max-w-xl mx-auto mb-6">
-            {language === 'th'
-              ? 'เรียนรู้ทักษะใหม่ๆ กับคอร์สคุณภาพจากผู้เชี่ยวชาญ — ดูได้เลยไม่ต้องสมัคร'
-              : 'Level up with expert-led courses — browse freely, no sign-up required'}
+      <main className="container mx-auto px-4 pt-28 md:pt-32 pb-20 max-w-6xl">
+        {/* ===== HERO ===== */}
+        <section className="relative text-center mb-16 md:mb-24">
+          {/* Decorative flanking avatars (desktop only) */}
+          <div className="hidden lg:flex flex-col items-center gap-2 absolute left-0 top-1/2 -translate-y-1/2">
+            <div className="h-24 w-24 rounded-full p-[3px] bg-gradient-to-br from-primary to-amber-300 shadow-xl">
+              <div className="h-full w-full rounded-full bg-card flex items-center justify-center overflow-hidden">
+                {sorted[0]?.instructor_avatar ? (
+                  <img
+                    src={sorted[0].instructor_avatar}
+                    alt={sorted[0].instructor_name}
+                    className="h-full w-full rounded-full object-cover"
+                  />
+                ) : (
+                  <Presentation className="h-10 w-10 text-primary" />
+                )}
+              </div>
+            </div>
+            <span className="text-xs text-muted-foreground">{isTh ? 'ผู้สอน' : 'Instructor'}</span>
+          </div>
+          <div className="hidden lg:flex flex-col items-center gap-2 absolute right-0 top-1/2 -translate-y-1/2">
+            <div className="h-24 w-24 rounded-full p-[3px] bg-gradient-to-br from-purple-500 to-purple-400 shadow-xl">
+              <div className="h-full w-full rounded-full bg-card flex items-center justify-center">
+                <GraduationCap className="h-10 w-10 text-purple-400" />
+              </div>
+            </div>
+            <span className="text-xs text-muted-foreground">{isTh ? 'ผู้เรียน' : 'Student'}</span>
+          </div>
+
+          <div className="max-w-3xl mx-auto">
+            <Badge className="mb-6 bg-primary/10 text-primary border-primary/20 px-4 py-1.5">
+              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+              {isTh ? 'แพลตฟอร์มเรียนรู้ AI' : 'AI Learning Platform'}
+            </Badge>
+
+            <h1 className="text-4xl md:text-6xl font-bold leading-tight mb-6">
+              {isTh ? (
+                <>
+                  เรียนรู้ทักษะ<span className="text-primary">แห่งอนาคต</span>
+                  <br />
+                  ได้ตั้งแต่<span className="text-purple-400">วันนี้</span>
+                </>
+              ) : (
+                <>
+                  Learn <span className="text-primary">tomorrow's skills</span>
+                  <br />
+                  <span className="text-purple-400">today</span>
+                </>
+              )}
+            </h1>
+
+            <p className="text-lg text-muted-foreground mb-10 max-w-2xl mx-auto">
+              {isTh
+                ? 'คอร์สคุณภาพจากผู้เชี่ยวชาญตัวจริง สร้างวิดีโอ AI และทำคอนเทนต์ไวรัล — เปิดดูได้เลย ไม่ต้องสมัครสมาชิก'
+                : 'Quality courses from real experts — make AI videos and viral content. Browse freely, no sign-up required.'}
+            </p>
+
+            <div className="flex justify-center">
+              <Button
+                size="lg"
+                onClick={scrollToCourses}
+                className="gap-2 text-base px-8 py-6 w-full sm:w-auto"
+              >
+                {isTh ? 'เริ่มเรียนเลย' : 'Start Learning'}
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+            </div>
+          </div>
+        </section>
+
+        {/* ===== Trust / supported platforms strip ===== */}
+        <section className="mb-16 md:mb-20">
+          <p className="text-center text-xs uppercase tracking-wider text-muted-foreground mb-4">
+            {isTh ? 'แพลตฟอร์มที่รองรับ' : 'Supported platforms'}
           </p>
-          <div className="relative max-w-xl mx-auto">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+          <div className="flex flex-wrap items-center justify-center gap-x-8 gap-y-3 opacity-70">
+            {PLATFORMS.map((name) => (
+              <span key={name} className="text-muted-foreground font-semibold text-sm md:text-base">
+                {name}
+              </span>
+            ))}
+          </div>
+        </section>
+
+        {/* ===== Popular courses ===== */}
+        <section id="courses" className="scroll-mt-28">
+          <div className="flex items-end justify-between gap-4 mb-2">
+            <h2 className="text-2xl md:text-3xl font-bold">
+              {isTh ? (
+                <>คอร์ส<span className="text-purple-400">ยอดนิยม</span></>
+              ) : (
+                <>Most <span className="text-purple-400">Popular</span> Courses</>
+              )}
+            </h2>
+            <button
+              type="button"
+              onClick={() =>
+                document.getElementById('course-grid')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+              }
+              className="hidden sm:inline-flex items-center gap-1 text-sm text-primary hover:underline whitespace-nowrap"
+            >
+              {isTh ? 'ดูคอร์สทั้งหมด' : 'Explore Courses'}
+              <ArrowUpRight className="h-4 w-4" />
+            </button>
+          </div>
+          <p className="text-muted-foreground text-sm mb-6">
+            {isTh
+              ? 'เลือกเรียนกับคอร์สคุณภาพจากผู้เชี่ยวชาญและสถาบันชั้นนำ'
+              : "Join our best classes from top instructors and institutes"}
+          </p>
+
+          {/* Search */}
+          <div className="relative max-w-sm mb-8">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder={language === 'th' ? 'ค้นหาคอร์สเรียน...' : 'Search for courses...'}
+              aria-label={isTh ? 'ค้นหาคอร์สเรียน' : 'Search for courses'}
+              placeholder={isTh ? 'ค้นหาคอร์สเรียน...' : 'Search for courses...'}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-12 h-12 rounded-full bg-card/60 border-border text-base"
+              className="pl-11 h-11 rounded-full bg-card/60 border-border"
             />
           </div>
-        </div>
 
-        {loading ? (
-          <div className="flex items-center justify-center min-h-[300px]">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          </div>
-        ) : (
-          <>
-            {/* Featured bento (only when not searching) */}
-            {heroCourse && (
-              <section className="mb-10">
-                <div className="flex items-center gap-2 mb-4">
-                  <Star className="h-5 w-5 text-yellow-500" />
-                  <h2 className="text-lg font-semibold">
-                    {language === 'th' ? 'คอร์สแนะนำ' : 'Featured'}
-                  </h2>
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                  {/* Big hero card */}
-                  <button
-                    onClick={() => openCourse(heroCourse.slug)}
-                    className="group relative lg:col-span-2 lg:row-span-2 rounded-2xl overflow-hidden border border-border text-left min-h-[260px] lg:min-h-[420px]"
-                  >
-                    {heroCourse.thumbnail_url ? (
-                      <img
-                        src={heroCourse.thumbnail_url}
-                        alt={heroCourse.name}
-                        className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                      />
-                    ) : (
-                      <div className="absolute inset-0 bg-gradient-to-br from-primary/30 via-purple-600/20 to-background" />
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
-                    <Badge className="absolute top-4 left-4 bg-yellow-500 text-black">
-                      <Star className="h-3 w-3 mr-1" />
-                      {language === 'th' ? 'แนะนำ' : 'Featured'}
-                    </Badge>
-                    <div className="absolute bottom-0 left-0 right-0 p-6">
-                      <h3 className="text-2xl font-bold text-white mb-2 line-clamp-2">{heroCourse.name}</h3>
-                      {heroCourse.short_description && (
-                        <p className="text-gray-200 text-sm mb-4 line-clamp-2 max-w-xl">{heroCourse.short_description}</p>
-                      )}
-                      <div className="flex items-center justify-between gap-3 flex-wrap">
-                        <PriceTag course={heroCourse} size="lg" />
-                        <span className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold text-sm group-hover:opacity-90">
-                          {language === 'th' ? 'ดูคอร์ส' : 'View course'}
-                          <ArrowRight className="h-4 w-4" />
-                        </span>
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* Side featured cards */}
-                  {sideFeatured.map((course) => (
-                    <button
-                      key={course.id}
-                      onClick={() => openCourse(course.slug)}
-                      className="group relative rounded-2xl overflow-hidden border border-border text-left min-h-[200px]"
-                    >
-                      {course.thumbnail_url ? (
-                        <img
-                          src={course.thumbnail_url}
-                          alt={course.name}
-                          className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
-                        />
-                      ) : (
-                        <div className="absolute inset-0 bg-gradient-to-br from-primary/30 via-purple-600/20 to-background" />
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
-                      <div className="absolute bottom-0 left-0 right-0 p-4">
-                        <h3 className="text-base font-semibold text-white mb-1 line-clamp-2">{course.name}</h3>
-                        <PriceTag course={course} />
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* All courses */}
-            <section>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">
-                  {query
-                    ? language === 'th' ? 'ผลการค้นหา' : 'Search results'
-                    : language === 'th' ? 'คอร์สทั้งหมด' : 'All courses'}
-                </h2>
-                <span className="text-muted-foreground text-sm">
-                  {filtered.length} {language === 'th' ? 'คอร์ส' : 'courses'}
-                </span>
-              </div>
-
-              {filtered.length === 0 ? (
-                <div className="text-center py-16">
-                  <BookOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">
-                    {language === 'th' ? 'ไม่พบคอร์สเรียน' : 'No courses found'}
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {filtered.map((course) => (
-                    <CourseCard key={course.id} course={course} onClick={() => openCourse(course.slug)} />
-                  ))}
-                </div>
-              )}
-            </section>
-          </>
-        )}
+          {loading ? (
+            <div className="flex items-center justify-center min-h-[300px]">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="text-center py-16">
+              <BookOpen className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground">{isTh ? 'ไม่พบคอร์สเรียน' : 'No courses found'}</p>
+            </div>
+          ) : (
+            <div id="course-grid" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+              {sorted.map((course) => (
+                <CourseCard
+                  key={course.id}
+                  course={course}
+                  onClick={() => openCourse(course.slug)}
+                />
+              ))}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );
@@ -250,62 +270,69 @@ const CourseCard = ({ course, onClick }: { course: Course; onClick: () => void }
   return (
     <button
       onClick={onClick}
-      className="group text-left rounded-2xl overflow-hidden border border-border bg-card hover:border-primary/50 transition-all duration-300"
+      className="group text-left rounded-2xl border border-border bg-card hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300"
     >
-      <div className="relative aspect-[4/3] bg-muted overflow-hidden">
-        {course.thumbnail_url ? (
-          <img
-            src={course.thumbnail_url}
-            alt={course.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-purple-600/10">
-            <BookOpen className="h-10 w-10 text-muted-foreground" />
-          </div>
-        )}
-        {course.is_featured && (
-          <Badge className="absolute top-2 left-2 bg-yellow-500 text-black text-xs px-2 py-0.5">
-            <Star className="h-3 w-3 mr-1" />
-            แนะนำ
-          </Badge>
-        )}
+      {/* Thumbnail (padded, inner rounded — matches reference card) */}
+      <div className="p-2.5">
+        <div className="relative aspect-[16/10] rounded-xl overflow-hidden bg-muted">
+          {course.thumbnail_url ? (
+            <img
+              src={course.thumbnail_url}
+              alt=""
+              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-purple-600/10">
+              <BookOpen className="h-10 w-10 text-muted-foreground" />
+            </div>
+          )}
+          {course.is_featured && (
+            <Badge className="absolute top-2 left-2 bg-yellow-500 text-black text-xs px-2 py-0.5">
+              <Star className="h-3 w-3 mr-1" />
+              แนะนำ
+            </Badge>
+          )}
+        </div>
       </div>
 
-      <div className="p-3">
-        <h3 className="font-medium text-sm mb-1.5 line-clamp-2 group-hover:text-primary transition-colors">
-          {course.name}
-        </h3>
-
-        {course.instructor_name && (
-          <div className="flex items-center gap-2 mb-2">
-            {course.instructor_avatar ? (
-              <img src={course.instructor_avatar} alt={course.instructor_name} className="h-5 w-5 rounded-full object-cover" />
-            ) : (
-              <User className="h-3.5 w-3.5 text-muted-foreground" />
-            )}
-            <span className="text-muted-foreground text-xs">{course.instructor_name}</span>
-          </div>
-        )}
-
-        <div className="mb-2">
+      <div className="px-4 pb-4">
+        {/* Meta row: lessons + price */}
+        <div className="flex items-center justify-between mb-2">
+          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/60 rounded-full px-2.5 py-1">
+            <BookOpen className="h-3.5 w-3.5" />
+            {lessonCount} บท
+          </span>
           <PriceTag course={course} />
         </div>
 
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-3 text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <BookOpen className="h-3.5 w-3.5" />
-              {lessonCount} บท
-            </span>
-            {course.duration_hours > 0 && (
-              <span className="flex items-center gap-1">
-                <Clock className="h-3.5 w-3.5" />
-                {course.duration_hours}ชม.
-              </span>
-            )}
-          </div>
-          <Badge className={`${difficultyColors[course.difficulty] || difficultyColors.beginner} border text-xs px-2 py-0.5`}>
+        {/* Title */}
+        <h3 className="font-semibold text-base mb-3 line-clamp-2 group-hover:text-primary transition-colors min-h-[2.75rem]">
+          {course.name}
+        </h3>
+
+        {/* Footer: instructor + category */}
+        <div className="flex items-center justify-between gap-2 pt-3 border-t border-border/60">
+          {course.instructor_name ? (
+            <div className="flex items-center gap-2 min-w-0">
+              {course.instructor_avatar ? (
+                <img
+                  src={course.instructor_avatar}
+                  alt={course.instructor_name}
+                  className="h-6 w-6 rounded-full object-cover shrink-0"
+                />
+              ) : (
+                <div className="h-6 w-6 rounded-full bg-muted flex items-center justify-center shrink-0">
+                  <User className="h-3.5 w-3.5 text-muted-foreground" />
+                </div>
+              )}
+              <span className="text-muted-foreground text-xs truncate">{course.instructor_name}</span>
+            </div>
+          ) : (
+            <span />
+          )}
+          <Badge
+            className={`${difficultyColors[course.difficulty] || difficultyColors.beginner} border text-xs px-2 py-0.5 shrink-0`}
+          >
             {difficultyLabels[course.difficulty] || 'เริ่มต้น'}
           </Badge>
         </div>
