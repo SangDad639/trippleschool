@@ -139,8 +139,8 @@ const translations = {
   'subscription.downgradeToMonthly': { th: 'เปลี่ยนเป็นรายเดือน', en: 'Switch to Monthly' },
   'subscription.changingPlan': { th: 'กำลังเปลี่ยนแพลน...', en: 'Changing plan...' },
   'subscription.currentPlan': { th: 'แพลนปัจจุบัน', en: 'Current Plan' },
-  'subscription.confirmUpgrade': { th: 'ต้องการอัปเกรดเป็นรายปี (฿3,000/ปี) หรือไม่?\nระบบจะหักส่วนต่างจากแพลนเดิมให้อัตโนมัติ', en: 'Upgrade to Yearly (฿3,000/year)?\nYou will be charged the prorated difference automatically.' },
-  'subscription.confirmUpgradeDesc': { th: 'ระบบจะคำนวณส่วนต่างและเรียกเก็บจากบัตรของคุณอัตโนมัติ (฿3,000/ปี)', en: 'The prorated difference will be charged to your card automatically (฿3,000/year).' },
+  'subscription.confirmUpgrade': { th: 'ต้องการอัปเกรดเป็นรายปี (฿3,990/ปี) หรือไม่?\nระบบจะหักส่วนต่างจากแพลนเดิมให้อัตโนมัติ', en: 'Upgrade to Yearly (฿3,990/year)?\nYou will be charged the prorated difference automatically.' },
+  'subscription.confirmUpgradeDesc': { th: 'ระบบจะคำนวณส่วนต่างและเรียกเก็บจากบัตรของคุณอัตโนมัติ (฿3,990/ปี)', en: 'The prorated difference will be charged to your card automatically (฿3,990/year).' },
   'subscription.confirmDowngradeDesc': { th: 'ส่วนที่จ่ายเกินจะถูกหักจากค่าบริการรอบถัดไปอัตโนมัติ (฿600/เดือน)', en: 'Overpaid amount will be deducted from your next billing cycle (฿600/month).' },
   'subscription.confirmChange': { th: 'ยืนยันเปลี่ยนแพลน', en: 'Confirm Change' },
 

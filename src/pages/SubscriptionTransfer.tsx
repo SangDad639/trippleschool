@@ -46,9 +46,9 @@ const SubscriptionTransfer = () => {
   );
   const isMonthly = selectedPlan === 'monthly';
   const planName = isMonthly ? 'Triple School Monthly' : 'Triple School Yearly';
-  const price = isMonthly ? '600' : '3000';
-  const priceDisplay = isMonthly ? '฿600' : '฿3,000';
-  const originalPrice = isMonthly ? null : '฿7,200';
+  const price = isMonthly ? '600' : '3990';
+  const priceDisplay = isMonthly ? '฿600' : '฿3,990';
+  const originalPrice = isMonthly ? null : '฿9,500';
   const period = isMonthly ? l('/เดือน', '/month') : l('/ปี', '/year');
   const discount = isMonthly ? null : '-58%';
 
@@ -107,7 +107,7 @@ const SubscriptionTransfer = () => {
             }`}
           >
             {l('รายปี', 'Yearly')}
-            <span className="block text-xs font-normal mt-0.5 opacity-80">฿3,000/{l('ปี', 'yr')}</span>
+            <span className="block text-xs font-normal mt-0.5 opacity-80">฿3,990/{l('ปี', 'yr')}</span>
             <span className="absolute -top-2 -right-1 px-1.5 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold">-58%</span>
           </button>
         </div>

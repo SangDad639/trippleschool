@@ -80,7 +80,7 @@ const SubscriptionWall = () => {
     {
       id: 'yearly' as const,
       name: t('subscription.yearly'),
-      price: '฿3,000',
+      price: '฿3,990',
       currency: 'THB',
       period: t('landing.perYear'),
       description: t('landing.yearlyDesc'),

@@ -634,7 +634,7 @@ const Admin = () => {
     } catch (error: any) {
       console.error('[Admin Extend] Error:', error);
       const code = error?.errorCode as string | undefined;
-      // Yearly accepts ฿3,210 (full) or ฿2,996 (admin promo: 2,800 + VAT). Monthly fixed at ฿642.
+      // Yearly accepts ฿4,269.30 (full) or ฿2,996 (admin promo: 2,800 + VAT). Monthly fixed at ฿642.
       const yearlyPromoTotal = +(2800 * (1 + VAT_RATE / 100)).toFixed(2);
       const expectedAmt =
         days >= 365

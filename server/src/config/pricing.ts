@@ -3,7 +3,7 @@
  * Imported by routes/subscription.ts, routes/admin.ts, services/stripeService.ts.
  *
  * Pricing model: VAT-Exclusive
- *   - Subtotal = product price (฿600 monthly / ฿3,000 yearly)
+ *   - Subtotal = product price (฿600 monthly / ฿3,990 yearly)
  *   - VAT 7% added on top
  *   - Total (vat-inclusive) = what user actually pays / transfers
  *
@@ -33,11 +33,11 @@ export const PRICING: Record<PlanType, PlanPricing> = {
     centsTotal: 64200,
   },
   yearly: {
-    subtotal: 3000,
-    vat: 210,
-    total: 3210,
+    subtotal: 3990,
+    vat: 279.3,
+    total: 4269.3,
     days: 365,
-    centsTotal: 321000,
+    centsTotal: 426930,
   },
 };
 
