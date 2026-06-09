@@ -20,7 +20,7 @@ interface PlanPricing {
 }
 
 export const PRICING: Record<PlanType, PlanPricing> = {
-  monthly: { subtotal: 600, vat: 42, total: 642, days: 30 },
+  monthly: { subtotal: 690, vat: 48.3, total: 738.3, days: 30 },
   yearly: { subtotal: 3990, vat: 279.3, total: 4269.3, days: 365 },
 };
 

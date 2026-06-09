@@ -17,16 +17,8 @@ import {
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
 
-// Allow override via ?mode=stripe query param for testing
-const getPaymentMode = () => {
-  const params = new URLSearchParams(window.location.search);
-  const modeOverride = params.get('mode');
-  if (modeOverride === 'stripe' || modeOverride === 'transfer') {
-    return modeOverride;
-  }
-  return import.meta.env.VITE_PAYMENT_MODE || 'stripe';
-};
-const PAYMENT_MODE = getPaymentMode();
+// Payment is bank-transfer / PromptPay slip upload only (Stripe removed).
+const PAYMENT_MODE = 'transfer';
 
 const Subscription = () => {
   const navigate = useNavigate();
@@ -40,17 +32,11 @@ const Subscription = () => {
     window.gtag?.('event', 'view_item', { content_type: 'product', content_name: 'Subscription Plans' });
   }, []);
   const { t, language } = useLanguage();
-  const { subscription, hasSubscription, loading, refreshSubscription, createCheckout, changePlanPortal, cancelSubscription, reactivateSubscription, openBillingPortal } = useSubscription();
-  // Plan slug is now dynamic (any package the admin creates) — was previously
-  // narrowed to the legacy literal pair. The Stripe checkout still hardcodes
-  // monthly/yearly so we cast inside the handler when calling createCheckout.
+  const { subscription, hasSubscription, loading, refreshSubscription } = useSubscription();
   const [processingPlan, setProcessingPlan] = useState<string | null>(null);
   const [showTermsDialog, setShowTermsDialog] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [pendingPlanType, setPendingPlanType] = useState<string | null>(null);
-  const [changingPlan, setChangingPlan] = useState(false);
-  const [canceling, setCanceling] = useState(false);
-  const [reactivating, setReactivating] = useState(false);
   const [showExpiredMessage, setShowExpiredMessage] = useState(false);
 
   // Check if redirected from expired subscription
@@ -77,7 +63,7 @@ const Subscription = () => {
     if (loading || !hasSubscription || subscription?.cancelAtPeriodEnd) return;
     if (searchParams.get('manage') === 'true') return;
     const t = setTimeout(() => {
-      navigate('/app', { replace: true });
+      navigate('/courses', { replace: true });
     }, 100);
     return () => clearTimeout(t);
   }, [loading, hasSubscription, subscription?.cancelAtPeriodEnd, searchParams, navigate]);
@@ -99,22 +85,15 @@ const Subscription = () => {
   // [...base, ...bonus]` doesn't widen the union and drop the highlight field.
   type FeatureItem = { title: string; desc: string; highlight?: boolean };
   const baseFeatures: FeatureItem[] = [
-    { title: t('landing.feat.channels'), desc: t('landing.feat.channelsDesc') },
-    { title: t('landing.feat.aiPrompt'), desc: t('landing.feat.aiPromptDesc') },
-    { title: t('landing.feat.variable'), desc: t('landing.feat.variableDesc') },
-    { title: t('landing.feat.caption'), desc: t('landing.feat.captionDesc') },
-    { title: t('landing.feat.schedule'), desc: t('landing.feat.scheduleDesc') },
-    { title: t('landing.feat.bulk'), desc: t('landing.feat.bulkDesc') },
-    { title: t('landing.feat.retry'), desc: t('landing.feat.retryDesc') },
-    { title: t('landing.feat.videoApi'), desc: t('landing.feat.videoApiDesc') },
-    { title: t('landing.feat.postApi'), desc: t('landing.feat.postApiDesc') },
+    { title: 'เข้าถึงทุกคอร์ส', desc: 'ปลดล็อกทุกบทเรียนที่เสียเงินทั้งหมด' },
+    { title: 'วิดีโอความละเอียดสูง', desc: 'เรียนได้ทุกที่ทุกเวลา' },
+    { title: 'อัปเดตเนื้อหาใหม่', desc: 'คอร์สใหม่เพิ่มเรื่อย ๆ ไม่มีค่าใช้จ่ายเพิ่ม' },
+    { title: 'ติดตามความคืบหน้า', desc: 'บันทึกบทเรียนที่เรียนจบอัตโนมัติ' },
   ];
 
   const yearlyBonusFeatures: FeatureItem[] = [
-    { title: t('landing.bonus.prompts'), desc: t('landing.bonus.promptsDesc'), highlight: true },
-    { title: t('landing.bonus.custom'), desc: t('landing.bonus.customDesc'), highlight: true },
-    { title: t('landing.bonus.save'), desc: t('landing.bonus.saveDesc'), highlight: true },
-    { title: t('landing.bonus.lock'), desc: t('landing.bonus.lockDesc'), highlight: true },
+    { title: 'คุ้มกว่ารายเดือน', desc: 'จ่ายครั้งเดียวใช้ได้ทั้งปี', highlight: true },
+    { title: 'ราคาคงที่ทั้งปี', desc: 'ไม่ต้องต่ออายุทุกเดือน', highlight: true },
   ];
 
   // Plan selection — show subtotal (before VAT) to match marketing /#pricing.
@@ -171,7 +150,7 @@ const Subscription = () => {
             popular: isLongest,
             // Only the legacy monthly→yearly pair has a stable "-58%" anchor.
             // Skip savings badge for other plans (would need known reference).
-            savings: isLongest && p.slug === 'yearly' ? '-58%' : undefined,
+            savings: isLongest && p.slug === 'yearly' ? '-52%' : undefined,
           };
         });
       })()
@@ -194,37 +173,20 @@ const Subscription = () => {
           features: [...baseFeatures, ...yearlyBonusFeatures],
           icon: Crown,
           popular: true,
-          savings: '-58%',
+          savings: '-52%',
         },
       ];
 
-  const handleSelectPlan = async (planType: string) => {
+  const handleSelectPlan = (planType: string) => {
     if (!user) {
       openAuthModal();
       return;
     }
-
-    if (PAYMENT_MODE === 'transfer') {
-      setPendingPlanType(planType);
-      setTermsAccepted(false);
-      setShowTermsDialog(true);
-      return;
-    }
-
-    // Stripe path still expects the legacy 'monthly' | 'yearly' literal until
-    // the checkout endpoint is generalised — guard non-standard slugs.
-    if (planType !== 'monthly' && planType !== 'yearly') {
-      console.warn(`Stripe checkout does not yet support plan '${planType}'`);
-      return;
-    }
-    setProcessingPlan(planType);
-    try {
-      await createCheckout(planType);
-    } catch {
-      // Error is handled in context
-    } finally {
-      setProcessingPlan(null);
-    }
+    // Manual bank-transfer / PromptPay only — confirm terms, then go to the
+    // slip-upload page.
+    setPendingPlanType(planType);
+    setTermsAccepted(false);
+    setShowTermsDialog(true);
   };
 
   const handleConfirmTransfer = () => {
@@ -234,33 +196,9 @@ const Subscription = () => {
     }
   };
 
-  const handleChangePlan = async (newPlan: 'monthly' | 'yearly') => {
-    setChangingPlan(true);
-    try {
-      await changePlanPortal(newPlan);
-    } catch {
-      // Error handled in context
-    } finally {
-      setChangingPlan(false);
-    }
-  };
-
-  const handleCancel = async () => {
-    setCanceling(true);
-    try {
-      await cancelSubscription();
-    } finally {
-      setCanceling(false);
-    }
-  };
-
-  const handleReactivate = async () => {
-    setReactivating(true);
-    try {
-      await reactivateSubscription();
-    } finally {
-      setReactivating(false);
-    }
+  // Renew / switch plan = upload a new transfer slip for the chosen plan.
+  const handleChangePlan = (newPlan: 'monthly' | 'yearly') => {
+    navigate(`/subscription/transfer-v2?plan=${newPlan}`);
   };
 
   const formatDate = (dateStr: string | null) => {
@@ -339,15 +277,10 @@ const Subscription = () => {
                     {currentPlan !== 'monthly' && (
                       <Button
                         onClick={() => handleChangePlan('monthly')}
-                        disabled={changingPlan}
                         variant="outline"
                         className="w-full border-[#FFB300]/50 hover:bg-[#FFB300]/10"
                       >
-                        {changingPlan ? (
-                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('subscription.changingPlan')}</>
-                        ) : (
-                          t('subscription.downgradeToMonthly')
-                        )}
+                        {t('subscription.downgradeToMonthly')}
                       </Button>
                     )}
                   </div>
@@ -393,63 +326,32 @@ const Subscription = () => {
                     {currentPlan !== 'yearly' && (
                       <Button
                         onClick={() => handleChangePlan('yearly')}
-                        disabled={changingPlan}
                         className="w-full bg-gradient-to-r from-[#FFD700] via-[#FFB300] to-[#FFA500] hover:opacity-90 text-black font-bold"
                       >
-                        {changingPlan ? (
-                          <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('subscription.changingPlan')}</>
-                        ) : (
-                          t('subscription.upgradeToYearly')
-                        )}
+                        {t('subscription.upgradeToYearly')}
                       </Button>
                     )}
                   </div>
                 </div>
               </div>
 
-              {/* Actions */}
+              {/* Actions — manual transfer membership: renew by uploading a new
+                  slip; no recurring billing to manage or cancel. */}
               <div className="max-w-md mx-auto flex flex-col gap-3">
                 <Button
-                  onClick={() => openBillingPortal()}
+                  onClick={() => navigate('/subscription/transfer-v2')}
                   variant="outline"
                   className="w-full"
                 >
-                  <CreditCard className="h-4 w-4 mr-2" />
-                  {t('subscription.manageBilling')}
+                  <CalendarDays className="h-4 w-4 mr-2" />
+                  ต่ออายุสมาชิก
                 </Button>
 
-                {subscription.cancelAtPeriodEnd ? (
-                  <Button
-                    onClick={handleReactivate}
-                    disabled={reactivating}
-                    className="w-full bg-green-600 hover:bg-green-700"
-                  >
-                    {reactivating ? (
-                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('subscription.reactivating')}</>
-                    ) : (
-                      t('subscription.reactivate')
-                    )}
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={handleCancel}
-                    disabled={canceling}
-                    variant="destructive"
-                    className="w-full"
-                  >
-                    {canceling ? (
-                      <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{t('subscription.canceling')}</>
-                    ) : (
-                      t('subscription.cancelSubscription')
-                    )}
-                  </Button>
-                )}
-
                 <Button
-                  onClick={() => navigate('/')}
+                  onClick={() => navigate('/courses')}
                   className="w-full bg-gradient-to-r from-[#FFB300] via-[#FFC233] to-[#FF9D00] hover:opacity-90"
                 >
-                  {t('subscription.goToScheduler')}
+                  ไปที่คอร์สเรียน
                 </Button>
               </div>
             </div>
@@ -574,15 +476,6 @@ const Subscription = () => {
                           </li>
                         ))}
                       </ul>
-
-                      <div className="text-[11px] text-red-400/90 mt-3 mb-3 px-3 py-2.5 rounded-lg bg-red-500/5 border border-red-500/10">
-                        <p className="font-semibold mb-1.5">*หมายเหตุ — ไม่รวมค่าบริการ API</p>
-                        <ul className="space-y-1 list-none">
-                          <li>• <span className="font-medium text-red-300">Openrouter</span> — คิด Caption เริ่มต้น ~1xx บาท/เดือน</li>
-                          <li>• <span className="font-medium text-red-300">KIE AI</span> — สร้างภาพและ VDO เริ่มต้น ~1xx บาท</li>
-                          <li>• <span className="font-medium text-red-300">Post for ME</span> — โพสต์ Platform ต่างๆ 0.4 บาท/โพสต์</li>
-                        </ul>
-                      </div>
 
                       <Button
                         disabled={processingPlan === plan.id}

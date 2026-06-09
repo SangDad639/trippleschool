@@ -918,12 +918,6 @@ const Admin = () => {
             <div className="flex items-center gap-2">
               <Button
                 variant="outline"
-                onClick={() => navigate('/admin/prompts')}
-              >
-                Prompts
-              </Button>
-              <Button
-                variant="outline"
                 onClick={() => navigate('/admin/affiliate')}
               >
                 Affiliate
@@ -939,12 +933,6 @@ const Admin = () => {
                 onClick={() => navigate('/admin/courses')}
               >
                 คอร์สเรียน
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => navigate('/admin/enrollments')}
-              >
-                อนุมัติสมัครเรียน
               </Button>
             </div>
           </div>

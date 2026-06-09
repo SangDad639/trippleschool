@@ -92,17 +92,28 @@ const CourseLearn = () => {
     try {
       setLoading(true);
       const data = await api.getCourseFull(slug!);
-      if (!data.isEnrolled || data.enrollment?.status !== 'approved') {
-        toast.error('คุณต้องลงทะเบียนและได้รับการอนุมัติก่อน');
-        navigate(`/app/courses/${slug}`);
+      // isEnrolled now means "has an active subscription (or admin)".
+      if (!data.isEnrolled) {
+        toast.error('กรุณาสมัครสมาชิกเพื่อเข้าเรียน');
+        navigate('/subscription/transfer-v2');
         return;
       }
+      // Ensure a progress row exists (auto-created, idempotent — no slip/approval).
+      let enrollmentRow = data.enrollment;
+      if (!enrollmentRow) {
+        try {
+          const started = await api.startCourse(data.id);
+          enrollmentRow = started.enrollment;
+        } catch {
+          // Progress tracking is non-critical; keep playing even if it fails.
+        }
+      }
       setCourse(data);
-      setEnrollment(data.enrollment);
+      setEnrollment(enrollmentRow);
     } catch (error) {
       console.error('Failed to load course:', error);
       toast.error('โหลดคอร์สไม่สำเร็จ');
-      navigate('/app/courses');
+      navigate('/courses');
     } finally {
       setLoading(false);
     }
@@ -203,7 +214,7 @@ const CourseLearn = () => {
         <div className={`flex-1 ${sidebarOpen ? 'lg:mr-[320px]' : ''} transition-all duration-300`}>
           <div className="p-4 lg:p-6 max-w-5xl mx-auto">
             <div className="flex items-center justify-between mb-3">
-              <Button variant="ghost" onClick={() => navigate(`/app/courses/${slug}`)} className="text-gray-400 hover:text-white h-8">
+              <Button variant="ghost" onClick={() => navigate(`/courses/${slug}`)} className="text-gray-400 hover:text-white h-8">
                 <ArrowLeft className="h-4 w-4 mr-2" />กลับไปหน้าคอร์ส
               </Button>
               <Button variant="ghost" onClick={() => setSidebarOpen(!sidebarOpen)} className="lg:hidden text-gray-400 h-8 w-8 p-0">

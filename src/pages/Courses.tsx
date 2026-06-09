@@ -46,7 +46,9 @@ const difficultyLabels: Record<string, string> = {
   advanced: 'ขั้นสูง',
 };
 
-const Courses = () => {
+// basePath lets the same grid power both the in-app catalog (/app/courses) and
+// the public catalog/storefront (/courses).
+const Courses = ({ basePath = '/app/courses' }: { basePath?: string } = {}) => {
   const navigate = useNavigate();
   const [courses, setCourses] = useState<Course[]>([]);
   const [filteredCourses, setFilteredCourses] = useState<Course[]>([]);
@@ -131,7 +133,7 @@ const Courses = () => {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {featuredCourses.map((course) => (
-              <CourseCard key={course.id} course={course} onClick={() => navigate(`/app/courses/${course.slug}`)} />
+              <CourseCard key={course.id} course={course} onClick={() => navigate(`${basePath}/${course.slug}`)} />
             ))}
           </div>
         </div>
@@ -154,7 +156,7 @@ const Courses = () => {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {filteredCourses.map((course) => (
-              <CourseCard key={course.id} course={course} onClick={() => navigate(`/app/courses/${course.slug}`)} />
+              <CourseCard key={course.id} course={course} onClick={() => navigate(`${basePath}/${course.slug}`)} />
             ))}
           </div>
         )}
@@ -213,23 +215,6 @@ const CourseCard = ({ course, onClick }: { course: Course; onClick: () => void }
             <span className="text-gray-400 text-xs">{course.instructor_name}</span>
           </div>
         )}
-
-        <div className="mb-2">
-          {course.price > 0 ? (
-            <div className="flex items-center gap-2">
-              {course.discount_price !== null && course.discount_price < course.price ? (
-                <>
-                  <span className="text-purple-400 font-bold text-sm">฿{course.discount_price.toLocaleString()}</span>
-                  <span className="text-gray-500 text-xs line-through">฿{course.price.toLocaleString()}</span>
-                </>
-              ) : (
-                <span className="text-purple-400 font-bold text-sm">฿{course.price.toLocaleString()}</span>
-              )}
-            </div>
-          ) : (
-            <span className="text-green-400 font-bold text-sm">ฟรี</span>
-          )}
-        </div>
 
         <div className="flex items-center justify-between text-xs">
           <div className="flex items-center gap-3 text-gray-400">

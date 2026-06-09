@@ -9,49 +9,16 @@ import authRoutes from './routes/auth.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-import schedulerChannelsRoutes from './routes/schedulerChannels.js';
-import scheduleQueueRoutes from './routes/scheduleQueue.js';
-import timePresetsRoutes from './routes/timePresets.js';
-import schedulerMigrationRoutes from './routes/schedulerMigration.js';
-import schedulerDraftsRoutes from './routes/schedulerDrafts.js';
-import genTaskDraftsRoutes from './routes/genTaskDrafts.js';
-import promptTemplatesRoutes from './routes/promptTemplates.js';
-import promptDirectRoutes from './routes/promptDirect.js';
 import subscriptionRoutes from './routes/subscription.js';
 import adminRoutes from './routes/admin.js';
 import affiliateRoutes from './routes/affiliate.js';
-import viralTemplatesRoutes from './routes/viralTemplates.js';
-import idolTemplatesRoutes from './routes/idolTemplates.js';
-import contentHistoryRoutes from './routes/contentHistory.js';
-import creditsRoutes from './routes/credits.js';
-import creditPurchaseRoutes from './routes/creditPurchase.js';
 import tutorialsRoutes from './routes/tutorials.js';
-import gptImage2Routes from './routes/gptImage2.js';
-import grokImagineRoutes from './routes/grokImagine.js';
-import nanoBanana2Routes from './routes/nanoBanana2.js';
-import nanoBananaProRoutes from './routes/nanoBananaPro.js';
-import storyTemplateGalleryRoutes from './routes/storyTemplateGallery.js';
-import storyTemplateRoutes from './routes/storyTemplate.js';
-import imageTemplateRoutes from './routes/imageTemplate.js';
-import kling3MotionControlRoutes from './routes/kling3MotionControl.js';
 import couponsRoutes from './routes/coupons.js';
-import storyAgentRoutes from './routes/storyAgent.js';
-import storyAgentChatRoutes from './routes/storyAgentChat.js';
-import userSkillsRoutes from './routes/userSkills.js';
 import coursesRoutes from './routes/courses.js';
 import enrollmentsRoutes from './routes/enrollments.js';
 import pool from './db.js';
-import { startAutoRetryJob } from './jobs/autoRetryJob.js';
-import { startStoryAgentRunner } from './jobs/storyAgentRunnerJob.js';
-import { startRecoveryJob } from './jobs/recoveryJob.js';
-import { startViralRunnerJob } from './jobs/viralRunnerJob.js';
-import { startIdolRunnerJob } from './jobs/idolRunnerJob.js';
-import { startStoryTemplateRunner } from './jobs/storyTemplateRunner.js';
-import { startSoraPrefetchJob } from './jobs/soraPrefetchJob.js';
 import { startSubscriptionCheckJob } from './jobs/subscriptionCheckJob.js';
 import { startSubscriptionNotificationJob } from './jobs/subscriptionNotificationJob.js';
-import { startDropboxCleanupJob } from './jobs/dropboxCleanupJob.js';
-import { startPromptDirectRunnerJob } from './jobs/promptDirectRunnerJob.js';
 
 // ========== STARTUP ENV VALIDATION ==========
 const REQUIRED_ENV_VARS = ['DATABASE_URL', 'JWT_SECRET'] as const;
@@ -134,35 +101,11 @@ app.get('/health', (req, res) => {
 
 // API Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/scheduler/channels', schedulerChannelsRoutes);
-app.use('/api/scheduler/queue', scheduleQueueRoutes);
-app.use('/api/scheduler/time-presets', timePresetsRoutes);
-app.use('/api/scheduler', schedulerMigrationRoutes);
-app.use('/api/scheduler/drafts', schedulerDraftsRoutes);
-app.use('/api/scheduler/gen-tasks', genTaskDraftsRoutes);
-app.use('/api/prompt-templates', promptTemplatesRoutes);
-app.use('/api/prompt-direct', promptDirectRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/affiliate', affiliateRoutes);
-app.use('/api/viral-templates', viralTemplatesRoutes);
-app.use('/api/idol-templates', idolTemplatesRoutes);
-app.use('/api/content-history', contentHistoryRoutes);
-app.use('/api/credits', creditsRoutes);
-app.use('/api/credit-purchase', creditPurchaseRoutes);
 app.use('/api/tutorials', tutorialsRoutes);
-app.use('/api/gpt-image-2', gptImage2Routes);
-app.use('/api/grok-imagine', grokImagineRoutes);
-app.use('/api/nano-banana-2', nanoBanana2Routes);
-app.use('/api/nano-banana-pro', nanoBananaProRoutes);
-app.use('/api/story-template-gallery', storyTemplateGalleryRoutes);
-app.use('/api/story-template', storyTemplateRoutes);
-app.use('/api/image-template', imageTemplateRoutes);
-app.use('/api/kling-3-motion-control', kling3MotionControlRoutes);
 app.use('/api/coupons', couponsRoutes);
-app.use('/api/story-agent', storyAgentRoutes);
-app.use('/api/story-agent/chat', storyAgentChatRoutes);
-app.use('/api/skills', userSkillsRoutes);
 app.use('/api/courses', coursesRoutes);
 app.use('/api/enrollments', enrollmentsRoutes);
 
@@ -233,47 +176,13 @@ app.listen(PORT, () => {
 
   console.log('▶️  Starting cron jobs (RUN_JOBS=true)');
 
-  // Start cron jobs
-  startAutoRetryJob();
-  console.log('Auto-retry job started');
-
-  // Start recovery job for stuck video tasks
-  startRecoveryJob();
-  console.log('Recovery job started');
-
-  // Start viral runner job
-  startViralRunnerJob();
-  console.log('Viral runner job started');
-
-  // Start idol runner job
-  startIdolRunnerJob();
-  console.log('Idol runner job started');
-
-  // Start story template runner job
-  startStoryTemplateRunner();
-
-  // Start prompt direct runner job
-  startPromptDirectRunnerJob();
-  console.log('Prompt direct runner job started');
-
-  // Start Sora video prefetch job
-  startSoraPrefetchJob();
-  console.log('Sora prefetch job started');
-
-  // Start subscription check job (hourly sync with Stripe)
+  // Start subscription check job (marks expired memberships)
   startSubscriptionCheckJob();
   console.log('Subscription check job started');
 
   // Start subscription notification job (expiration warnings)
   startSubscriptionNotificationJob();
   console.log('Subscription notification job started');
-
-  // Start Dropbox cleanup job (delete videos older than 60 days)
-  startDropboxCleanupJob();
-
-  // Start AI Agent pipeline orchestrator
-  startStoryAgentRunner();
-  console.log('Story Agent runner job started');
 });
 
 export default app;

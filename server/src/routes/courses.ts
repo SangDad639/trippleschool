@@ -8,6 +8,7 @@ import multer from 'multer';
 import pool from '../db.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { uploadFile, getFile } from '../utils/s3.js';
+import { hasActiveSubscription } from '../services/stripeService.js';
 
 const router = Router();
 
@@ -446,6 +447,38 @@ router.put('/:courseId/lessons/reorder', authenticate, async (req: AuthRequest, 
   }
 });
 
+// ============ Authed: single lesson video (subscription-gated) ============
+// Authoritative gate for paid lesson playback. Free (is_preview) lessons return
+// youtube to any authenticated user; paid lessons require an active subscription
+// (or admin). Paid youtube ids are never included in any list/detail payload —
+// the player fetches them one lesson at a time through this endpoint.
+router.get('/:slug/lessons/:lessonId/video', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { slug, lessonId } = req.params;
+    const courseResult = await pool.query(`SELECT id FROM courses WHERE slug = $1 AND is_active = true`, [slug]);
+    if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
+    const courseId = courseResult.rows[0].id;
+    const lessonResult = await pool.query(
+      `SELECT id, title, youtube_id, youtube_url, is_preview FROM lessons WHERE id = $1 AND course_id = $2 AND is_active = true`,
+      [lessonId, courseId]
+    );
+    if (lessonResult.rows.length === 0) return res.status(404).json({ error: 'Lesson not found' });
+    const lesson = lessonResult.rows[0];
+    const hasAccess = lesson.is_preview || req.isAdmin || (req.userId ? await hasActiveSubscription(req.userId) : false);
+    if (!hasAccess) {
+      return res.status(403).json({
+        error: 'กรุณาสมัครสมาชิกเพื่อรับชมบทเรียนนี้',
+        code: 'NO_SUBSCRIPTION',
+        subscriptionUrl: '/subscription/transfer-v2',
+      });
+    }
+    res.json({ id: lesson.id, title: lesson.title, youtube_id: lesson.youtube_id, youtube_url: lesson.youtube_url });
+  } catch (error) {
+    console.error('Error fetching lesson video:', error);
+    res.status(500).json({ error: 'Failed to fetch lesson video' });
+  }
+});
+
 // ============ Public: course by slug, full (auth) variant ============
 // NOTE: keep these single/double-segment :slug routes LAST so they don't shadow
 // the literal routes above (admin, sections, lessons, thumbnails).
@@ -457,11 +490,15 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
     const courseResult = await pool.query(`SELECT * FROM courses WHERE slug = $1 AND is_active = true`, [slug]);
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const course = courseResult.rows[0];
-    const enrollmentResult = await pool.query(`
-      SELECT * FROM course_enrollments WHERE user_id = $1 AND course_id = $2 AND status = 'approved'
-    `, [userId, course.id]);
-    const isEnrolled = enrollmentResult.rows.length > 0;
-    const enrollment = isEnrolled ? enrollmentResult.rows[0] : null;
+    // Subscription membership: an active subscription (or admin) unlocks every paid
+    // lesson across all courses. There is no per-course purchase any more.
+    const hasSub = req.isAdmin || (userId ? await hasActiveSubscription(userId) : false);
+    // course_enrollments is now just a progress row (auto-created on first study).
+    const enrollmentResult = await pool.query(
+      `SELECT * FROM course_enrollments WHERE user_id = $1 AND course_id = $2`,
+      [userId, course.id]
+    );
+    const enrollment = enrollmentResult.rows[0] || null;
     const sectionsResult = await pool.query(`
       SELECT id, title, description, section_order FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
     `, [course.id]);
@@ -470,12 +507,13 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
     const lessons = lessonsResult.rows.map((lesson) => {
-      if (!isEnrolled && !lesson.is_preview) return { ...lesson, youtube_url: null, youtube_id: null };
+      if (!hasSub && !lesson.is_preview) return { ...lesson, youtube_url: null, youtube_id: null };
       return lesson;
     });
     const sections = sectionsResult.rows.map((section) => ({ ...section, lessons: lessons.filter(l => l.section_id === section.id) }));
     const unassignedLessons = lessons.filter(l => l.section_id === null);
-    res.json({ ...course, sections, unassigned_lessons: unassignedLessons, lessons, enrollment, isEnrolled });
+    // isEnrolled kept as an alias of hasSub for backward-compatible FE checks.
+    res.json({ ...course, sections, unassigned_lessons: unassignedLessons, lessons, enrollment, hasAccess: hasSub, isEnrolled: hasSub });
   } catch (error) {
     console.error('Error fetching course:', error);
     res.status(500).json({ error: 'Failed to fetch course' });
@@ -492,12 +530,15 @@ router.get('/:slug', async (req, res) => {
       SELECT id, title, description, section_order FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
-      SELECT id, title, description, youtube_id, duration_minutes, lesson_order, is_preview, section_id
+      SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
-    const sections = sectionsResult.rows.map((section) => ({ ...section, lessons: lessonsResult.rows.filter(l => l.section_id === section.id) }));
-    const unassignedLessons = lessonsResult.rows.filter(l => l.section_id === null);
-    res.json({ ...course, sections, unassigned_lessons: unassignedLessons, lessons: lessonsResult.rows });
+    // Public payload: only preview lessons expose youtube; paid lessons are nulled
+    // so their video id never reaches an unauthenticated visitor.
+    const lessons = lessonsResult.rows.map((l) => (l.is_preview ? l : { ...l, youtube_id: null, youtube_url: null }));
+    const sections = sectionsResult.rows.map((section) => ({ ...section, lessons: lessons.filter(l => l.section_id === section.id) }));
+    const unassignedLessons = lessons.filter(l => l.section_id === null);
+    res.json({ ...course, sections, unassigned_lessons: unassignedLessons, lessons });
   } catch (error) {
     console.error('Error fetching course:', error);
     res.status(500).json({ error: 'Failed to fetch course' });

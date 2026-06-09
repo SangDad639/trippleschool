@@ -1,12 +1,12 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSubscription } from '@/contexts/SubscriptionContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import {
   Loader2,
@@ -19,9 +19,6 @@ import {
   CheckCircle,
   ArrowLeft,
   GraduationCap,
-  AlertCircle,
-  Upload,
-  X,
   FolderOpen,
 } from 'lucide-react';
 
@@ -67,7 +64,6 @@ interface Course {
 interface Enrollment {
   id: number;
   status: string;
-  rejection_reason: string;
   progress_percent: number;
   completed_lessons: number[];
   last_lesson_id: number;
@@ -89,24 +85,19 @@ const CourseDetail = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { hasSubscription } = useSubscription();
   const isAuthenticated = !!user;
+  // Membership: an active subscription (or admin) unlocks every paid lesson.
+  const hasAccess = hasSubscription || !!user?.isAdmin;
   const [course, setCourse] = useState<Course | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
-  const [isEnrolled, setIsEnrolled] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [enrolling, setEnrolling] = useState(false);
   const [previewLesson, setPreviewLesson] = useState<Lesson | null>(null);
-
-  const [enrollDialogOpen, setEnrollDialogOpen] = useState(false);
-  const [slipFile, setSlipFile] = useState<File | null>(null);
-  const [slipPreview, setSlipPreview] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (slug) loadCourse();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, isAuthenticated]);
+  }, [slug, isAuthenticated, hasAccess]);
 
   const loadCourse = async () => {
     try {
@@ -115,7 +106,6 @@ const CourseDetail = () => {
         const data = await api.getCourseFull(slug!);
         setCourse(data);
         setEnrollment(data.enrollment);
-        setIsEnrolled(data.isEnrolled);
       } else {
         const data = await api.getCourse(slug!);
         setCourse(data);
@@ -123,63 +113,13 @@ const CourseDetail = () => {
     } catch (error) {
       console.error('Failed to load course:', error);
       toast.error('โหลดคอร์สไม่สำเร็จ');
-      navigate('/app/courses');
+      navigate('/courses');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleOpenEnrollDialog = () => {
-    setSlipFile(null);
-    setSlipPreview(null);
-    setEnrollDialogOpen(true);
-  };
-
-  const handleSlipFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-      if (!allowedTypes.includes(file.type)) {
-        toast.error('กรุณาอัพโหลดไฟล์รูปภาพ (JPG, PNG, GIF, WebP)');
-        return;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        toast.error('กรุณาอัพโหลดไฟล์ขนาดไม่เกิน 10MB');
-        return;
-      }
-      setSlipFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => setSlipPreview(reader.result as string);
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const handleRemoveSlip = () => {
-    setSlipFile(null);
-    setSlipPreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
-
-  const handleEnroll = async () => {
-    if (!slipFile) {
-      toast.error('กรุณาอัพโหลดสลิปการชำระเงินก่อนลงทะเบียน');
-      return;
-    }
-    try {
-      setEnrolling(true);
-      setUploading(true);
-      await api.enrollCourse(course!.id, slipFile);
-      setUploading(false);
-      toast.success('ลงทะเบียนสำเร็จ — รอการอนุมัติจาก Admin');
-      setEnrollDialogOpen(false);
-      loadCourse();
-    } catch (error: any) {
-      toast.error(error.message || 'ลงทะเบียนไม่สำเร็จ');
-    } finally {
-      setEnrolling(false);
-      setUploading(false);
-    }
-  };
+  const goToSubscribe = () => navigate('/subscription/transfer-v2');
 
   const handleStartLearning = () => {
     if (course && course.lessons.length > 0) {
@@ -222,7 +162,7 @@ const CourseDetail = () => {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="max-w-5xl mx-auto px-4 py-6">
-        <Button variant="ghost" onClick={() => navigate('/app/courses')} className="mb-4 text-gray-400 hover:text-white">
+        <Button variant="ghost" onClick={() => navigate('/courses')} className="mb-4 text-gray-400 hover:text-white">
           <ArrowLeft className="h-4 w-4 mr-2" />
           กลับไปหน้าคอร์สทั้งหมด
         </Button>
@@ -289,70 +229,39 @@ const CourseDetail = () => {
                   </div>
                 </div>
 
-                <div className="mb-4 pt-3 border-t border-gray-700">
-                  {course.price > 0 ? (
-                    <div className="text-center">
-                      {course.discount_price !== null && course.discount_price < course.price ? (
-                        <div>
-                          <span className="text-purple-400 font-bold text-xl">฿{course.discount_price.toLocaleString()}</span>
-                          <span className="text-gray-500 text-sm line-through ml-2">฿{course.price.toLocaleString()}</span>
-                          <div className="text-green-400 text-xs mt-0.5">ลด {Math.round((1 - course.discount_price / course.price) * 100)}%</div>
-                        </div>
-                      ) : (
-                        <span className="text-purple-400 font-bold text-xl">฿{course.price.toLocaleString()}</span>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center"><span className="text-green-400 font-bold text-xl">ฟรี</span></div>
-                  )}
+                <div className="mb-4 pt-3 border-t border-gray-700 text-center">
+                  <span className="text-purple-400 text-sm font-medium">เข้าถึงด้วยสมาชิกรายเดือน / รายปี</span>
                 </div>
 
-                {enrollment ? (
+                {hasAccess ? (
                   <div className="space-y-2">
-                    {enrollment.status === 'approved' && (
-                      <>
-                        <div className="flex items-center gap-1.5 text-green-400 text-sm mb-1">
-                          <CheckCircle className="h-3.5 w-3.5" /><span>ลงทะเบียนแล้ว</span>
+                    <div className="flex items-center gap-1.5 text-green-400 text-sm mb-1">
+                      <CheckCircle className="h-3.5 w-3.5" /><span>คุณเป็นสมาชิก เข้าถึงได้ทุกบทเรียน</span>
+                    </div>
+                    {enrollment && enrollment.progress_percent > 0 && (
+                      <div className="mb-2">
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="text-gray-400">ความคืบหน้า</span>
+                          <span className="text-white">{enrollment.progress_percent}%</span>
                         </div>
-                        {enrollment.progress_percent > 0 && (
-                          <div className="mb-2">
-                            <div className="flex justify-between text-xs mb-1">
-                              <span className="text-gray-400">ความคืบหน้า</span>
-                              <span className="text-white">{enrollment.progress_percent}%</span>
-                            </div>
-                            <div className="w-full bg-gray-700 rounded-full h-1.5">
-                              <div className="bg-purple-500 h-1.5 rounded-full transition-all" style={{ width: `${enrollment.progress_percent}%` }} />
-                            </div>
-                          </div>
-                        )}
-                        <Button onClick={enrollment.last_lesson_id ? handleContinueLearning : handleStartLearning} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
-                          <Play className="h-3.5 w-3.5 mr-1.5" />
-                          {enrollment.last_lesson_id ? 'เรียนต่อ' : 'เริ่มเรียน'}
-                        </Button>
-                      </>
-                    )}
-                    {enrollment.status === 'pending' && (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-1.5 text-yellow-400 text-sm"><AlertCircle className="h-3.5 w-3.5" /><span>รอการอนุมัติ</span></div>
-                        <Button variant="outline" onClick={handleOpenEnrollDialog} className="w-full h-8 text-sm" disabled={enrolling}>
-                          {enrolling && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}อัพเดทสลิป
-                        </Button>
+                        <div className="w-full bg-gray-700 rounded-full h-1.5">
+                          <div className="bg-purple-500 h-1.5 rounded-full transition-all" style={{ width: `${enrollment.progress_percent}%` }} />
+                        </div>
                       </div>
                     )}
-                    {enrollment.status === 'rejected' && (
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-1.5 text-red-400 text-sm"><AlertCircle className="h-3.5 w-3.5" /><span>ถูกปฏิเสธ</span></div>
-                        {enrollment.rejection_reason && <p className="text-gray-400 text-xs">{enrollment.rejection_reason}</p>}
-                        <Button onClick={handleOpenEnrollDialog} className="w-full h-8 text-sm" disabled={enrolling}>
-                          {enrolling && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}ลงทะเบียนใหม่
-                        </Button>
-                      </div>
-                    )}
+                    <Button onClick={enrollment?.last_lesson_id ? handleContinueLearning : handleStartLearning} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
+                      <Play className="h-3.5 w-3.5 mr-1.5" />
+                      {enrollment?.last_lesson_id ? 'เรียนต่อ' : 'เริ่มเรียน'}
+                    </Button>
                   </div>
                 ) : (
-                  <Button onClick={handleOpenEnrollDialog} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
-                    ลงทะเบียนคอร์สนี้
-                  </Button>
+                  <div className="space-y-2">
+                    <Button onClick={goToSubscribe} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
+                      <Lock className="h-3.5 w-3.5 mr-1.5" />
+                      สมัครสมาชิกเพื่อปลดล็อก
+                    </Button>
+                    <p className="text-gray-500 text-xs text-center">ดูบทเรียนตัวอย่างฟรี • สมาชิกดูได้ทุกคอร์ส</p>
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -378,7 +287,7 @@ const CourseDetail = () => {
               const hasSections = sections.length > 0;
 
               const renderLessonRow = (lesson: Lesson, index: number) => {
-                const canAccess = isEnrolled || lesson.is_preview;
+                const canAccess = lesson.is_preview || hasAccess;
                 const isCompleted = enrollment?.completed_lessons?.includes(lesson.id);
                 return (
                   <div
@@ -387,8 +296,10 @@ const CourseDetail = () => {
                     onClick={() => {
                       if (lesson.is_preview && lesson.youtube_id) {
                         setPreviewLesson(previewLesson?.id === lesson.id ? null : lesson);
-                      } else if (isEnrolled) {
+                      } else if (hasAccess) {
                         navigate(`/app/courses/${course.slug}/learn/${lesson.id}`);
+                      } else {
+                        goToSubscribe();
                       }
                     }}
                   >
@@ -407,7 +318,7 @@ const CourseDetail = () => {
                         <Badge className="bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs px-1.5 py-0.5">
                           <Unlock className="h-3 w-3 mr-1" />Preview
                         </Badge>
-                      ) : !isEnrolled ? (
+                      ) : !hasAccess ? (
                         <Lock className="h-3.5 w-3.5 text-gray-500" />
                       ) : null}
                     </div>
@@ -446,7 +357,7 @@ const CourseDetail = () => {
                                 <div className="flex items-center gap-2 text-gray-400 text-xs">
                                   <span>{sectionLessons.length} บท</span>
                                   {totalDuration > 0 && <span>{formatDuration(totalDuration)}</span>}
-                                  {isEnrolled && completedCount > 0 && (
+                                  {hasAccess && completedCount > 0 && (
                                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{completedCount}/{sectionLessons.length}</Badge>
                                   )}
                                 </div>
@@ -484,44 +395,6 @@ const CourseDetail = () => {
           </CardContent>
         </Card>
       </div>
-
-      <Dialog open={enrollDialogOpen} onOpenChange={setEnrollDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader><DialogTitle className="text-xl">ลงทะเบียนคอร์ส</DialogTitle></DialogHeader>
-          <div className="space-y-4">
-            <div className="text-center pb-4 border-b border-gray-700">
-              <h3 className="text-lg font-medium text-white">{course?.name}</h3>
-              <p className="text-gray-400 text-sm mt-1">กรุณาแนบสลิปการชำระเงินเพื่อลงทะเบียน</p>
-            </div>
-
-            <div className="space-y-3">
-              <label className="text-sm font-medium text-gray-300">สลิปการชำระเงิน <span className="text-red-400">*</span></label>
-              {slipPreview ? (
-                <div className="relative">
-                  <img src={slipPreview} alt="Payment slip preview" className="w-full max-h-64 object-contain rounded-lg border border-gray-700 bg-gray-800" />
-                  <Button variant="destructive" size="icon" className="absolute top-2 right-2 h-8 w-8" onClick={handleRemoveSlip}><X className="h-4 w-4" /></Button>
-                </div>
-              ) : (
-                <div className="border-2 border-dashed border-gray-600 rounded-lg p-8 text-center cursor-pointer hover:border-purple-500 transition-colors" onClick={() => fileInputRef.current?.click()}>
-                  <Upload className="h-10 w-10 text-gray-500 mx-auto mb-3" />
-                  <p className="text-gray-400 mb-1">คลิกเพื่ออัพโหลดสลิป</p>
-                  <p className="text-gray-500 text-sm">รองรับ JPG, PNG, GIF, WebP (ไม่เกิน 10MB)</p>
-                </div>
-              )}
-              <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/gif,image/webp" onChange={handleSlipFileChange} className="hidden" />
-            </div>
-
-            <p className="text-gray-500 text-xs">* หลังจากส่งคำขอลงทะเบียนแล้ว Admin จะตรวจสอบสลิปและอนุมัติการเข้าถึงคอร์สให้</p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEnrollDialogOpen(false)} disabled={enrolling}>ยกเลิก</Button>
-            <Button onClick={handleEnroll} disabled={enrolling || !slipFile} className="bg-purple-600 hover:bg-purple-700">
-              {uploading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {uploading ? 'กำลังอัพโหลด...' : enrolling ? 'กำลังลงทะเบียน...' : 'ยืนยันลงทะเบียน'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 };

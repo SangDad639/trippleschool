@@ -108,54 +108,20 @@ export const SubscriptionProvider: React.FC<{ children: React.ReactNode }> = ({ 
     }
   }, [user]);
 
-  // Load subscription when user changes, and verify checkout session if returning from Stripe
+  // Load subscription whenever the user changes.
   useEffect(() => {
-    const verifyAndRefresh = async () => {
-      if (!user) {
-        refreshSubscription();
-        return;
-      }
-
-      // Check if returning from Stripe checkout
-      const params = new URLSearchParams(window.location.search);
-      const sessionId = params.get('session_id');
-
-      if (sessionId) {
-        try {
-          await api.verifyCheckoutSession(sessionId);
-          // Pixel Tracking: Purchase (Stripe)
-          window.ttq?.track('Purchase', { currency: 'THB' });
-          window.fbq?.('track', 'Purchase', { currency: 'THB' });
-          window.gtag?.('event', 'purchase', { currency: 'THB' });
-          // Clean up URL
-          window.history.replaceState({}, '', window.location.pathname);
-        } catch (err) {
-          console.error('Failed to verify checkout session:', err);
-        }
-      }
-
-      await refreshSubscription();
-    };
-
-    verifyAndRefresh();
+    refreshSubscription();
   }, [refreshSubscription, user]);
 
+  // Stripe removed — "checkout" now routes the user to the manual bank-transfer
+  // / PromptPay slip-upload page. Kept on the context so existing callers keep
+  // working without a Stripe dependency.
   const createCheckout = async (planType: 'monthly' | 'yearly') => {
-    try {
-      setError(null);
-      const result = await api.createCheckoutSession(planType);
-      // Pixel Tracking: InitiateCheckout — use vat-inclusive total (what user actually pays).
-      const checkoutValue = planType === 'monthly' ? PRICING.monthly.total : PRICING.yearly.total;
-      window.ttq?.track('InitiateCheckout', { value: checkoutValue, currency: 'THB' });
-      window.fbq?.('track', 'InitiateCheckout', { value: checkoutValue, currency: 'THB' });
-      window.gtag?.('event', 'begin_checkout', { value: checkoutValue, currency: 'THB' });
-      // Redirect to Stripe Checkout
-      window.location.href = result.url;
-    } catch (err) {
-      console.error('Failed to create checkout:', err);
-      setError('Failed to start checkout process');
-      throw err;
-    }
+    const checkoutValue = planType === 'monthly' ? PRICING.monthly.total : PRICING.yearly.total;
+    window.ttq?.track('InitiateCheckout', { value: checkoutValue, currency: 'THB' });
+    window.fbq?.('track', 'InitiateCheckout', { value: checkoutValue, currency: 'THB' });
+    window.gtag?.('event', 'begin_checkout', { value: checkoutValue, currency: 'THB' });
+    window.location.href = `/subscription/transfer-v2?plan=${planType}`;
   };
 
   const changePlan = async (planType: 'monthly' | 'yearly'): Promise<boolean> => {

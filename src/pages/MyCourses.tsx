@@ -10,9 +10,7 @@ import { Progress } from '@/components/ui/progress';
 import {
   Loader2,
   BookOpen,
-  Clock,
   Play,
-  AlertCircle,
   CheckCircle,
   GraduationCap,
 } from 'lucide-react';
@@ -28,7 +26,6 @@ interface Enrollment {
   total_lessons: number;
   duration_hours: number;
   status: string;
-  rejection_reason: string;
   progress_percent: number;
   completed_lessons: number[];
   enrolled_at: string;
@@ -57,10 +54,9 @@ const MyCourses = () => {
     }
   };
 
-  const inProgressCourses = enrollments.filter((e) => e.status === 'approved' && e.progress_percent < 100);
-  const pendingCourses = enrollments.filter((e) => e.status === 'pending');
-  const completedCourses = enrollments.filter((e) => e.status === 'approved' && e.progress_percent >= 100);
-  const rejectedCourses = enrollments.filter((e) => e.status === 'rejected');
+  // Subscription model: every returned row is an active membership progress row.
+  const inProgressCourses = enrollments.filter((e) => e.progress_percent < 100);
+  const completedCourses = enrollments.filter((e) => e.progress_percent >= 100);
 
   if (loading) {
     return (
@@ -77,21 +73,15 @@ const MyCourses = () => {
           <GraduationCap className="inline-block mr-2 h-7 w-7 text-purple-400" />
           คอร์สของฉัน
         </h1>
-        <p className="text-gray-400 text-sm">จัดการคอร์สที่คุณลงทะเบียน</p>
+        <p className="text-gray-400 text-sm">คอร์สที่คุณกำลังเรียน</p>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-3 gap-4 mb-6">
         <Card>
           <CardContent className="p-4 text-center">
             <p className="text-2xl font-bold text-white">{inProgressCourses.length}</p>
             <p className="text-gray-400 text-sm">กำลังเรียน</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-2xl font-bold text-yellow-400">{pendingCourses.length}</p>
-            <p className="text-gray-400 text-sm">รออนุมัติ</p>
           </CardContent>
         </Card>
         <Card>
@@ -113,9 +103,6 @@ const MyCourses = () => {
           <TabsTrigger value="in-progress" className="data-[state=active]:bg-purple-600">
             กำลังเรียน ({inProgressCourses.length})
           </TabsTrigger>
-          <TabsTrigger value="pending" className="data-[state=active]:bg-purple-600">
-            รออนุมัติ ({pendingCourses.length})
-          </TabsTrigger>
           <TabsTrigger value="completed" className="data-[state=active]:bg-purple-600">
             เรียนจบ ({completedCourses.length})
           </TabsTrigger>
@@ -126,24 +113,12 @@ const MyCourses = () => {
             <EmptyState
               icon={<BookOpen className="h-12 w-12" />}
               title="ยังไม่มีคอร์สที่กำลังเรียน"
-              description="ลงทะเบียนคอร์สเพื่อเริ่มเรียน"
+              description="เลือกคอร์สเพื่อเริ่มเรียน"
             />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {inProgressCourses.map((enrollment) => (
-                <EnrollmentCard key={enrollment.id} enrollment={enrollment} onContinue={() => navigate(`/app/courses/${enrollment.course_slug}`)} />
-              ))}
-            </div>
-          )}
-        </TabsContent>
-
-        <TabsContent value="pending">
-          {pendingCourses.length === 0 ? (
-            <EmptyState icon={<Clock className="h-12 w-12" />} title="ไม่มีคอร์สที่รออนุมัติ" description="คอร์สที่คุณลงทะเบียนและรอการอนุมัติจะแสดงที่นี่" />
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {pendingCourses.map((enrollment) => (
-                <EnrollmentCard key={enrollment.id} enrollment={enrollment} onContinue={() => navigate(`/app/courses/${enrollment.course_slug}`)} />
+                <EnrollmentCard key={enrollment.id} enrollment={enrollment} onContinue={() => navigate(`/courses/${enrollment.course_slug}`)} />
               ))}
             </div>
           )}
@@ -155,39 +130,17 @@ const MyCourses = () => {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {completedCourses.map((enrollment) => (
-                <EnrollmentCard key={enrollment.id} enrollment={enrollment} onContinue={() => navigate(`/app/courses/${enrollment.course_slug}`)} />
+                <EnrollmentCard key={enrollment.id} enrollment={enrollment} onContinue={() => navigate(`/courses/${enrollment.course_slug}`)} />
               ))}
             </div>
           )}
         </TabsContent>
       </Tabs>
-
-      {rejectedCourses.length > 0 && (
-        <div className="mt-8">
-          <h2 className="text-lg font-semibold text-red-400 mb-4 flex items-center gap-2">
-            <AlertCircle className="h-5 w-5" />
-            การลงทะเบียนที่ถูกปฏิเสธ ({rejectedCourses.length})
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {rejectedCourses.map((enrollment) => (
-              <EnrollmentCard key={enrollment.id} enrollment={enrollment} onContinue={() => navigate(`/app/courses/${enrollment.course_slug}`)} />
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 };
 
 const EnrollmentCard = ({ enrollment, onContinue }: { enrollment: Enrollment; onContinue: () => void }) => {
-  const statusConfig: Record<string, { color: string; label: string; icon: React.ReactNode }> = {
-    pending: { color: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20', label: 'รออนุมัติ', icon: <Clock className="h-3 w-3" /> },
-    approved: { color: 'bg-green-500/10 text-green-500 border-green-500/20', label: 'กำลังเรียน', icon: <Play className="h-3 w-3" /> },
-    rejected: { color: 'bg-red-500/10 text-red-500 border-red-500/20', label: 'ถูกปฏิเสธ', icon: <AlertCircle className="h-3 w-3" /> },
-  };
-
-  const status = statusConfig[enrollment.status] ?? statusConfig.pending!;
-  const isApproved = enrollment.status === 'approved';
   const isCompleted = enrollment.progress_percent >= 100;
 
   return (
@@ -200,9 +153,9 @@ const EnrollmentCard = ({ enrollment, onContinue }: { enrollment: Enrollment; on
             <BookOpen className="h-12 w-12 text-gray-600" />
           </div>
         )}
-        <Badge className={`absolute top-2 left-2 ${status.color} border`}>
-          {status.icon}
-          <span className="ml-1">{isCompleted ? 'เรียนจบแล้ว' : status.label}</span>
+        <Badge className={`absolute top-2 left-2 border ${isCompleted ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-purple-500/10 text-purple-400 border-purple-500/20'}`}>
+          {isCompleted ? <CheckCircle className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+          <span className="ml-1">{isCompleted ? 'เรียนจบแล้ว' : 'กำลังเรียน'}</span>
         </Badge>
       </div>
 
@@ -210,29 +163,17 @@ const EnrollmentCard = ({ enrollment, onContinue }: { enrollment: Enrollment; on
         <h3 className="font-semibold text-white text-lg mb-2 line-clamp-2">{enrollment.course_name}</h3>
         {enrollment.instructor_name && <p className="text-gray-400 text-sm mb-3">{enrollment.instructor_name}</p>}
 
-        {isApproved && (
-          <div className="mb-4">
-            <div className="flex justify-between text-sm mb-1">
-              <span className="text-gray-400">ความคืบหน้า</span>
-              <span className="text-white">{enrollment.progress_percent}%</span>
-            </div>
-            <Progress value={enrollment.progress_percent} className="h-2" />
+        <div className="mb-4">
+          <div className="flex justify-between text-sm mb-1">
+            <span className="text-gray-400">ความคืบหน้า</span>
+            <span className="text-white">{enrollment.progress_percent}%</span>
           </div>
-        )}
+          <Progress value={enrollment.progress_percent} className="h-2" />
+        </div>
 
-        {enrollment.status === 'rejected' && enrollment.rejection_reason && (
-          <p className="text-red-400 text-sm mb-4">{enrollment.rejection_reason}</p>
-        )}
-
-        <Button onClick={onContinue} className={`w-full ${isApproved ? 'bg-purple-600 hover:bg-purple-700' : ''}`} variant={isApproved ? 'default' : 'outline'}>
-          {isApproved ? (
-            <>
-              <Play className="h-4 w-4 mr-2" />
-              {isCompleted ? 'ดูอีกครั้ง' : 'เรียนต่อ'}
-            </>
-          ) : (
-            'ดูรายละเอียด'
-          )}
+        <Button onClick={onContinue} className="w-full bg-purple-600 hover:bg-purple-700">
+          <Play className="h-4 w-4 mr-2" />
+          {isCompleted ? 'ดูอีกครั้ง' : 'เรียนต่อ'}
         </Button>
       </CardContent>
     </Card>

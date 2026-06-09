@@ -25,55 +25,32 @@ import { GoogleOAuthProvider, GoogleLogin } from "@react-oauth/google";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { SchedulerProvider } from "@/contexts/SchedulerContext";
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { LanguageProvider, useLanguage } from "@/contexts/LanguageContext";
-import SubscriptionWall from "@/components/SubscriptionWall";
 import SubscriptionWarningBanner from "@/components/SubscriptionWarningBanner";
 import AdminNotificationBanner from "@/components/AdminNotificationBanner";
-import { LateDeprecationBanner } from "@/components/LateDeprecationBanner";
-import Landing from "@/pages/Landing";
-import ContentScheduler from "@/pages/ContentScheduler";
+import PublicHeader from "@/components/PublicHeader";
+import Storefront from "@/pages/Storefront";
+import PublicCatalog from "@/pages/PublicCatalog";
 import Subscription from "@/pages/Subscription";
 import SubscriptionSuccess from "@/pages/SubscriptionSuccess";
 import Admin from "@/pages/Admin";
-import AdminPrompts from "@/pages/AdminPrompts";
-import PromptDirectDetail from "@/pages/PromptDirectDetail";
 import AdminAffiliate from "@/pages/AdminAffiliate";
 import AdminBanners from "@/pages/AdminBanners";
 import AdminBannerEditor from "@/pages/AdminBannerEditor";
-import AdminViralTemplates from "@/pages/AdminViralTemplates";
-import AdminLingTemplateNew from "@/pages/AdminLingTemplateNew";
-import AdminIdolTemplates from "@/pages/AdminIdolTemplates";
-import AdminStoryTemplates from "@/pages/AdminStoryTemplates";
-import AdminImageTemplates from "@/pages/AdminImageTemplates";
 import Settings from "@/pages/Settings";
 import Profile from "@/pages/Profile";
 import Affiliate from "@/pages/Affiliate";
-import Guide from "@/pages/Guide";
-import History from "@/pages/History";
 import Tutorials from "@/pages/Tutorials";
 import AffiliateInfo from "@/pages/AffiliateInfo";
-import GPTImage2 from "@/pages/GPTImage2";
-import ImageTemplateDetail from "@/pages/ImageTemplateDetail";
-import StoryTemplateDetail from "@/pages/StoryTemplateDetail";
-import ImageCustomPromptForm from "@/pages/ImageCustomPromptForm";
-import Kling3MotionControl from "@/pages/Kling3MotionControl";
-import Credits from "@/pages/Credits";
-import CreditsTopup from "@/pages/CreditsTopup";
 import Update, { UpdateDetail } from "@/pages/Update";
-import SubscriptionTransfer from "@/pages/SubscriptionTransfer";
 import SubscriptionTransferV2 from "@/pages/SubscriptionTransferV2";
 import CheckoutComplete from "@/pages/CheckoutComplete";
 import PendingApproval from "@/pages/PendingApproval";
-import ViralTemplateDetail from "@/pages/ViralTemplateDetail";
-import IdolTemplateDetail from "@/pages/IdolTemplateDetail";
 import CourseDetail from "@/pages/CourseDetail";
 import CourseLearn from "@/pages/CourseLearn";
+import MyCourses from "@/pages/MyCourses";
 import AdminCourses from "@/pages/AdminCourses";
-import AdminEnrollments from "@/pages/AdminEnrollments";
-import GuideButton from "@/components/GuideButton";
-import WelcomePopup from "@/components/WelcomePopup";
 
 // Login/Register page
 const AuthPage = () => {
@@ -165,7 +142,7 @@ const AuthPage = () => {
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
           <h1 className="text-2xl sm:text-3xl font-bold text-primary">Triple School</h1>
-          <p className="text-muted-foreground mt-2">Content Scheduler</p>
+          <p className="text-muted-foreground mt-2">คอร์สเรียนออนไลน์</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4 bg-card p-6 rounded-lg border">
@@ -326,13 +303,18 @@ const ProtectedRoute = ({ children, allowPending = false }: { children: React.Re
   return <>{children}</>;
 };
 
+// Logged-in page chrome for the in-app course pages (My Courses).
+const AppShell = ({ children }: { children: React.ReactNode }) => (
+  <div className="min-h-screen bg-background text-foreground">
+    <PublicHeader />
+    <div className="px-4 py-8">{children}</div>
+  </div>
+);
+
 /**
  * Listens for `subscription:required` events from the API layer (api.ts) and
  * performs an SPA navigation to /subscription. Replaces the old hard
- * `window.location.href` redirect which caused refresh loops on slow devices:
- *   • Burst of parallel 403s → multiple hard reloads queued
- *   • Each reload re-mounts WelcomePopup → popup spam
- *   • Pending fetches that 403 after the reload → another redirect → loop
+ * `window.location.href` redirect which caused refresh loops on slow devices.
  *
  * `firedRef` dedups bursts so navigate() runs at most once per visit to a
  * protected route. The flag resets once the user reaches /subscription* so
@@ -348,7 +330,7 @@ function SubscriptionRedirectHandler() {
       if (firedRef.current) return;
       if (location.pathname.startsWith('/subscription')) return;
       firedRef.current = true;
-      navigate('/subscription', { replace: true });
+      navigate('/subscription/transfer-v2', { replace: true });
     };
     window.addEventListener('subscription:required', onRequired as EventListener);
     return () => window.removeEventListener('subscription:required', onRequired as EventListener);
@@ -362,10 +344,8 @@ function SubscriptionRedirectHandler() {
 }
 
 function AppRoutes() {
-  const { user, loading } = useAuth();
+  const { loading } = useAuth();
   usePageTracking(); // Track page views on route change
-
-  console.log('[AppRoutes]', { loading, user: user?.id });
 
   if (loading) {
     return (
@@ -377,344 +357,59 @@ function AppRoutes() {
 
   return (
     <Routes>
-      {/* Public landing page - accessible to everyone */}
-      <Route
-        path="/"
-        element={<Landing />}
-      />
-      <Route
-        path="/login"
-        element={user ? <Navigate to="/app" replace /> : <AuthPage />}
-      />
-      <Route
-        path="/register"
-        element={user ? <Navigate to="/app" replace /> : <AuthPage />}
-      />
-      <Route
-        path="/pending-approval"
-        element={
-          user ? (
-            user.isApproved || user.isAdmin ? (
-              <Navigate to="/app" replace />
-            ) : (
-              <PendingApproval />
-            )
-          ) : (
-            <Navigate to="/login" replace />
-          )
-        }
-      />
-      <Route
-        path="/subscription"
-        element={
-          <ProtectedRoute>
-            <Subscription />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/subscription/success"
-        element={
-          <ProtectedRoute>
-            <SubscriptionSuccess />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/subscription/transfer"
-        element={
-          <ProtectedRoute>
-            <SubscriptionTransfer />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/subscription/transfer-v2"
-        element={
-          <ProtectedRoute>
-            <SubscriptionTransferV2 />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/subscription/checkout-complete"
-        element={
-          <ProtectedRoute>
-            <CheckoutComplete />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin"
-        element={
-          <ProtectedRoute>
-            <Admin />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/prompts"
-        element={
-          <ProtectedRoute>
-            <AdminPrompts />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/affiliate"
-        element={
-          <ProtectedRoute>
-            <AdminAffiliate />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/banners"
-        element={
-          <ProtectedRoute>
-            <AdminBanners />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/banners/:id/edit"
-        element={
-          <ProtectedRoute>
-            <AdminBannerEditor />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/viral-templates"
-        element={
-          <ProtectedRoute>
-            <AdminViralTemplates />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/viral-templates/ling/new"
-        element={
-          <ProtectedRoute>
-            <AdminLingTemplateNew />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/idol-templates"
-        element={
-          <ProtectedRoute>
-            <AdminIdolTemplates />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/story-templates"
-        element={
-          <ProtectedRoute>
-            <AdminStoryTemplates />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/image-templates"
-        element={
-          <ProtectedRoute>
-            <AdminImageTemplates />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/courses"
-        element={
-          <ProtectedRoute>
-            <AdminCourses />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/admin/enrollments"
-        element={
-          <ProtectedRoute>
-            <AdminEnrollments />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/affiliate"
-        element={
-          <ProtectedRoute>
-            <Affiliate />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/profile"
-        element={
-          <ProtectedRoute>
-            <Profile />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/settings"
-        element={
-          <ProtectedRoute>
-            <Settings />
-          </ProtectedRoute>
-        }
-      />
-      {/* Prompt Direct Detail - generate video from prompt library */}
-      <Route
-        path="/app/prompt-direct/:slug"
-        element={
-          <ProtectedRoute>
-            <SchedulerProvider>
-              <PromptDirectDetail />
-            </SchedulerProvider>
-          </ProtectedRoute>
-        }
-      />
-      {/* Viral Template Detail - separate page before wildcard */}
-      <Route
-        path="/app/viral-templates/:templateSlug"
-        element={
-          <ProtectedRoute>
-            <SchedulerProvider>
-              <ViralTemplateDetail />
-            </SchedulerProvider>
-          </ProtectedRoute>
-        }
-      />
-      {/* Idol Template Detail - separate page before wildcard */}
-      <Route
-        path="/app/idol-templates/:templateSlug"
-        element={
-          <ProtectedRoute>
-            <SchedulerProvider>
-              <IdolTemplateDetail />
-            </SchedulerProvider>
-          </ProtectedRoute>
-        }
-      />
-      {/* Feature pages - separate routes before /app/* wildcard */}
-      <Route
-        path="/app/images/gpt-image-2"
-        element={
-          <ProtectedRoute>
-            <SchedulerProvider>
-              <GPTImage2 />
-            </SchedulerProvider>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/app/images-template/:slug"
-        element={
-          <ProtectedRoute>
-            <SchedulerProvider>
-              <ImageTemplateDetail />
-            </SchedulerProvider>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/app/stories-template/:slug"
-        element={
-          <ProtectedRoute>
-            <SchedulerProvider>
-              <StoryTemplateDetail />
-            </SchedulerProvider>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/app/images/custom-prompt/new"
-        element={
-          <ProtectedRoute>
-            <SchedulerProvider>
-              <ImageCustomPromptForm />
-            </SchedulerProvider>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/app/videos/kling-3-motion-control"
-        element={
-          <ProtectedRoute>
-            <SchedulerProvider>
-              <Kling3MotionControl />
-            </SchedulerProvider>
-          </ProtectedRoute>
-        }
-      />
-      {/* Course detail + learn - separate routes before /app/* wildcard */}
-      <Route
-        path="/app/courses/:slug"
-        element={
-          <ProtectedRoute>
-            <CourseDetail />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/app/courses/:slug/learn/:lessonId"
-        element={
-          <ProtectedRoute>
-            <CourseLearn />
-          </ProtectedRoute>
-        }
-      />
-      {/* Main app - protected, with sub-routes for tabs */}
-      <Route
-        path="/app/*"
-        element={
-          <ProtectedRoute>
-            <SchedulerProvider>
-              <ContentScheduler />
-            </SchedulerProvider>
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/guide"
-        element={
-          <ProtectedRoute>
-            <Guide />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/history"
-        element={
-          <ProtectedRoute>
-            <History />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/credits"
-        element={
-          <ProtectedRoute>
-            <Credits />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/credits/topup"
-        element={
-          <ProtectedRoute>
-            <CreditsTopup />
-          </ProtectedRoute>
-        }
-      />
+      {/* ---------- Public (no login) ---------- */}
+      <Route path="/" element={<Storefront />} />
+      <Route path="/courses" element={<PublicCatalog />} />
+      <Route path="/courses/:slug" element={<CourseDetail />} />
       <Route path="/tutorials" element={<Tutorials />} />
       <Route path="/affiliate-info" element={<AffiliateInfo />} />
       <Route path="/update" element={<Update />} />
       <Route path="/update/:id" element={<UpdateDetail />} />
+
+      <Route path="/login" element={<AuthPage />} />
+      <Route path="/register" element={<AuthPage />} />
+      <Route
+        path="/pending-approval"
+        element={<PendingApproval />}
+      />
+
+      {/* ---------- Subscription (manual transfer) ---------- */}
+      <Route path="/subscription" element={<ProtectedRoute><Subscription /></ProtectedRoute>} />
+      <Route path="/subscription/success" element={<ProtectedRoute><SubscriptionSuccess /></ProtectedRoute>} />
+      <Route path="/subscription/transfer-v2" element={<ProtectedRoute><SubscriptionTransferV2 /></ProtectedRoute>} />
+      <Route path="/subscription/checkout-complete" element={<ProtectedRoute><CheckoutComplete /></ProtectedRoute>} />
+
+      {/* ---------- Admin ---------- */}
+      <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
+      <Route path="/admin/affiliate" element={<ProtectedRoute><AdminAffiliate /></ProtectedRoute>} />
+      <Route path="/admin/banners" element={<ProtectedRoute><AdminBanners /></ProtectedRoute>} />
+      <Route path="/admin/banners/:id/edit" element={<ProtectedRoute><AdminBannerEditor /></ProtectedRoute>} />
+      <Route path="/admin/courses" element={<ProtectedRoute><AdminCourses /></ProtectedRoute>} />
+
+      {/* ---------- User ---------- */}
+      <Route path="/affiliate" element={<ProtectedRoute><Affiliate /></ProtectedRoute>} />
+      <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+
+      {/* ---------- In-app course area ---------- */}
+      <Route path="/app/my-courses" element={<ProtectedRoute><AppShell><MyCourses /></AppShell></ProtectedRoute>} />
+      <Route path="/app/courses/:slug/learn/:lessonId" element={<ProtectedRoute><CourseLearn /></ProtectedRoute>} />
+      {/* Old in-app detail paths now resolve to the single public detail page. */}
+      <Route path="/app/courses/:slug" element={<RedirectToCourse />} />
+      <Route path="/app/courses" element={<Navigate to="/courses" replace />} />
+      <Route path="/app" element={<Navigate to="/app/my-courses" replace />} />
+      <Route path="/app/*" element={<Navigate to="/app/my-courses" replace />} />
+
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
+}
+
+// Preserve the :slug when redirecting the legacy /app/courses/:slug → /courses/:slug.
+function RedirectToCourse() {
+  const location = useLocation();
+  const slug = location.pathname.split('/').pop() || '';
+  return <Navigate to={`/courses/${slug}`} replace />;
 }
 
 function App() {
@@ -729,11 +424,7 @@ function App() {
               <SubscriptionRedirectHandler />
               <SubscriptionWarningBanner />
               <AdminNotificationBanner />
-              <LateDeprecationBanner />
               <AppRoutes />
-              <GuideButton />
-              <WelcomePopup />
-              <SubscriptionWall />
               <Toaster />
             </LanguageProvider>
           </SubscriptionProvider>

@@ -82,43 +82,27 @@ router.get('/plans', async (_req: Request, res: Response) => {
  */
 router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    // Sync with Stripe first to ensure DB is up-to-date
-    await stripeService.syncSubscriptionFromStripe(req.userId!);
-
-    const subscription = await stripeService.getUserSubscription(req.userId!);
-
-    if (!subscription) {
-      // Check if admin manually extended subscription via users.subscription_expires_at
-      const userResult = await pool.query(
-        'SELECT subscription_expires_at FROM users WHERE id = $1',
-        [req.userId]
-      );
-      const expiresAt = userResult.rows[0]?.subscription_expires_at;
-      if (expiresAt && new Date(expiresAt) > new Date()) {
-        const daysLeft = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-        const planType = daysLeft > 60 ? 'yearly' : 'monthly';
-        return res.json({
-          hasSubscription: true,
-          subscription: {
-            planType,
-            status: 'active',
-            currentPeriodEnd: expiresAt,
-            cancelAtPeriodEnd: false,
-          }
-        });
-      }
-      return res.json({ hasSubscription: false, subscription: null });
+    // Membership is driven solely by users.subscription_expires_at (set when a
+    // bank-transfer slip is verified or an admin extends). No Stripe.
+    const userResult = await pool.query(
+      'SELECT subscription_expires_at FROM users WHERE id = $1',
+      [req.userId]
+    );
+    const expiresAt = userResult.rows[0]?.subscription_expires_at;
+    if (expiresAt && new Date(expiresAt) > new Date()) {
+      const daysLeft = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      const planType = daysLeft > 60 ? 'yearly' : 'monthly';
+      return res.json({
+        hasSubscription: true,
+        subscription: {
+          planType,
+          status: 'active',
+          currentPeriodEnd: expiresAt,
+          cancelAtPeriodEnd: false,
+        }
+      });
     }
-
-    res.json({
-      hasSubscription: subscription.status === 'active',
-      subscription: {
-        planType: subscription.planType,
-        status: subscription.status,
-        currentPeriodEnd: subscription.currentPeriodEnd,
-        cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
-      }
-    });
+    return res.json({ hasSubscription: false, subscription: null });
   } catch (error) {
     console.error('Get subscription error:', error);
     res.status(500).json({ error: 'Failed to get subscription' });
@@ -127,27 +111,15 @@ router.get('/', authenticate, async (req: AuthRequest, res: Response) => {
 
 /**
  * POST /api/subscription/checkout
- * Create Stripe Checkout session
+ * Stripe removed — paying is done via manual bank-transfer/PromptPay slip upload.
+ * This endpoint now just points clients at the manual transfer page.
  */
-router.post('/checkout', authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const { planType } = req.body;
-
-    if (!planType || !['monthly', 'yearly'].includes(planType)) {
-      return res.status(400).json({ error: 'Invalid plan type. Must be "monthly" or "yearly"' });
-    }
-
-    const checkoutUrl = await stripeService.createCheckoutSession(
-      req.userId!,
-      req.userEmail!,
-      planType
-    );
-
-    res.json({ url: checkoutUrl });
-  } catch (error) {
-    console.error('Checkout error:', error);
-    res.status(500).json({ error: 'Failed to create checkout session' });
-  }
+router.post('/checkout', authenticate, async (_req: AuthRequest, res: Response) => {
+  return res.status(410).json({
+    error: 'ชำระเงินผ่านการโอน + อัปสลิปเท่านั้น',
+    code: 'USE_MANUAL_TRANSFER',
+    redirectUrl: '/subscription/transfer-v2',
+  });
 });
 
 /**

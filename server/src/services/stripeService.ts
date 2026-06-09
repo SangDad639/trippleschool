@@ -127,28 +127,20 @@ export async function getUserSubscription(userId: number): Promise<SubscriptionI
 }
 
 /**
- * Check if user has active subscription
- * Checks both Stripe subscription AND manual admin extension (users.subscription_expires_at)
+ * Check if user has an active subscription (membership).
+ *
+ * Stripe has been removed — subscription validity is driven solely by
+ * `users.subscription_expires_at`, set when a bank-transfer/PromptPay slip is
+ * verified (Thunder OCR auto-approve) or extended by an admin.
  */
 export async function hasActiveSubscription(userId: number): Promise<boolean> {
-  // Check Stripe subscription first
-  const stripeResult = await pool.query(
-    `SELECT id FROM subscriptions
-     WHERE user_id = $1 AND status = 'active'
-     AND current_period_end > NOW()
-     LIMIT 1`,
-    [userId]
-  );
-  if (stripeResult.rows.length > 0) return true;
-
-  // Check manual admin extension (users.subscription_expires_at)
-  const manualResult = await pool.query(
+  const result = await pool.query(
     `SELECT id FROM users
      WHERE id = $1 AND subscription_expires_at > NOW()
      LIMIT 1`,
     [userId]
   );
-  return manualResult.rows.length > 0;
+  return result.rows.length > 0;
 }
 
 /**

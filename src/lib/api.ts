@@ -2951,6 +2951,11 @@ class ApiClient {
   async getCourseFull(slug: string) {
     return this.request(`/api/courses/${encodeURIComponent(slug)}/full`);
   }
+  // Subscription-gated per-lesson video. Paid lesson youtube ids are only ever
+  // returned through this endpoint (never in list/detail payloads).
+  async getLessonVideo(slug: string, lessonId: number) {
+    return this.request(`/api/courses/${encodeURIComponent(slug)}/lessons/${lessonId}/video`);
+  }
   async getAdminCourses() {
     return this.request('/api/courses/admin/all');
   }
@@ -3006,45 +3011,18 @@ class ApiClient {
   async reorderLessons(courseId: number, lessonIds: number[]) {
     return this.request(`/api/courses/${courseId}/lessons/reorder`, { method: 'PUT', body: JSON.stringify({ lessonIds }) });
   }
-  // Enrollments (learner)
-  async enrollCourse(courseId: number, slip?: File) {
-    const formData = new FormData();
-    if (slip) formData.append('slip', slip);
-    return this.request(`/api/enrollments/${courseId}/enroll`, { method: 'POST', body: formData });
+  // Enrollments (learner) — progress tracking only; access is by subscription.
+  async startCourse(courseId: number) {
+    return this.request(`/api/enrollments/${courseId}/start`, { method: 'POST' });
   }
-  async getMyEnrollments(status?: string) {
-    return this.request(`/api/enrollments/mine${status ? `?status=${status}` : ''}`);
+  async getMyEnrollments() {
+    return this.request(`/api/enrollments/mine`);
   }
   async getEnrollmentStatus(courseId: number) {
     return this.request(`/api/enrollments/status/${courseId}`);
   }
   async updateEnrollmentProgress(enrollmentId: number, data: { completed_lesson_id?: number; last_lesson_id?: number }) {
     return this.request(`/api/enrollments/${enrollmentId}/progress`, { method: 'PUT', body: JSON.stringify(data) });
-  }
-  // Enrollments (admin)
-  async getAdminEnrollments(params?: { status?: string; course_id?: number; limit?: number; offset?: number }) {
-    const qs = new URLSearchParams();
-    if (params?.status) qs.set('status', params.status);
-    if (params?.course_id) qs.set('course_id', String(params.course_id));
-    if (params?.limit != null) qs.set('limit', String(params.limit));
-    if (params?.offset != null) qs.set('offset', String(params.offset));
-    const q = qs.toString();
-    return this.request(`/api/enrollments/admin/all${q ? `?${q}` : ''}`);
-  }
-  async getEnrollmentStats() {
-    return this.request('/api/enrollments/admin/stats');
-  }
-  async approveEnrollment(id: number) {
-    return this.request(`/api/enrollments/admin/${id}/approve`, { method: 'PUT' });
-  }
-  async rejectEnrollment(id: number, reason?: string) {
-    return this.request(`/api/enrollments/admin/${id}/reject`, { method: 'PUT', body: JSON.stringify({ reason }) });
-  }
-  async revokeEnrollment(id: number, reason?: string) {
-    return this.request(`/api/enrollments/admin/${id}/revoke`, { method: 'PUT', body: JSON.stringify({ reason }) });
-  }
-  async bulkApproveEnrollments(enrollment_ids: number[]) {
-    return this.request('/api/enrollments/admin/bulk-approve', { method: 'POST', body: JSON.stringify({ enrollment_ids }) });
   }
 }
 

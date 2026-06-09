@@ -778,31 +778,6 @@ router.get('/api-keys/postforme', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api-keys/postforme/social-accounts - Get social accounts with expiration dates
-router.get('/api-keys/postforme/social-accounts', async (req: Request, res: Response) => {
-  try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-    if (!token) return res.status(401).json({ error: 'Authentication required' });
-
-    const decoded = jwt.verify(token, JWT_SECRET) as { userId: number };
-    const result = await pool.query('SELECT postforme_api_keys FROM users WHERE id = $1', [decoded.userId]);
-    const keys: any[] = result.rows[0]?.postforme_api_keys || [];
-
-    const { getPostFormeSocialAccountsFull } = await import('../lib/postforme.js');
-
-    const allAccounts: any[] = [];
-    for (const k of keys) {
-      const accounts = await getPostFormeSocialAccountsFull(k.key);
-      allAccounts.push(...accounts.map((a: any) => ({ ...a, keyName: k.name })));
-    }
-
-    res.json(allAccounts);
-  } catch (error) {
-    console.error('Get PostForMe social accounts error:', error);
-    res.status(500).json({ error: 'Failed to get social accounts' });
-  }
-});
-
 // Legacy single key endpoints (keep for backwards compatibility)
 router.get('/api-key', async (req: Request, res: Response) => {
   try {
