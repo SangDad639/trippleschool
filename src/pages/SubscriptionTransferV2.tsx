@@ -8,7 +8,6 @@ import { toast } from 'sonner';
 import { useState, useRef, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { PRICING, VAT_RATE } from '@/lib/pricing';
-import CouponSection from '@/components/profile/CouponSection';
 
 const SubscriptionTransferV2 = () => {
   const navigate = useNavigate();
@@ -193,17 +192,6 @@ const SubscriptionTransferV2 = () => {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
-        {/* Coupon CTA — hidden per business decision (2026-05-15).
-            Re-enable by un-commenting the block below.
-        <CouponSection
-          onRedeemed={async () => {
-            await refreshSubscription();
-            await refreshUser();
-            navigate('/subscription/checkout-complete?via=coupon');
-          }}
-        />
-        */}
-
         {/* Plan Toggle */}
         <div className="flex bg-card border border-border rounded-xl p-1 gap-1">
           <button

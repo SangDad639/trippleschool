@@ -19,11 +19,9 @@ interface AuthContextType {
   loading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
   googleLogin: (credential: string, refcode?: string) => Promise<boolean>;
-  register: (email: string, password: string, refcode?: string, couponCode?: string) => Promise<{
+  register: (email: string, password: string, refcode?: string) => Promise<{
     success: boolean;
     pendingApproval?: boolean;
-    couponApplied?: { days: number; expires_at: string } | null;
-    couponError?: 'invalid' | 'already_used' | 'disabled' | null;
   }>;
   logout: () => void;
   updateCredits: (amount: number) => void;
@@ -134,17 +132,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const register: AuthContextType['register'] = async (email, password, refcode, couponCode) => {
+  const register: AuthContextType['register'] = async (email, password, refcode) => {
     try {
-      const response = await api.register(email, password, refcode, couponCode);
-      // Pluck through coupon outcome regardless of approval path —
-      // BE returns these whether or not the user is auto-approved.
-      const couponApplied = response.coupon_applied ?? null;
-      const couponError = response.coupon_error ?? null;
+      const response = await api.register(email, password, refcode);
 
       // New users need approval - don't log them in
       if (response.pendingApproval) {
-        return { success: true, pendingApproval: true, couponApplied, couponError };
+        return { success: true, pendingApproval: true };
       }
       // Fallback for approved users (admin might auto-approve)
       if (response.token) {
@@ -162,7 +156,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           createdAt: response.user.createdAt,
         });
       }
-      return { success: true, couponApplied, couponError };
+      return { success: true };
     } catch (error) {
       console.error('Registration failed:', error);
       return { success: false };

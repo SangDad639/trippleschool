@@ -23,7 +23,6 @@ const usePageTracking = () => {
 };
 import { GoogleOAuthProvider, GoogleLogin } from "@react-oauth/google";
 import { Toaster } from "@/components/ui/sonner";
-import { toast } from "sonner";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { LanguageProvider, useLanguage } from "@/contexts/LanguageContext";
@@ -55,8 +54,7 @@ import AdminCourses from "@/pages/AdminCourses";
 // Login/Register page
 const AuthPage = () => {
   const { login, register, googleLogin } = useAuth();
-  const { t, language } = useLanguage();
-  const isTh = language === 'th';
+  const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -66,9 +64,6 @@ const AuthPage = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  /** Optional coupon code field — only used on register. BE redeems best-effort
-   *  and returns `coupon_applied | coupon_error` so we can surface a toast. */
-  const [couponCode, setCouponCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [pendingApproval, setPendingApproval] = useState(false);
@@ -93,7 +88,6 @@ const AuthPage = () => {
           email,
           password,
           refcode || undefined,
-          couponCode.trim().toUpperCase().replace(/\s+/g, '') || undefined,
         );
         if (result.pendingApproval) {
           setPendingApproval(true);
@@ -106,18 +100,6 @@ const AuthPage = () => {
           window.gtag?.('event', 'sign_up', { method: 'email' });
         } else {
           setError(t('auth.registerFailed'));
-        }
-        // Surface coupon outcome — applied OR error message (inline i18n)
-        if (result.couponApplied) {
-          toast.success(isTh
-            ? `เปิดใช้งานเพิ่ม ${result.couponApplied.days} วันจากโค้ด`
-            : `+${result.couponApplied.days} day(s) added from coupon`);
-        } else if (result.couponError) {
-          const errorMsg =
-            result.couponError === 'invalid'      ? (isTh ? 'โค้ดไม่ถูกต้อง'         : 'Coupon code is invalid') :
-            result.couponError === 'already_used' ? (isTh ? 'โค้ดถูกใช้ไปแล้ว'        : 'Coupon already used') :
-                                                    (isTh ? 'โค้ดถูกปิดใช้งาน'        : 'Coupon is disabled');
-          toast.error(errorMsg);
         }
       }
     } catch (err: any) {
@@ -178,29 +160,6 @@ const AuthPage = () => {
                 className="w-full p-2 rounded bg-input border border-border"
                 required
               />
-            </div>
-          )}
-
-          {/* Optional coupon code (register only). Auto-uppercase to match
-              BE expected format. Empty = no redemption attempt. */}
-          {!isLogin && (
-            <div>
-              <label className="block text-sm font-medium mb-1">
-                {isTh ? 'โค้ดคูปอง (ไม่บังคับ)' : 'Coupon code (optional)'}
-              </label>
-              <input
-                type="text"
-                value={couponCode}
-                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                placeholder="ABCD2345"
-                maxLength={20}
-                className="w-full p-2 rounded bg-input border border-border font-mono tracking-widest"
-              />
-              <p className="text-[11px] text-muted-foreground mt-1">
-                {isTh
-                  ? 'หากมีโค้ดทดลองใช้ ใส่ที่นี่เพื่อรับวันใช้งานทันที'
-                  : 'If you have a trial code, enter it here for instant subscription days'}
-              </p>
             </div>
           )}
 

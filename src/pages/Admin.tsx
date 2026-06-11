@@ -15,11 +15,10 @@ import {
   Trash2, Minus, ChevronDown, MoreVertical,
   Bell, Plus, Pencil, Send, ImageIcon,
   ArrowUp, ArrowDown, Wallet, Building2, Globe, Search,
-  Package, Percent, Ticket, FileText,
+  Package, Percent, FileText,
 } from 'lucide-react';
 import AdminPackagesPanel from '@/components/admin/AdminPackagesPanel';
 import AdminTiersPanel from '@/components/admin/AdminTiersPanel';
-import AdminCouponsPanel from '@/components/admin/AdminCouponsPanel';
 import AdminTaxInvoicesPanel from '@/components/admin/AdminTaxInvoicesPanel';
 import UserCommissionDialog from '@/components/admin/UserCommissionDialog';
 import type { AffiliateTierRecord } from '@/types/affiliate';
@@ -191,7 +190,7 @@ interface ReportTransaction {
 
 type ReportRange = 'today' | 'yesterday' | '7d' | '30d' | '90d' | '1y';
 
-type AdminTab = 'revenue' | 'users' | 'notifications' | 'packages' | 'tiers' | 'coupons' | 'tax-invoices';
+type AdminTab = 'revenue' | 'users' | 'notifications' | 'packages' | 'tiers' | 'tax-invoices';
 
 // Dynamic plan shape from /api/admin/packages — returns ALL plans
 // (active + inactive + admin_only). The public /subscription/plans endpoint
@@ -945,7 +944,6 @@ const Admin = () => {
               { key: 'notifications' as AdminTab, label: 'การแจ้งเตือน', icon: <Bell className="h-4 w-4" /> },
               { key: 'packages' as AdminTab, label: language === 'th' ? 'แพ็กเกจ' : 'Packages', icon: <Package className="h-4 w-4" /> },
               { key: 'tiers' as AdminTab, label: language === 'th' ? 'ระดับ' : 'Tiers', icon: <Crown className="h-4 w-4" /> },
-              { key: 'coupons' as AdminTab, label: language === 'th' ? 'คูปอง' : 'Coupons', icon: <Ticket className="h-4 w-4" /> },
               { key: 'tax-invoices' as AdminTab, label: language === 'th' ? 'ใบกำกับภาษี' : 'Tax Invoices', icon: <FileText className="h-4 w-4" /> },
             ]).map(tab => (
               <button
@@ -1872,15 +1870,6 @@ const Admin = () => {
             <Card>
               <CardContent className="pt-6">
                 <AdminTiersPanel />
-              </CardContent>
-            </Card>
-          )}
-
-          {/* === Coupons Tab === */}
-          {activeTab === 'coupons' && (
-            <Card>
-              <CardContent className="pt-6">
-                <AdminCouponsPanel />
               </CardContent>
             </Card>
           )}

@@ -156,57 +156,10 @@ class ApiClient {
   // Auth endpoints
   // ============================================
 
-  async register(email: string, password: string, refcode?: string, couponCode?: string) {
+  async register(email: string, password: string, refcode?: string) {
     return this.request('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ email, password, refcode, coupon_code: couponCode }),
-    });
-  }
-
-  // ─── Coupons ───────────────────────────────────────────────────
-  /** User-side: redeem a code → extend caller's subscription. */
-  async redeemCoupon(code: string) {
-    return this.request('/api/coupons/redeem', {
-      method: 'POST',
-      body: JSON.stringify({ code }),
-    });
-  }
-
-  /** Admin: list coupons (with pagination + filter). */
-  async listCoupons(opts: { status?: 'all' | 'active' | 'redeemed' | 'exhausted' | 'inactive'; q?: string; limit?: number; offset?: number } = {}) {
-    const params = new URLSearchParams();
-    if (opts.status) params.set('status', opts.status);
-    if (opts.q) params.set('q', opts.q);
-    if (opts.limit != null) params.set('limit', String(opts.limit));
-    if (opts.offset != null) params.set('offset', String(opts.offset));
-    const qs = params.toString();
-    return this.request(`/api/admin/coupons${qs ? `?${qs}` : ''}`);
-  }
-
-  /**
-   * Admin (super): bulk-create N codes worth `days` days each.
-   * `max_uses`: omitted → server default (1, single-use); null → unlimited;
-   * positive integer → capped multi-use.
-   */
-  async createCoupons(input: { days: number; count: number; notes?: string; max_uses?: number | null }) {
-    return this.request('/api/admin/coupons', {
-      method: 'POST',
-      body: JSON.stringify(input),
-    });
-  }
-
-  /** Admin: patch is_active / notes / max_uses. */
-  async patchCoupon(id: number, patch: { is_active?: boolean; notes?: string | null; max_uses?: number | null }) {
-    return this.request(`/api/admin/coupons/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(patch),
-    });
-  }
-
-  /** Admin: hard-delete an unredeemed coupon. Returns 409 if redeemed. */
-  async deleteCoupon(id: number) {
-    return this.request(`/api/admin/coupons/${id}`, {
-      method: 'DELETE',
+      body: JSON.stringify({ email, password, refcode }),
     });
   }
 
@@ -226,111 +179,6 @@ class ApiClient {
 
   async getCurrentUser() {
     return this.request('/api/auth/me');
-  }
-
-  async getApiKey() {
-    return this.request('/api/auth/api-key');
-  }
-
-  /** KIE credit balance of the user's own KIE key (for the generate-confirm popup). */
-  async getKieCredit(): Promise<{ hasKey: boolean; credit?: number }> {
-    return this.request('/api/auth/kie-credit');
-  }
-
-  async saveApiKey(openai_api_key: string) {
-    return this.request('/api/auth/api-key', {
-      method: 'POST',
-      body: JSON.stringify({ openai_api_key }),
-    });
-  }
-
-  async deleteApiKey() {
-    return this.request('/api/auth/api-key', {
-      method: 'DELETE',
-    });
-  }
-
-  // Multiple API keys support (cached — called from multiple components)
-  private _apiKeysCache: { data: any; timestamp: number } | null = null;
-  private _apiKeysPromise: Promise<any> | null = null;
-
-  async getApiKeys() {
-    // Return cache if fresh (< 30s)
-    if (this._apiKeysCache && Date.now() - this._apiKeysCache.timestamp < 30000) {
-      return this._apiKeysCache.data;
-    }
-    // Deduplicate concurrent calls
-    if (this._apiKeysPromise) return this._apiKeysPromise;
-    this._apiKeysPromise = this.request('/api/auth/api-keys').then(data => {
-      this._apiKeysCache = { data, timestamp: Date.now() };
-      this._apiKeysPromise = null;
-      return data;
-    }).catch(err => {
-      this._apiKeysPromise = null;
-      throw err;
-    });
-    return this._apiKeysPromise;
-  }
-
-  invalidateApiKeysCache() {
-    this._apiKeysCache = null;
-  }
-
-  async saveApiKeys(keys: {
-    openai_api_key?: string;
-    vidgo_api_key?: string;
-    kie_api_key?: string;
-    late_api_key?: string;
-    postforme_api_key?: string;
-    openrouter_api_key?: string;
-    anthropic_api_key?: string;
-    elevenlabs_api_key?: string;
-    elevenlabs_voice_id_th?: string;
-    elevenlabs_voice_id_en?: string;
-    ai_provider?: string;
-    postforme_subscription_expiry?: string | null;
-  }) {
-    this.invalidateApiKeysCache();
-    return this.request('/api/auth/api-keys', {
-      method: 'POST',
-      body: JSON.stringify(keys),
-    });
-  }
-
-  async deleteApiKeyByType(
-    keyType: 'openai' | 'vidgo' | 'kie' | 'late' | 'postforme' | 'openrouter' | 'anthropic' | 'elevenlabs'
-  ) {
-    return this.request(`/api/auth/api-keys/${keyType}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async addPostformeKey(name: string, key: string, expiresAt?: string) {
-    return this.request('/api/auth/api-keys/postforme', {
-      method: 'POST',
-      body: JSON.stringify({ name, key, expiresAt: expiresAt || null }),
-    });
-  }
-
-  async deletePostformeKey(name: string) {
-    return this.request(`/api/auth/api-keys/postforme/${encodeURIComponent(name)}`, {
-      method: 'DELETE',
-    });
-  }
-
-  async getPostformeKeys() {
-    return this.request('/api/auth/api-keys/postforme');
-  }
-
-  async getPostformeSocialAccounts() {
-    return this.request('/api/auth/api-keys/postforme/social-accounts');
-  }
-
-  async updatePostformeKeyExpiry(name: string, expiresAt: string | null) {
-    return this.request(`/api/auth/api-keys/postforme/${encodeURIComponent(name)}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ expiresAt }),
-    });
   }
 
   // ============================================

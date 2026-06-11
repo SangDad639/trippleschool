@@ -24,7 +24,6 @@ import {
 import { toast } from 'sonner';
 import TaxInfoSection from '@/components/profile/TaxInfoSection';
 import BankInfoSection from '@/components/profile/BankInfoSection';
-import CouponSection from '@/components/profile/CouponSection';
 import PaymentHistorySection from '@/components/profile/PaymentHistorySection';
 
 // Stripe is currently disabled (manual-transfer only). When VITE_PAYMENT_MODE
@@ -228,15 +227,6 @@ const Profile = () => {
               their payment ledger immediately. Excludes coupon/promo rows
               server-side (no money = no invoice). */}
           <PaymentHistorySection />
-
-          {/* Coupon redemption — hidden per business decision (2026-05-15).
-              Re-enable by un-commenting the block below.
-          <CouponSection
-            onRedeemed={async () => {
-              await refreshSubscription();
-            }}
-          />
-          */}
 
           {/* Affiliate Tier section moved to /affiliate — single home for
               affiliate-related info (tier, refcode, commissions, payouts). */}

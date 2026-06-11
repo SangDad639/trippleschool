@@ -13,11 +13,9 @@ import subscriptionRoutes from './routes/subscription.js';
 import adminRoutes from './routes/admin.js';
 import affiliateRoutes from './routes/affiliate.js';
 import tutorialsRoutes from './routes/tutorials.js';
-import couponsRoutes from './routes/coupons.js';
 import coursesRoutes from './routes/courses.js';
 import enrollmentsRoutes from './routes/enrollments.js';
 import pool from './db.js';
-import { startSubscriptionCheckJob } from './jobs/subscriptionCheckJob.js';
 import { startSubscriptionNotificationJob } from './jobs/subscriptionNotificationJob.js';
 
 // ========== STARTUP ENV VALIDATION ==========
@@ -105,7 +103,6 @@ app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/affiliate', affiliateRoutes);
 app.use('/api/tutorials', tutorialsRoutes);
-app.use('/api/coupons', couponsRoutes);
 app.use('/api/courses', coursesRoutes);
 app.use('/api/enrollments', enrollmentsRoutes);
 
@@ -175,10 +172,6 @@ app.listen(PORT, () => {
   }
 
   console.log('▶️  Starting cron jobs (RUN_JOBS=true)');
-
-  // Start subscription check job (marks expired memberships)
-  startSubscriptionCheckJob();
-  console.log('Subscription check job started');
 
   // Start subscription notification job (expiration warnings)
   startSubscriptionNotificationJob();

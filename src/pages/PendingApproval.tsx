@@ -19,7 +19,7 @@ const PendingApproval = () => {
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
           <h1 className="text-2xl sm:text-3xl font-bold text-primary">Triple School</h1>
-          <p className="text-muted-foreground mt-2">Content Scheduler</p>
+          <p className="text-muted-foreground mt-2">คอร์สเรียนออนไลน์</p>
         </div>
 
         <div className="bg-card p-8 rounded-lg border text-center space-y-6">
