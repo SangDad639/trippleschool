@@ -8,9 +8,18 @@ import multer from 'multer';
 import pool from '../db.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { uploadFile, getFile } from '../utils/s3.js';
-import { hasActiveSubscription } from '../services/stripeService.js';
 
 const router = Router();
+
+/** Per-course access: an APPROVED purchase for THIS course (or admin). */
+async function hasApprovedEnrollment(userId: number | undefined, courseId: number): Promise<boolean> {
+  if (!userId) return false;
+  const r = await pool.query(
+    `SELECT 1 FROM course_enrollments WHERE user_id = $1 AND course_id = $2 AND status = 'approved' LIMIT 1`,
+    [userId, courseId]
+  );
+  return r.rows.length > 0;
+}
 
 const thumbUpload = multer({
   storage: multer.memoryStorage(),
@@ -464,12 +473,11 @@ router.get('/:slug/lessons/:lessonId/video', authenticate, async (req: AuthReque
     );
     if (lessonResult.rows.length === 0) return res.status(404).json({ error: 'Lesson not found' });
     const lesson = lessonResult.rows[0];
-    const hasAccess = lesson.is_preview || req.isAdmin || (req.userId ? await hasActiveSubscription(req.userId) : false);
+    const hasAccess = lesson.is_preview || req.isAdmin || (await hasApprovedEnrollment(req.userId, courseId));
     if (!hasAccess) {
       return res.status(403).json({
-        error: 'กรุณาสมัครสมาชิกเพื่อรับชมบทเรียนนี้',
-        code: 'NO_SUBSCRIPTION',
-        subscriptionUrl: '/subscription/transfer-v2',
+        error: 'กรุณาซื้อคอร์สนี้ก่อนรับชมบทเรียน',
+        code: 'NOT_PURCHASED',
       });
     }
     res.json({ id: lesson.id, title: lesson.title, youtube_id: lesson.youtube_id, youtube_url: lesson.youtube_url });
@@ -490,10 +498,8 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
     const courseResult = await pool.query(`SELECT * FROM courses WHERE slug = $1 AND is_active = true`, [slug]);
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const course = courseResult.rows[0];
-    // Subscription membership: an active subscription (or admin) unlocks every paid
-    // lesson across all courses. There is no per-course purchase any more.
-    const hasSub = req.isAdmin || (userId ? await hasActiveSubscription(userId) : false);
-    // course_enrollments is now just a progress row (auto-created on first study).
+    // Per-course access: an APPROVED purchase for this course (or admin) unlocks paid lessons.
+    const hasAccess = req.isAdmin || (await hasApprovedEnrollment(userId, course.id));
     const enrollmentResult = await pool.query(
       `SELECT * FROM course_enrollments WHERE user_id = $1 AND course_id = $2`,
       [userId, course.id]
@@ -507,13 +513,12 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
     const lessons = lessonsResult.rows.map((lesson) => {
-      if (!hasSub && !lesson.is_preview) return { ...lesson, youtube_url: null, youtube_id: null };
+      if (!hasAccess && !lesson.is_preview) return { ...lesson, youtube_url: null, youtube_id: null };
       return lesson;
     });
     const sections = sectionsResult.rows.map((section) => ({ ...section, lessons: lessons.filter(l => l.section_id === section.id) }));
     const unassignedLessons = lessons.filter(l => l.section_id === null);
-    // isEnrolled kept as an alias of hasSub for backward-compatible FE checks.
-    res.json({ ...course, sections, unassigned_lessons: unassignedLessons, lessons, enrollment, hasAccess: hasSub, isEnrolled: hasSub });
+    res.json({ ...course, sections, unassigned_lessons: unassignedLessons, lessons, enrollment, hasAccess, isEnrolled: hasAccess });
   } catch (error) {
     console.error('Error fetching course:', error);
     res.status(500).json({ error: 'Failed to fetch course' });

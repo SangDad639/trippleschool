@@ -1,13 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { useSubscription } from '@/contexts/SubscriptionContext';
+import CoursePrice from '@/components/CoursePrice';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import {
   Loader2,
   BookOpen,
@@ -17,10 +24,15 @@ import {
   Lock,
   Unlock,
   CheckCircle,
+  XCircle,
   ArrowLeft,
   GraduationCap,
   FolderOpen,
+  Upload,
+  ShoppingCart,
 } from 'lucide-react';
+
+const MAX_SLIP_BYTES = 10 * 1024 * 1024; // 10MB
 
 interface Lesson {
   id: number;
@@ -67,6 +79,7 @@ interface Enrollment {
   progress_percent: number;
   completed_lessons: number[];
   last_lesson_id: number;
+  rejection_reason?: string | null;
 }
 
 const difficultyColors: Record<string, string> = {
@@ -85,19 +98,25 @@ const CourseDetail = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { hasSubscription } = useSubscription();
   const isAuthenticated = !!user;
-  // Membership: an active subscription (or admin) unlocks every paid lesson.
-  const hasAccess = hasSubscription || !!user?.isAdmin;
   const [course, setCourse] = useState<Course | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
+  // hasAccess = approved purchase for THIS course (or admin) — comes from the BE.
+  const [hasAccess, setHasAccess] = useState(false);
   const [loading, setLoading] = useState(true);
   const [previewLesson, setPreviewLesson] = useState<Lesson | null>(null);
+
+  // Slip-upload (buy) dialog state
+  const [buyDialogOpen, setBuyDialogOpen] = useState(false);
+  const [slipFile, setSlipFile] = useState<File | null>(null);
+  const [slipPreview, setSlipPreview] = useState<string>('');
+  const [submitting, setSubmitting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (slug) loadCourse();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, isAuthenticated, hasAccess]);
+  }, [slug, isAuthenticated]);
 
   const loadCourse = async () => {
     try {
@@ -105,10 +124,13 @@ const CourseDetail = () => {
       if (isAuthenticated) {
         const data = await api.getCourseFull(slug!);
         setCourse(data);
-        setEnrollment(data.enrollment);
+        setEnrollment(data.enrollment ?? null);
+        setHasAccess(!!(data.isEnrolled || data.hasAccess));
       } else {
         const data = await api.getCourse(slug!);
         setCourse(data);
+        setEnrollment(null);
+        setHasAccess(false);
       }
     } catch (error) {
       console.error('Failed to load course:', error);
@@ -119,7 +141,9 @@ const CourseDetail = () => {
     }
   };
 
-  const goToSubscribe = () => navigate('/subscription/transfer-v2');
+  const isFree = !!course && course.price === 0;
+  const buyAmount = course ? (course.discount_price ?? course.price) : 0;
+  const status = enrollment?.status ?? null;
 
   const handleStartLearning = () => {
     if (course && course.lessons.length > 0) {
@@ -133,6 +157,52 @@ const CourseDetail = () => {
       navigate(`/app/courses/${course.slug}/learn/${enrollment.last_lesson_id}`);
     } else {
       handleStartLearning();
+    }
+  };
+
+  const openBuyDialog = () => {
+    if (!isAuthenticated) {
+      navigate('/login');
+      return;
+    }
+    setSlipFile(null);
+    setSlipPreview('');
+    setBuyDialogOpen(true);
+  };
+
+  const handleSlipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('กรุณาเลือกไฟล์รูปภาพ');
+      return;
+    }
+    if (file.size > MAX_SLIP_BYTES) {
+      toast.error('ไฟล์ใหญ่เกิน 10MB');
+      return;
+    }
+    setSlipFile(file);
+    setSlipPreview(URL.createObjectURL(file));
+  };
+
+  const handleConfirmBuy = async () => {
+    if (!course) return;
+    // Paid courses require a slip; free courses can confirm without one.
+    if (!isFree && !slipFile) {
+      toast.error('กรุณาอัปโหลดสลิปการโอนเงิน');
+      return;
+    }
+    try {
+      setSubmitting(true);
+      await api.enrollCourse(course.id, slipFile ?? undefined);
+      toast.success('ส่งคำขอแล้ว รอแอดมินอนุมัติ');
+      setBuyDialogOpen(false);
+      await loadCourse();
+    } catch (error: any) {
+      console.error('Failed to enroll:', error);
+      toast.error(error?.message || 'ส่งคำขอไม่สำเร็จ');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -230,13 +300,13 @@ const CourseDetail = () => {
                 </div>
 
                 <div className="mb-4 pt-3 border-t border-gray-700 text-center">
-                  <span className="text-purple-400 text-sm font-medium">เข้าถึงด้วยสมาชิกรายเดือน / รายปี</span>
+                  <CoursePrice price={course.price} discountPrice={course.discount_price} size="lg" className="justify-center" />
                 </div>
 
-                {hasAccess ? (
+                {hasAccess || status === 'approved' ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5 text-green-400 text-sm mb-1">
-                      <CheckCircle className="h-3.5 w-3.5" /><span>คุณเป็นสมาชิก เข้าถึงได้ทุกบทเรียน</span>
+                      <CheckCircle className="h-3.5 w-3.5" /><span>✓ ซื้อคอร์สแล้ว</span>
                     </div>
                     {enrollment && enrollment.progress_percent > 0 && (
                       <div className="mb-2">
@@ -254,13 +324,38 @@ const CourseDetail = () => {
                       {enrollment?.last_lesson_id ? 'เรียนต่อ' : 'เริ่มเรียน'}
                     </Button>
                   </div>
+                ) : status === 'pending' ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5 text-yellow-400 text-sm mb-1 rounded-md bg-yellow-500/10 border border-yellow-500/20 px-2 py-1.5">
+                      <Clock className="h-3.5 w-3.5" /><span>⏳ รออนุมัติ</span>
+                    </div>
+                    <Button variant="outline" onClick={openBuyDialog} className="w-full h-8 text-sm border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/10">
+                      <Upload className="h-3.5 w-3.5 mr-1.5" />
+                      อัปเดตสลิป
+                    </Button>
+                  </div>
+                ) : status === 'rejected' ? (
+                  <div className="space-y-2">
+                    <div className="rounded-md bg-red-500/10 border border-red-500/20 px-2 py-1.5">
+                      <div className="flex items-center gap-1.5 text-red-400 text-sm">
+                        <XCircle className="h-3.5 w-3.5" /><span>ถูกปฏิเสธ</span>
+                      </div>
+                      {enrollment?.rejection_reason && (
+                        <p className="text-red-300/80 text-xs mt-1">{enrollment.rejection_reason}</p>
+                      )}
+                    </div>
+                    <Button onClick={openBuyDialog} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
+                      <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
+                      ซื้อใหม่
+                    </Button>
+                  </div>
                 ) : (
                   <div className="space-y-2">
-                    <Button onClick={goToSubscribe} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
-                      <Lock className="h-3.5 w-3.5 mr-1.5" />
-                      สมัครสมาชิกเพื่อปลดล็อก
+                    <Button onClick={openBuyDialog} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
+                      {isFree ? <Play className="h-3.5 w-3.5 mr-1.5" /> : <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />}
+                      {isFree ? 'ลงทะเบียนเรียนฟรี' : `ซื้อคอร์สนี้ ฿${buyAmount.toLocaleString()}`}
                     </Button>
-                    <p className="text-gray-500 text-xs text-center">ดูบทเรียนตัวอย่างฟรี • สมาชิกดูได้ทุกคอร์ส</p>
+                    <p className="text-gray-500 text-xs text-center">ดูบทเรียนตัวอย่างฟรี • ซื้อเพื่อปลดล็อกทุกบทเรียน</p>
                   </div>
                 )}
               </CardContent>
@@ -299,7 +394,7 @@ const CourseDetail = () => {
                       } else if (hasAccess) {
                         navigate(`/app/courses/${course.slug}/learn/${lesson.id}`);
                       } else {
-                        goToSubscribe();
+                        openBuyDialog();
                       }
                     }}
                   >
@@ -395,6 +490,73 @@ const CourseDetail = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Buy / slip-upload dialog */}
+      <Dialog open={buyDialogOpen} onOpenChange={(open) => { if (!submitting) setBuyDialogOpen(open); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5 text-purple-400" />
+              {isFree ? 'ลงทะเบียนเรียนฟรี' : 'ซื้อคอร์สนี้'}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="flex items-center justify-between rounded-md bg-gray-800/50 px-3 py-2.5">
+              <span className="text-white text-sm font-medium">{course.name}</span>
+              <CoursePrice price={course.price} discountPrice={course.discount_price} size="sm" />
+            </div>
+
+            {!isFree && (
+              <>
+                <p className="text-gray-400 text-sm">
+                  โอนเงินจำนวน <span className="text-purple-400 font-semibold">฿{buyAmount.toLocaleString()}</span> แล้วอัปโหลดสลิปการโอนเงินเพื่อให้แอดมินตรวจสอบ
+                </p>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleSlipChange}
+                />
+
+                {slipPreview ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-center bg-gray-900 rounded-lg p-3">
+                      <img src={slipPreview} alt="สลิปการโอนเงิน" className="max-h-72 max-w-full object-contain rounded" />
+                    </div>
+                    <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="w-full">
+                      <Upload className="h-4 w-4 mr-2" />
+                      เลือกรูปอื่น
+                    </Button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-700 hover:border-purple-500/50 bg-gray-800/30 py-8 transition-colors"
+                  >
+                    <Upload className="h-7 w-7 text-gray-400" />
+                    <span className="text-gray-300 text-sm">อัปโหลดสลิปการโอนเงิน</span>
+                    <span className="text-gray-500 text-xs">รูปภาพ ขนาดไม่เกิน 10MB</span>
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBuyDialogOpen(false)} disabled={submitting}>
+              ยกเลิก
+            </Button>
+            <Button onClick={handleConfirmBuy} disabled={submitting} className="bg-purple-600 hover:bg-purple-700">
+              {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              ยืนยัน
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

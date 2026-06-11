@@ -92,24 +92,16 @@ const CourseLearn = () => {
     try {
       setLoading(true);
       const data = await api.getCourseFull(slug!);
-      // isEnrolled now means "has an active subscription (or admin)".
+      // isEnrolled = has an APPROVED purchase for THIS course (or is admin).
       if (!data.isEnrolled) {
-        toast.error('กรุณาสมัครสมาชิกเพื่อเข้าเรียน');
-        navigate('/subscription/transfer-v2');
+        toast.error('กรุณาซื้อคอร์สนี้ก่อน');
+        navigate('/app/courses/' + slug);
         return;
       }
-      // Ensure a progress row exists (auto-created, idempotent — no slip/approval).
-      let enrollmentRow = data.enrollment;
-      if (!enrollmentRow) {
-        try {
-          const started = await api.startCourse(data.id);
-          enrollmentRow = started.enrollment;
-        } catch {
-          // Progress tracking is non-critical; keep playing even if it fails.
-        }
-      }
       setCourse(data);
-      setEnrollment(enrollmentRow);
+      // data.enrollment is the approved row (or null for admins). When null we
+      // simply skip progress writes — don't crash.
+      setEnrollment(data.enrollment ?? null);
     } catch (error) {
       console.error('Failed to load course:', error);
       toast.error('โหลดคอร์สไม่สำเร็จ');
