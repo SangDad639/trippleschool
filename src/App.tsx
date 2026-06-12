@@ -84,6 +84,7 @@ const AuthPage = () => {
     try {
       if (isLogin) {
         await login(email, password);
+        navigate('/courses', { replace: true });
       } else {
         const result = await register(
           email,
@@ -99,6 +100,7 @@ const AuthPage = () => {
           window.ttq?.track('CompleteRegistration');
           window.fbq?.('track', 'CompleteRegistration');
           window.gtag?.('event', 'sign_up', { method: 'email' });
+          navigate('/courses', { replace: true });
         } else {
           setError(t('auth.registerFailed'));
         }
@@ -206,6 +208,7 @@ const AuthPage = () => {
                       window.fbq?.('track', 'CompleteRegistration');
                       window.gtag?.('event', 'sign_up', { method: 'google' });
                     }
+                    navigate('/courses', { replace: true });
                   } catch (err: any) {
                     setError(err.message || 'Google login failed');
                   }

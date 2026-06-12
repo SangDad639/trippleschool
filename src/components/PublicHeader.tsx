@@ -8,7 +8,7 @@ import { GraduationCap } from 'lucide-react';
 // course catalog, and public course detail.
 const PublicHeader = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
   const { language, setLanguage } = useLanguage();
 
   return (
@@ -33,9 +33,22 @@ const PublicHeader = () => {
           </button>
 
           {user ? (
-            <Button size="sm" onClick={() => navigate('/app/my-courses')} className="bg-purple-600 hover:bg-purple-700">
-              คอร์สของฉัน
-            </Button>
+            <>
+              <span className="hidden md:inline text-xs text-gray-400 max-w-[160px] truncate" title={user.email}>
+                {user.email}
+              </span>
+              <Button size="sm" onClick={() => navigate('/app/my-courses')} className="bg-purple-600 hover:bg-purple-700">
+                คอร์สของฉัน
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => { logout(); navigate('/'); }}
+                className="text-gray-300 hover:text-white"
+              >
+                ออกจากระบบ
+              </Button>
+            </>
           ) : (
             <>
               <Button size="sm" variant="ghost" onClick={() => navigate('/login')} className="text-gray-300 hover:text-white">
