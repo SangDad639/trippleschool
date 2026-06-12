@@ -34,7 +34,6 @@ const translations = {
   'profile.noSubscriptionDesc': { th: 'สมัครแพ็กเกจเพื่อใช้งาน Content Scheduler', en: 'Subscribe to use Content Scheduler' },
   'profile.subscribe': { th: 'สมัครแพ็กเกจ', en: 'Subscribe' },
   'profile.language': { th: 'ภาษา', en: 'Language' },
-  'profile.apiKeys': { th: 'ตั้งค่า API Keys', en: 'API Keys Settings' },
 
   // ============ Content Scheduler ============
   'scheduler.title': { th: 'Content Scheduler', en: 'Content Scheduler' },
@@ -234,8 +233,6 @@ const translations = {
   'channel.loadFavoritesFailed': { th: 'ไม่สามารถโหลดรายการ Favorites ได้', en: 'Failed to load favorites' },
 
   // ============ Settings ============
-  'settings.title': { th: 'ตั้งค่า', en: 'Settings' },
-  'settings.subtitle': { th: 'จัดการ API Keys ของคุณ', en: 'Manage your API keys' },
   'settings.aiProvider': { th: 'ผู้ให้บริการ AI', en: 'AI Provider' },
   'settings.aiProviderDesc': { th: 'สำหรับสร้าง Prompt อัตโนมัติ', en: 'For AI prompt generation' },
   'settings.selectProvider': { th: 'เลือกผู้ให้บริการ', en: 'Select Provider' },

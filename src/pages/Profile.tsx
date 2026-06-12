@@ -15,7 +15,6 @@ import {
   User as UserIcon,
   AlertCircle,
   Sparkles,
-  Settings2,
   Loader2,
   Users,
   Copy,
@@ -255,15 +254,6 @@ const Profile = () => {
             }}
           /> */}
 
-          {/* Quick Link to Settings */}
-          <Button
-            variant="outline"
-            className="w-full"
-            onClick={() => navigate('/settings')}
-          >
-            <Settings2 className="h-4 w-4 mr-2" />
-            {t('profile.apiKeys')}
-          </Button>
         </div>
       </div>
     </div>

@@ -37,7 +37,6 @@ import Admin from "@/pages/Admin";
 import AdminAffiliate from "@/pages/AdminAffiliate";
 import AdminBanners from "@/pages/AdminBanners";
 import AdminBannerEditor from "@/pages/AdminBannerEditor";
-import Settings from "@/pages/Settings";
 import Profile from "@/pages/Profile";
 import Affiliate from "@/pages/Affiliate";
 import Tutorials from "@/pages/Tutorials";
@@ -353,7 +352,6 @@ function AppRoutes() {
       {/* ---------- User ---------- */}
       <Route path="/affiliate" element={<ProtectedRoute><Affiliate /></ProtectedRoute>} />
       <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-      <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
 
       {/* ---------- In-app course area ---------- */}
       <Route path="/app/my-courses" element={<ProtectedRoute><AppShell><MyCourses /></AppShell></ProtectedRoute>} />
