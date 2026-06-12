@@ -6,7 +6,7 @@
 import { Router, Request, Response } from 'express';
 import multer from 'multer';
 import pool from '../db.js';
-import { authenticate, AuthRequest } from '../middleware/auth.js';
+import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth.js';
 import { uploadFile, getFile } from '../utils/s3.js';
 
 const router = Router();
@@ -97,11 +97,17 @@ router.get('/admin/all', authenticate, async (req: AuthRequest, res) => {
 // ============ Public: list active courses ============
 router.get('/', async (req, res) => {
   try {
-    const { featured, difficulty, search } = req.query;
+    const { featured, difficulty, search, sort } = req.query;
     let query = `
-      SELECT c.*, COUNT(DISTINCT l.id) as lesson_count
+      SELECT c.*,
+        COUNT(DISTINCT l.id) FILTER (WHERE l.is_active = true) as lesson_count,
+        COUNT(DISTINCT e.id) FILTER (WHERE e.status = 'approved') as enrollment_count,
+        COALESCE(AVG(r.rating), 0)::numeric(3,2) as avg_rating,
+        COUNT(DISTINCT r.id) as review_count
       FROM courses c
-      LEFT JOIN lessons l ON c.id = l.course_id AND l.is_active = true
+      LEFT JOIN lessons l ON c.id = l.course_id
+      LEFT JOIN course_enrollments e ON c.id = e.course_id
+      LEFT JOIN course_reviews r ON c.id = r.course_id
       WHERE c.is_active = true
     `;
     const params: any[] = [];
@@ -109,7 +115,13 @@ router.get('/', async (req, res) => {
     if (featured === 'true') query += ` AND c.is_featured = true`;
     if (difficulty) { query += ` AND c.difficulty = $${paramIndex}`; params.push(difficulty); paramIndex++; }
     if (search) { query += ` AND (c.name ILIKE $${paramIndex} OR c.description ILIKE $${paramIndex})`; params.push(`%${search}%`); paramIndex++; }
-    query += ` GROUP BY c.id ORDER BY c.display_order ASC, c.created_at DESC`;
+    query += ` GROUP BY c.id`;
+    const order = sort === 'popular' ? `enrollment_count DESC, c.created_at DESC`
+      : sort === 'new' ? `c.created_at DESC`
+      : sort === 'price_asc' ? `COALESCE(c.discount_price, c.price) ASC`
+      : sort === 'price_desc' ? `COALESCE(c.discount_price, c.price) DESC`
+      : `c.display_order ASC, c.created_at DESC`;
+    query += ` ORDER BY ${order}`;
     const result = await pool.query(query, params);
     res.json(result.rows);
   } catch (error) {
@@ -125,21 +137,23 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
     const {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
-      is_featured, display_order, price, discount_price,
+      is_featured, display_order, price, discount_price, learning_outcomes, requirements,
     } = req.body;
     if (!name || !slug) return res.status(400).json({ error: 'Name and slug are required' });
     const result = await pool.query(`
       INSERT INTO courses (
         name, slug, description, short_description, thumbnail_url,
         instructor_name, instructor_avatar, difficulty, duration_hours,
-        is_featured, display_order, price, discount_price
+        is_featured, display_order, price, discount_price, learning_outcomes, requirements
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
       RETURNING *
     `, [
       name, slug, description || null, short_description || null, thumbnail_url || null,
       instructor_name || null, instructor_avatar || null, difficulty || 'beginner', duration_hours || 0,
       is_featured || false, display_order || 0, price || 0, discount_price || null,
+      JSON.stringify(Array.isArray(learning_outcomes) ? learning_outcomes : []),
+      JSON.stringify(Array.isArray(requirements) ? requirements : []),
     ]);
     res.json(result.rows[0]);
   } catch (error) {
@@ -157,7 +171,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
     const {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
-      is_featured, is_active, display_order, price, discount_price,
+      is_featured, is_active, display_order, price, discount_price, learning_outcomes, requirements,
     } = req.body;
     const result = await pool.query(`
       UPDATE courses SET
@@ -175,13 +189,18 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
         display_order = COALESCE($12, display_order),
         price = COALESCE($13, price),
         discount_price = $14,
+        learning_outcomes = COALESCE($15, learning_outcomes),
+        requirements = COALESCE($16, requirements),
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $15
+      WHERE id = $17
       RETURNING *
     `, [
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
-      is_featured, is_active, display_order, price, discount_price, id,
+      is_featured, is_active, display_order, price, discount_price,
+      learning_outcomes !== undefined ? JSON.stringify(learning_outcomes) : null,
+      requirements !== undefined ? JSON.stringify(requirements) : null,
+      id,
     ]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     res.json(result.rows[0]);
@@ -208,9 +227,12 @@ router.delete('/:id', authenticate, async (req: AuthRequest, res) => {
 
 // =====================  SECTION ENDPOINTS  =====================
 
-router.get('/:courseId/sections', async (req, res) => {
+router.get('/:courseId/sections', optionalAuth, async (req: AuthRequest, res) => {
   try {
     const { courseId } = req.params;
+    // Reveal paid-lesson youtube_id only to admins / enrolled owners. Anonymous
+    // or non-owner callers get it masked (preview lessons stay visible).
+    const hasAccess = !!req.isAdmin || (req.userId ? await hasApprovedEnrollment(req.userId, Number(courseId)) : false);
     const sectionsResult = await pool.query(`
       SELECT * FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
     `, [courseId]);
@@ -219,7 +241,10 @@ router.get('/:courseId/sections', async (req, res) => {
         SELECT id, title, description, youtube_id, duration_minutes, lesson_order, is_preview, section_id
         FROM lessons WHERE section_id = $1 AND is_active = true ORDER BY lesson_order ASC
       `, [section.id]);
-      return { ...section, lessons: lessonsResult.rows };
+      const lessons = lessonsResult.rows.map((l) =>
+        hasAccess || l.is_preview ? l : { ...l, youtube_id: null }
+      );
+      return { ...section, lessons };
     }));
     res.json(sections);
   } catch (error) {
@@ -342,13 +367,18 @@ router.put('/lessons/:lessonId/unassign', authenticate, async (req: AuthRequest,
 
 // =====================  LESSON ENDPOINTS  =====================
 
-router.get('/:courseId/lessons', async (req, res) => {
+router.get('/:courseId/lessons', optionalAuth, async (req: AuthRequest, res) => {
   try {
     const { courseId } = req.params;
+    // Reveal paid-lesson youtube_id/youtube_url only to admins / enrolled owners.
+    const hasAccess = !!req.isAdmin || (req.userId ? await hasApprovedEnrollment(req.userId, Number(courseId)) : false);
     const result = await pool.query(`
       SELECT * FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [courseId]);
-    res.json(result.rows);
+    const lessons = result.rows.map((l) =>
+      hasAccess || l.is_preview ? l : { ...l, youtube_id: null, youtube_url: null }
+    );
+    res.json(lessons);
   } catch (error) {
     console.error('Error fetching lessons:', error);
     res.status(500).json({ error: 'Failed to fetch lessons' });
@@ -487,6 +517,63 @@ router.get('/:slug/lessons/:lessonId/video', authenticate, async (req: AuthReque
   }
 });
 
+// ============ Reviews (public list / owner upsert / admin delete) ============
+router.get('/:slug/reviews', async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const cr = await pool.query(`SELECT id FROM courses WHERE slug = $1`, [slug]);
+    if (cr.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
+    const courseId = cr.rows[0].id;
+    const reviews = await pool.query(`
+      SELECT rv.id, rv.rating, rv.comment, rv.created_at, SPLIT_PART(u.email, '@', 1) AS reviewer
+      FROM course_reviews rv JOIN users u ON rv.user_id = u.id
+      WHERE rv.course_id = $1 ORDER BY rv.created_at DESC
+    `, [courseId]);
+    const agg = await pool.query(
+      `SELECT COALESCE(AVG(rating), 0)::numeric(3,2) AS avg, COUNT(*)::int AS count FROM course_reviews WHERE course_id = $1`,
+      [courseId]
+    );
+    res.json({ reviews: reviews.rows, avg: Number(agg.rows[0].avg), count: agg.rows[0].count });
+  } catch (error) {
+    console.error('Error fetching reviews:', error);
+    res.status(500).json({ error: 'Failed to fetch reviews' });
+  }
+});
+
+router.post('/:courseId/reviews', authenticate, async (req: AuthRequest, res) => {
+  try {
+    const { courseId } = req.params;
+    const userId = req.userId!;
+    const { rating, comment } = req.body;
+    const r = parseInt(rating, 10);
+    if (!(r >= 1 && r <= 5)) return res.status(400).json({ error: 'rating must be 1..5' });
+    if (!(await hasApprovedEnrollment(userId, Number(courseId)))) {
+      return res.status(403).json({ error: 'ต้องซื้อคอร์สนี้ก่อนจึงจะรีวิวได้' });
+    }
+    const result = await pool.query(`
+      INSERT INTO course_reviews (course_id, user_id, rating, comment)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (course_id, user_id) DO UPDATE SET rating = EXCLUDED.rating, comment = EXCLUDED.comment, updated_at = CURRENT_TIMESTAMP
+      RETURNING *
+    `, [courseId, userId, r, comment || null]);
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error submitting review:', error);
+    res.status(500).json({ error: 'Failed to submit review' });
+  }
+});
+
+router.delete('/reviews/:id', authenticate, async (req: AuthRequest, res) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    await pool.query(`DELETE FROM course_reviews WHERE id = $1`, [req.params.id]);
+    res.json({ message: 'Review deleted' });
+  } catch (error) {
+    console.error('Error deleting review:', error);
+    res.status(500).json({ error: 'Failed to delete review' });
+  }
+});
+
 // ============ Public: course by slug, full (auth) variant ============
 // NOTE: keep these single/double-segment :slug routes LAST so they don't shadow
 // the literal routes above (admin, sections, lessons, thumbnails).
@@ -495,7 +582,11 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
   try {
     const { slug } = req.params;
     const userId = req.userId;
-    const courseResult = await pool.query(`SELECT * FROM courses WHERE slug = $1 AND is_active = true`, [slug]);
+    const courseResult = await pool.query(`SELECT c.*,
+        (SELECT COUNT(*) FROM course_enrollments WHERE course_id = c.id AND status = 'approved') AS enrollment_count,
+        (SELECT COALESCE(AVG(rating), 0)::numeric(3,2) FROM course_reviews WHERE course_id = c.id) AS avg_rating,
+        (SELECT COUNT(*) FROM course_reviews WHERE course_id = c.id) AS review_count
+      FROM courses c WHERE c.slug = $1 AND c.is_active = true`, [slug]);
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const course = courseResult.rows[0];
     // Per-course access: an APPROVED purchase for this course (or admin) unlocks paid lessons.
@@ -528,7 +619,11 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
 router.get('/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
-    const courseResult = await pool.query(`SELECT * FROM courses WHERE slug = $1 AND is_active = true`, [slug]);
+    const courseResult = await pool.query(`SELECT c.*,
+        (SELECT COUNT(*) FROM course_enrollments WHERE course_id = c.id AND status = 'approved') AS enrollment_count,
+        (SELECT COALESCE(AVG(rating), 0)::numeric(3,2) FROM course_reviews WHERE course_id = c.id) AS avg_rating,
+        (SELECT COUNT(*) FROM course_reviews WHERE course_id = c.id) AS review_count
+      FROM courses c WHERE c.slug = $1 AND c.is_active = true`, [slug]);
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const course = courseResult.rows[0];
     const sectionsResult = await pool.query(`

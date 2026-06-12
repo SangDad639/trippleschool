@@ -75,6 +75,8 @@ interface Course {
   enrollment_count: number;
   price: number;
   discount_price: number | null;
+  learning_outcomes?: string[];
+  requirements?: string[];
 }
 
 interface Section {
@@ -115,6 +117,8 @@ const initialCourseForm = {
   display_order: 0,
   price: 0,
   discount_price: null as number | null,
+  learning_outcomes: [] as string[],
+  requirements: [] as string[],
 };
 
 const initialLessonForm = {
@@ -129,6 +133,60 @@ const initialLessonForm = {
 const initialSectionForm = {
   title: '',
   description: '',
+};
+
+// Reusable add/edit/remove bullet-list editor for string[] fields.
+const BulletListEditor = ({
+  label,
+  items,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  items: string[];
+  onChange: (items: string[]) => void;
+  placeholder?: string;
+}) => {
+  const update = (idx: number, value: string) => {
+    const next = [...items];
+    next[idx] = value;
+    onChange(next);
+  };
+  const remove = (idx: number) => onChange(items.filter((_, i) => i !== idx));
+  const add = () => onChange([...items, '']);
+
+  return (
+    <div>
+      <Label>{label}</Label>
+      <div className="mt-2 space-y-2">
+        {items.length === 0 && (
+          <p className="text-gray-500 text-sm">ยังไม่มีรายการ — กดปุ่มด้านล่างเพื่อเพิ่ม</p>
+        )}
+        {items.map((item, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <Input
+              value={item}
+              onChange={(e) => update(idx, e.target.value)}
+              placeholder={placeholder}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-red-400 hover:text-red-300 flex-shrink-0"
+              onClick={() => remove(idx)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        ))}
+        <Button type="button" variant="outline" size="sm" onClick={add}>
+          <Plus className="h-4 w-4 mr-1" />
+          เพิ่มรายการ
+        </Button>
+      </div>
+    </div>
+  );
 };
 
 const AdminCourses = () => {
@@ -229,6 +287,8 @@ const AdminCourses = () => {
         display_order: course.display_order || 0,
         price: course.price || 0,
         discount_price: course.discount_price,
+        learning_outcomes: Array.isArray(course.learning_outcomes) ? course.learning_outcomes : [],
+        requirements: Array.isArray(course.requirements) ? course.requirements : [],
       });
     } else {
       setEditingCourse(null);
@@ -874,6 +934,18 @@ const AdminCourses = () => {
                   placeholder="รายละเอียดเต็มของคอร์ส"
                 />
               </div>
+              <BulletListEditor
+                label="สิ่งที่จะได้เรียนรู้"
+                items={courseForm.learning_outcomes}
+                onChange={(learning_outcomes) => setCourseForm({ ...courseForm, learning_outcomes })}
+                placeholder="เช่น เข้าใจหลักการสร้างวิดีโอด้วย AI"
+              />
+              <BulletListEditor
+                label="พื้นฐานที่ควรมี"
+                items={courseForm.requirements}
+                onChange={(requirements) => setCourseForm({ ...courseForm, requirements })}
+                placeholder="เช่น มีคอมพิวเตอร์และอินเทอร์เน็ต"
+              />
               {/* Thumbnail Upload Section */}
               <div>
                 <Label>รูปปกคอร์ส (แนะนำ 16:9, เช่น 1280x720)</Label>

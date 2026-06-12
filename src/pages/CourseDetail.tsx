@@ -4,6 +4,9 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import CoursePrice from '@/components/CoursePrice';
+import StarRating from '@/components/StarRating';
+import ReviewList, { type Review } from '@/components/ReviewList';
+import WriteReviewForm from '@/components/WriteReviewForm';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,6 +33,11 @@ import {
   FolderOpen,
   Upload,
   ShoppingCart,
+  Star,
+  Users,
+  CheckCircle2,
+  ListChecks,
+  MessageSquare,
 } from 'lucide-react';
 
 const MAX_SLIP_BYTES = 10 * 1024 * 1024; // 10MB
@@ -71,6 +79,13 @@ interface Course {
   unassigned_lessons?: Lesson[];
   price: number;
   discount_price: number | null;
+  lesson_count?: number;
+  // SkillLane-style enrichment fields (see backend contract).
+  learning_outcomes?: string[];
+  requirements?: string[];
+  enrollment_count?: string; // bigint serialized as string
+  avg_rating?: number;
+  review_count?: string; // bigint serialized as string
 }
 
 interface Enrollment {
@@ -106,6 +121,11 @@ const CourseDetail = () => {
   const [loading, setLoading] = useState(true);
   const [previewLesson, setPreviewLesson] = useState<Lesson | null>(null);
 
+  // Reviews (public read).
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewAvg, setReviewAvg] = useState(0);
+  const [reviewCount, setReviewCount] = useState(0);
+
   // Slip-upload (buy) dialog state
   const [buyDialogOpen, setBuyDialogOpen] = useState(false);
   const [slipFile, setSlipFile] = useState<File | null>(null);
@@ -114,9 +134,24 @@ const CourseDetail = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (slug) loadCourse();
+    if (slug) {
+      loadCourse();
+      loadReviews();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, isAuthenticated]);
+
+  const loadReviews = async () => {
+    if (!slug) return;
+    try {
+      const data = await api.getCourseReviews(slug);
+      setReviews(data.reviews || []);
+      setReviewAvg(data.avg || 0);
+      setReviewCount(Number(data.count) || 0);
+    } catch (error) {
+      console.error('Failed to load reviews:', error);
+    }
+  };
 
   const loadCourse = async () => {
     try {
@@ -264,6 +299,53 @@ const CourseDetail = () => {
                 <h1 className="text-lg font-bold text-white mb-2">{course.name}</h1>
                 {course.short_description && <p className="text-gray-400 text-sm mb-3">{course.short_description}</p>}
 
+                {/* Stats bar */}
+                {(() => {
+                  const enrollCount = Number(course.enrollment_count) || 0;
+                  const lessonCount = course.lesson_count || course.total_lessons || course.lessons?.length || 0;
+                  const avg = course.avg_rating ?? reviewAvg;
+                  const rCount = Number(course.review_count) || reviewCount;
+                  const stats: React.ReactNode[] = [];
+                  if (avg > 0) {
+                    stats.push(
+                      <span key="rating" className="flex items-center gap-1 text-yellow-400">
+                        <Star className="h-3.5 w-3.5 fill-yellow-400" />
+                        {avg.toFixed(1)}
+                        {rCount > 0 && <span className="text-gray-400">({rCount})</span>}
+                      </span>
+                    );
+                  }
+                  if (enrollCount > 0) {
+                    stats.push(
+                      <span key="enroll" className="flex items-center gap-1 text-gray-300">
+                        <Users className="h-3.5 w-3.5" />ผู้เรียน {enrollCount.toLocaleString()} คน
+                      </span>
+                    );
+                  }
+                  if (course.duration_hours > 0) {
+                    stats.push(
+                      <span key="duration" className="flex items-center gap-1 text-gray-300">
+                        <Clock className="h-3.5 w-3.5" />{course.duration_hours} ชม.
+                      </span>
+                    );
+                  }
+                  if (lessonCount > 0) {
+                    stats.push(
+                      <span key="lessons" className="flex items-center gap-1 text-gray-300">
+                        <BookOpen className="h-3.5 w-3.5" />{lessonCount} บทเรียน
+                      </span>
+                    );
+                  }
+                  stats.push(
+                    <Badge key="level" className={`${difficultyColors[course.difficulty]} border text-[11px] px-1.5 py-0`}>
+                      {difficultyLabels[course.difficulty] || 'เริ่มต้น'}
+                    </Badge>
+                  );
+                  return stats.length > 0 ? (
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs mb-3">{stats}</div>
+                  ) : null;
+                })()}
+
                 {course.instructor_name && (
                   <div className="flex items-center gap-2 mb-3 pb-3 border-b border-gray-700">
                     {course.instructor_avatar ? (
@@ -362,6 +444,46 @@ const CourseDetail = () => {
             </Card>
           </div>
         </div>
+
+        {course.learning_outcomes && course.learning_outcomes.length > 0 && (
+          <Card className="mb-6">
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-white text-base flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-green-400" />สิ่งที่จะได้เรียนรู้
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0">
+              <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2">
+                {course.learning_outcomes.map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-gray-300 text-sm">
+                    <CheckCircle2 className="h-4 w-4 text-green-400 mt-0.5 flex-shrink-0" />
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+
+        {course.requirements && course.requirements.length > 0 && (
+          <Card className="mb-6">
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-white text-base flex items-center gap-2">
+                <ListChecks className="h-4 w-4 text-purple-400" />พื้นฐานที่ควรมี
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0">
+              <ul className="space-y-2">
+                {course.requirements.map((item, idx) => (
+                  <li key={idx} className="flex items-start gap-2 text-gray-300 text-sm">
+                    <span className="text-purple-400 mt-0.5">•</span>
+                    <span>{item}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
 
         {course.description && (
           <Card className="mb-6">
@@ -487,6 +609,28 @@ const CourseDetail = () => {
 
               return <div className="space-y-1.5">{allLessons.map((lesson, index) => renderLessonRow(lesson, index))}</div>;
             })()}
+          </CardContent>
+        </Card>
+
+        {/* Reviews */}
+        <Card className="mt-6">
+          <CardHeader className="py-3 px-4">
+            <CardTitle className="text-white text-base flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-purple-400" />
+              รีวิวจากผู้เรียน
+              {reviewCount > 0 && (
+                <span className="flex items-center gap-2 ml-1">
+                  <StarRating value={reviewAvg} size={14} />
+                  <span className="text-gray-400 text-sm font-normal">({reviewCount} รีวิว)</span>
+                </span>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 pt-0 space-y-4">
+            {(hasAccess || status === 'approved') && (
+              <WriteReviewForm courseId={course.id} onSubmitted={loadReviews} />
+            )}
+            <ReviewList reviews={reviews} />
           </CardContent>
         </Card>
       </div>

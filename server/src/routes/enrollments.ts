@@ -4,7 +4,7 @@
 //   - Progress (completed_lessons / progress_percent) tracked on the same row.
 //   - Slips stored in S3; served via a public proxy (/api/enrollments/slips/*).
 //   - Mounted at /api/enrollments.
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import pool from '../db.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
@@ -28,14 +28,36 @@ async function createCourseCommission(enrollment: { id: number; user_id: number;
   }
 }
 
+const SLIP_MAX_BYTES = 5 * 1024 * 1024;
 const slipUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: SLIP_MAX_BYTES },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/')) cb(null, true);
     else cb(new Error('Only image files allowed'));
   },
 });
+
+/**
+ * Wraps slipUpload.single('slip') so multer errors return a clean 4xx instead of
+ * bubbling to Express's default handler (which yields an HTML 500). Oversize →
+ * 413, wrong type / other upload errors → 400, all with Thai messages.
+ */
+function uploadSlip(req: Request, res: Response, next: NextFunction) {
+  slipUpload.single('slip')(req, res, (err: unknown) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'ไฟล์สลิปใหญ่เกินไป (สูงสุด 5MB)' });
+      }
+      return res.status(400).json({ error: `อัปโหลดไฟล์ไม่สำเร็จ (${err.code})` });
+    }
+    const msg = err instanceof Error && err.message === 'Only image files allowed'
+      ? 'อัปโหลดได้เฉพาะไฟล์รูปภาพ (เช่น jpg, png)'
+      : 'อัปโหลดไฟล์ไม่สำเร็จ';
+    return res.status(400).json({ error: msg });
+  });
+}
 
 // ============ Public slip proxy (no auth so admin <img> loads) ============
 router.get('/slips/*', async (req: Request, res: Response) => {
@@ -51,7 +73,7 @@ router.get('/slips/*', async (req: Request, res: Response) => {
 });
 
 // ============ User: buy a course (upload payment slip) ============
-router.post('/:courseId/enroll', authenticate, slipUpload.single('slip'), async (req: AuthRequest, res: Response) => {
+router.post('/:courseId/enroll', authenticate, uploadSlip, async (req: AuthRequest, res: Response) => {
   try {
     const { courseId } = req.params;
     const userId = req.userId!;

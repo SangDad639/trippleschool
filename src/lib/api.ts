@@ -2785,11 +2785,12 @@ class ApiClient {
   // Courses (Course Learning System)
   // ============================================
 
-  async getCourses(params?: { featured?: boolean; difficulty?: string; search?: string }) {
+  async getCourses(params?: { featured?: boolean; difficulty?: string; search?: string; sort?: string }) {
     const qs = new URLSearchParams();
     if (params?.featured) qs.set('featured', 'true');
     if (params?.difficulty) qs.set('difficulty', params.difficulty);
     if (params?.search) qs.set('search', params.search);
+    if (params?.sort) qs.set('sort', params.sort);
     const q = qs.toString();
     return this.request(`/api/courses${q ? `?${q}` : ''}`);
   }
@@ -2858,6 +2859,20 @@ class ApiClient {
   }
   async reorderLessons(courseId: number, lessonIds: number[]) {
     return this.request(`/api/courses/${courseId}/lessons/reorder`, { method: 'PUT', body: JSON.stringify({ lessonIds }) });
+  }
+  // Reviews — public read, auth+approved-enrollment to write, admin to delete.
+  async getCourseReviews(slug: string): Promise<{
+    reviews: Array<{ id: number; rating: number; comment: string | null; created_at: string; reviewer: string }>;
+    avg: number;
+    count: number;
+  }> {
+    return this.request(`/api/courses/${encodeURIComponent(slug)}/reviews`);
+  }
+  async submitReview(courseId: number | string, body: { rating: number; comment?: string }) {
+    return this.request(`/api/courses/${courseId}/reviews`, { method: 'POST', body: JSON.stringify(body) });
+  }
+  async deleteReview(id: number) {
+    return this.request(`/api/courses/reviews/${id}`, { method: 'DELETE' });
   }
   // Enrollments (learner) — per-course purchase → admin approval model.
   // POST a buy request for a course. Optional payment slip (image, ≤10MB).
