@@ -221,7 +221,7 @@ const CourseCard = ({ course, onClick }: { course: Course; onClick: () => void }
       <div className="relative aspect-[4/3] bg-gray-800 overflow-hidden">
         {course.thumbnail_url ? (
           <img
-            src={course.thumbnail_url}
+            src={api.mediaUrl(course.thumbnail_url)}
             alt={course.name}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
           />

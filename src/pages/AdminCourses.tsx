@@ -619,7 +619,7 @@ const AdminCourses = () => {
                       <div className="flex items-center gap-4">
                         {course.thumbnail_url ? (
                           <img
-                            src={course.thumbnail_url}
+                            src={api.mediaUrl(course.thumbnail_url)}
                             alt={course.name}
                             className="w-16 h-10 rounded object-cover"
                           />
@@ -954,7 +954,7 @@ const AdminCourses = () => {
                   <div className="w-40 h-24 rounded-lg border border-gray-700 bg-gray-800 overflow-hidden flex-shrink-0">
                     {courseForm.thumbnail_url ? (
                       <img
-                        src={courseForm.thumbnail_url}
+                        src={api.mediaUrl(courseForm.thumbnail_url)}
                         alt="Preview"
                         className="w-full h-full object-cover"
                       />

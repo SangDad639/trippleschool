@@ -147,7 +147,7 @@ const EnrollmentCard = ({ enrollment, onContinue }: { enrollment: Enrollment; on
     <Card className="overflow-hidden group">
       <div className="relative aspect-video bg-gray-800 overflow-hidden">
         {enrollment.thumbnail_url ? (
-          <img src={enrollment.thumbnail_url} alt={enrollment.course_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+          <img src={api.mediaUrl(enrollment.thumbnail_url)} alt={enrollment.course_name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <BookOpen className="h-12 w-12 text-gray-600" />

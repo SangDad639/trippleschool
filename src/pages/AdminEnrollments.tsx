@@ -420,7 +420,7 @@ const AdminEnrollments = () => {
                               size="sm"
                               variant="outline"
                               onClick={() => {
-                                setPreviewSlipUrl(enrollment.slip_url);
+                                setPreviewSlipUrl(api.mediaUrl(enrollment.slip_url));
                                 setSlipPreviewOpen(true);
                               }}
                               className="text-blue-400 border-blue-400/50 hover:bg-blue-400/10"

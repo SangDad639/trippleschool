@@ -284,7 +284,7 @@ const CourseDetail = () => {
                   allowFullScreen
                 />
               ) : course.thumbnail_url ? (
-                <img src={course.thumbnail_url} alt={course.name} className="w-full h-full object-cover" />
+                <img src={api.mediaUrl(course.thumbnail_url)} alt={course.name} className="w-full h-full object-cover" />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
                   <BookOpen className="h-20 w-20 text-gray-600" />

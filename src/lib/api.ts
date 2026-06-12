@@ -41,6 +41,21 @@ class ApiClient {
   }
 
   /**
+   * Resolve a media path served by the backend (S3-proxy images: course
+   * thumbnails, payment slips) to a fully-qualified URL.
+   *
+   * Stored values are relative (e.g. "/api/courses/thumbnails/..."). In prod the
+   * FE and API are on different origins (VITE_API_URL), so an <img src> using the
+   * raw relative path would hit the FE origin and 404. Prepend the API base for
+   * relative "/..." paths; pass through values that are already absolute.
+   */
+  mediaUrl(path?: string | null): string {
+    if (!path) return '';
+    if (/^https?:\/\//i.test(path)) return path;
+    return path.startsWith('/') ? `${this.apiUrl}${path}` : path;
+  }
+
+  /**
    * Download a file via backend streaming proxy.
    * Bypasses browser CORS/cross-origin issues for Dropbox/KIE/S3 URLs.
    * Auto-triggers browser download with correct filename.
