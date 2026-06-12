@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { GraduationCap } from 'lucide-react';
+import { GraduationCap, User as UserIcon } from 'lucide-react';
 
 // Shared top navigation for the public (no-login) surface: storefront,
 // course catalog, and public course detail.
@@ -34,9 +34,16 @@ const PublicHeader = () => {
 
           {user ? (
             <>
-              <span className="hidden md:inline text-xs text-gray-400 max-w-[160px] truncate" title={user.email}>
-                {user.email}
-              </span>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => navigate('/profile')}
+                className="text-gray-300 hover:text-white px-2"
+                title={`บัญชีของฉัน: ${user.email}`}
+              >
+                <UserIcon className="h-4 w-4 md:mr-1.5" />
+                <span className="hidden md:inline max-w-[140px] truncate">{user.email}</span>
+              </Button>
               <Button size="sm" onClick={() => navigate('/app/my-courses')} className="bg-purple-600 hover:bg-purple-700">
                 คอร์สของฉัน
               </Button>
