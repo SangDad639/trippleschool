@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { BilingualInput } from '@/components/admin/BilingualInput';
 import WelcomeBannersPanel from '@/components/admin/WelcomeBannersPanel';
@@ -73,7 +74,16 @@ const empty = (): Omit<Banner, 'id'> => ({
  */
 export default function AdminBanners() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [tab, setTab] = useState<BannerTab>('update');
+
+  if (!user?.isAdmin) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+        <p className="text-gray-400">ไม่มีสิทธิ์เข้าถึง</p>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-5xl">

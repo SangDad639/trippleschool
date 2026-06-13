@@ -1,8 +1,16 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { GraduationCap, User as UserIcon } from 'lucide-react';
+import { GraduationCap, User as UserIcon, Shield, LogOut, ChevronDown } from 'lucide-react';
 
 // Shared top navigation for the public (no-login) surface: storefront,
 // course catalog, and public course detail.
@@ -34,27 +42,42 @@ const PublicHeader = () => {
 
           {user ? (
             <>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => navigate('/profile')}
-                className="text-gray-300 hover:text-white px-2"
-                title={`บัญชีของฉัน: ${user.email}`}
-              >
-                <UserIcon className="h-4 w-4 md:mr-1.5" />
-                <span className="hidden md:inline max-w-[140px] truncate">{user.email}</span>
-              </Button>
               <Button size="sm" onClick={() => navigate('/app/my-courses')} className="bg-purple-600 hover:bg-purple-700">
                 คอร์สของฉัน
               </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => { logout(); navigate('/'); }}
-                className="text-gray-300 hover:text-white"
-              >
-                ออกจากระบบ
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button size="sm" variant="ghost" className="text-gray-300 hover:text-white px-2" title={user.email}>
+                    <UserIcon className="h-4 w-4 md:mr-1.5" />
+                    <span className="hidden md:inline max-w-[140px] truncate">{user.email}</span>
+                    <ChevronDown className="h-3.5 w-3.5 ml-1 opacity-70" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel className="truncate">{user.email}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate('/profile')}>บัญชีของฉัน</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/app/my-courses')}>คอร์สของฉัน</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/affiliate')}>พันธมิตร (Affiliate)</DropdownMenuItem>
+                  {(user.isAdmin || user.isSuperAdmin) && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuLabel className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Shield className="h-3.5 w-3.5" /> ผู้ดูแลระบบ
+                      </DropdownMenuLabel>
+                      <DropdownMenuItem onClick={() => navigate('/admin')}>แดชบอร์ดผู้ดูแล</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/admin/courses')}>จัดการคอร์ส</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/admin/enrollments')}>อนุมัติการลงทะเบียน</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/admin/affiliate')}>จ่ายค่าคอมมิชชั่น</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/admin/banners')}>จัดการแบนเนอร์</DropdownMenuItem>
+                    </>
+                  )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => { logout(); navigate('/'); }} className="text-red-400 focus:text-red-400">
+                    <LogOut className="h-4 w-4 mr-2" /> ออกจากระบบ
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </>
           ) : (
             <>

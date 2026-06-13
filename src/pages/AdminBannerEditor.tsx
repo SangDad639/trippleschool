@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Plus, Trash2, Upload, Loader2, Play, Save, Check, X, ChevronUp, ChevronDown, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 
 type DetailItem = {
@@ -34,6 +35,7 @@ interface Banner {
 export default function AdminBannerEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [banner, setBanner] = useState<Banner | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -92,6 +94,13 @@ export default function AdminBannerEditor() {
   const updateLinks = (links: Link[]) => update({ links });
   const updatePrompts = (prompts: Prompt[]) => update({ prompts });
 
+  if (!user?.isAdmin) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+        <p className="text-gray-400">ไม่มีสิทธิ์เข้าถึง</p>
+      </div>
+    );
+  }
   if (loading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   if (!banner) return null;
 
