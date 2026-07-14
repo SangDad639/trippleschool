@@ -19,7 +19,15 @@ import {
   FolderOpen,
   ChevronDown,
   ChevronUp,
+  Download,
+  FileText,
 } from 'lucide-react';
+
+interface LessonMaterial {
+  title: string;
+  url: string;
+  type: 'link' | 'pdf';
+}
 
 interface Lesson {
   id: number;
@@ -31,6 +39,7 @@ interface Lesson {
   lesson_order: number;
   is_preview: boolean;
   section_id: number | null;
+  materials?: LessonMaterial[];
 }
 
 interface Section {
@@ -252,6 +261,26 @@ const CourseLearn = () => {
                   </Button>
                 </div>
                 {currentLesson.description && <p className="text-gray-300 text-sm whitespace-pre-wrap">{currentLesson.description}</p>}
+
+                {currentLesson.materials && currentLesson.materials.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-gray-800">
+                    <p className="text-sm font-medium text-white mb-2">เอกสารประกอบ</p>
+                    <div className="flex flex-wrap gap-2">
+                      {currentLesson.materials.map((m, idx) => (
+                        <a
+                          key={idx}
+                          href={api.mediaUrl(m.url)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 rounded-md border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-sm text-purple-300 transition-colors hover:bg-purple-500/20 hover:text-purple-200"
+                        >
+                          {m.type === 'pdf' ? <FileText className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+                          {m.title || 'เอกสาร'}
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

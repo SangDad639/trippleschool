@@ -2837,6 +2837,11 @@ class ApiClient {
     formData.append('thumbnail', file);
     return this.request('/api/courses/upload-thumbnail', { method: 'POST', body: formData });
   }
+  async uploadCourseMaterial(file: File): Promise<{ url: string; name: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request('/api/courses/upload-material', { method: 'POST', body: formData });
+  }
   // Sections
   async getCourseSections(courseId: number) {
     return this.request(`/api/courses/${courseId}/sections`);

@@ -54,6 +54,9 @@ import {
   Upload,
   ImageIcon,
   ArrowLeft,
+  FileText,
+  Link2,
+  X,
 } from 'lucide-react';
 
 interface Course {
@@ -89,6 +92,12 @@ interface Section {
   lessons: Lesson[];
 }
 
+interface LessonMaterial {
+  title: string;
+  url: string;
+  type: 'link' | 'pdf';
+}
+
 interface Lesson {
   id: number;
   course_id: number;
@@ -101,6 +110,7 @@ interface Lesson {
   lesson_order: number;
   is_preview: boolean;
   is_active: boolean;
+  materials?: LessonMaterial[];
 }
 
 const initialCourseForm = {
@@ -128,6 +138,7 @@ const initialLessonForm = {
   duration_minutes: 0,
   is_preview: false,
   section_id: null as number | null,
+  materials: [] as LessonMaterial[],
 };
 
 const initialSectionForm = {
@@ -209,6 +220,8 @@ const AdminCourses = () => {
   const [lessonForm, setLessonForm] = useState(initialLessonForm);
   const [selectedCourseForLesson, setSelectedCourseForLesson] = useState<Course | null>(null);
   const [courseLessons, setCourseLessons] = useState<Record<number, Lesson[]>>({});
+  const [uploadingMaterial, setUploadingMaterial] = useState(false);
+  const materialInputRef = useRef<HTMLInputElement>(null);
 
   // Section dialog
   const [sectionDialogOpen, setSectionDialogOpen] = useState(false);
@@ -392,12 +405,47 @@ const AdminCourses = () => {
         duration_minutes: lesson.duration_minutes || 0,
         is_preview: lesson.is_preview,
         section_id: lesson.section_id,
+        materials: lesson.materials ?? [],
       });
     } else {
       setEditingLesson(null);
       setLessonForm(initialLessonForm);
     }
     setLessonDialogOpen(true);
+  };
+
+  // ---- Lesson materials (downloadable documents) ----
+  const addMaterialLink = () =>
+    setLessonForm((prev) => ({ ...prev, materials: [...prev.materials, { title: '', url: '', type: 'link' }] }));
+
+  const updateMaterial = (idx: number, patch: Partial<LessonMaterial>) =>
+    setLessonForm((prev) => ({
+      ...prev,
+      materials: prev.materials.map((m, i) => (i === idx ? { ...m, ...patch } : m)),
+    }));
+
+  const removeMaterial = (idx: number) =>
+    setLessonForm((prev) => ({ ...prev, materials: prev.materials.filter((_, i) => i !== idx) }));
+
+  const handleUploadMaterial = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (e.target) e.target.value = ''; // allow re-selecting the same file
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      toast.error('รองรับเฉพาะไฟล์ PDF');
+      return;
+    }
+    try {
+      setUploadingMaterial(true);
+      const { url, name } = await api.uploadCourseMaterial(file);
+      const title = (name || '').replace(/\.pdf$/i, '');
+      setLessonForm((prev) => ({ ...prev, materials: [...prev.materials, { title, url, type: 'pdf' }] }));
+      toast.success('อัปโหลดเอกสารสำเร็จ');
+    } catch (error: any) {
+      toast.error(`อัปโหลดไม่สำเร็จ: ${error.message || 'Failed to upload'}`);
+    } finally {
+      setUploadingMaterial(false);
+    }
   };
 
   const handleSaveLesson = async () => {
@@ -408,15 +456,18 @@ const AdminCourses = () => {
 
     try {
       setSaving(true);
+      const materials = lessonForm.materials.filter((m) => m.url.trim());
       if (editingLesson) {
         await api.updateLesson(editingLesson.id, {
           ...lessonForm,
+          materials,
           section_id: lessonForm.section_id || null
         });
         toast.success('Success: Lesson updated successfully');
       } else {
         await api.createLesson(selectedCourseForLesson!.id, {
           ...lessonForm,
+          materials,
           section_id: lessonForm.section_id || null
         });
         toast.success('Success: Lesson created successfully');
@@ -1103,7 +1154,7 @@ const AdminCourses = () => {
 
         {/* Lesson Dialog */}
         <Dialog open={lessonDialogOpen} onOpenChange={setLessonDialogOpen}>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingLesson ? 'แก้ไขบทเรียน' : 'เพิ่มบทเรียน'}</DialogTitle>
             </DialogHeader>
@@ -1165,6 +1216,77 @@ const AdminCourses = () => {
                   onCheckedChange={(checked) => setLessonForm({ ...lessonForm, is_preview: checked === true })}
                 />
                 <Label>ให้ดู Preview ได้ (ไม่ต้องลงทะเบียน)</Label>
+              </div>
+
+              {/* เอกสารประกอบ — downloadable documents (links + uploaded PDFs) */}
+              <div className="border-t border-gray-800 pt-4">
+                <Label>เอกสารประกอบ</Label>
+                <p className="text-xs text-gray-500 mt-0.5 mb-2">
+                  เพิ่มปุ่มดาวน์โหลดเอกสาร — ตั้งชื่อปุ่มเอง แล้วใส่ลิงก์ หรืออัปโหลดไฟล์ PDF
+                </p>
+                <div className="space-y-2">
+                  {lessonForm.materials.length === 0 && (
+                    <p className="text-gray-500 text-sm">ยังไม่มีเอกสาร</p>
+                  )}
+                  {lessonForm.materials.map((m, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      {m.type === 'pdf' ? (
+                        <FileText className="h-4 w-4 text-purple-400 flex-shrink-0" />
+                      ) : (
+                        <Link2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                      )}
+                      <Input
+                        value={m.title}
+                        onChange={(e) => updateMaterial(idx, { title: e.target.value })}
+                        placeholder="ชื่อปุ่ม เช่น สไลด์บทที่ 1"
+                        className="flex-1"
+                      />
+                      <Input
+                        value={m.url}
+                        onChange={(e) => updateMaterial(idx, { url: e.target.value })}
+                        placeholder="ลิงก์เอกสาร (https://...)"
+                        readOnly={m.type === 'pdf'}
+                        className="flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-400 hover:text-red-300 flex-shrink-0"
+                        onClick={() => removeMaterial(idx)}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2 mt-2">
+                  <Button type="button" variant="outline" size="sm" onClick={addMaterialLink}>
+                    <Plus className="h-4 w-4 mr-1" />
+                    เพิ่มลิงก์เอกสาร
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={uploadingMaterial}
+                    onClick={() => materialInputRef.current?.click()}
+                  >
+                    {uploadingMaterial ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <Upload className="h-4 w-4 mr-1" />
+                    )}
+                    อัปโหลด PDF
+                  </Button>
+                  <input
+                    ref={materialInputRef}
+                    type="file"
+                    accept="application/pdf"
+                    className="hidden"
+                    onChange={handleUploadMaterial}
+                  />
+                </div>
               </div>
             </div>
             <DialogFooter>

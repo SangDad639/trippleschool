@@ -30,6 +30,36 @@ const thumbUpload = multer({
   },
 });
 
+// Lesson documents: PDF only, up to 20MB.
+const materialUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('Only PDF files allowed'));
+  },
+});
+
+// A lesson material as accepted from the client / stored in the lessons.materials JSONB.
+interface LessonMaterial {
+  title: string;
+  url: string;
+  type: 'link' | 'pdf';
+}
+
+// Keep only well-formed rows with a non-empty url; coerce shape defensively.
+function sanitizeMaterials(input: unknown): LessonMaterial[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
+    .map((m): LessonMaterial => ({
+      title: typeof m.title === 'string' ? m.title.trim() : '',
+      url: typeof m.url === 'string' ? m.url.trim() : '',
+      type: m.type === 'pdf' ? 'pdf' : 'link',
+    }))
+    .filter((m) => m.url.length > 0);
+}
+
 // Extract YouTube ID from common URL formats (or a bare 11-char id)
 function extractYoutubeId(url: string): string | null {
   if (!url) return null;
@@ -70,6 +100,37 @@ router.post('/upload-thumbnail', authenticate, thumbUpload.single('thumbnail'), 
   } catch (error) {
     console.error('Error uploading thumbnail:', error);
     res.status(500).json({ error: 'Failed to upload thumbnail' });
+  }
+});
+
+// ============ Public material proxy (unguessable key; forces download) ============
+// Access control lives in the lesson payload: paid-lesson material URLs are never
+// sent to non-purchasers, so this proxy stays public like /thumbnails.
+router.get('/materials/*', async (req: Request, res: Response) => {
+  try {
+    const key = (req.params as any)[0];
+    const obj = await getFile(key);
+    if (obj.ContentType) res.setHeader('Content-Type', obj.ContentType);
+    res.setHeader('Content-Disposition', 'attachment');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    (obj.Body as any).pipe(res);
+  } catch (error) {
+    res.status(404).json({ error: 'Not found' });
+  }
+});
+
+// ============ Admin: upload lesson document (PDF) ============
+router.post('/upload-material', authenticate, materialUpload.single('file'), async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const rand = Math.random().toString(36).slice(2, 10);
+    const key = `course-materials/${Date.now()}-${rand}.pdf`;
+    await uploadFile(req.file.buffer, key, req.file.mimetype, { contentDisposition: 'attachment' });
+    res.json({ url: `/api/courses/materials/${key}`, name: req.file.originalname });
+  } catch (error) {
+    console.error('Error uploading material:', error);
+    res.status(500).json({ error: 'Failed to upload material' });
   }
 });
 
@@ -389,9 +450,10 @@ router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) =>
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const { courseId } = req.params;
-    const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, section_id } = req.body;
+    const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, section_id, materials } = req.body;
     if (!title || !youtube_url) return res.status(400).json({ error: 'Title and YouTube URL are required' });
     const youtube_id = extractYoutubeId(youtube_url);
+    const cleanMaterials = sanitizeMaterials(materials);
     let order = lesson_order;
     if (order === undefined || order === null) {
       if (section_id) {
@@ -403,9 +465,9 @@ router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) =>
       }
     }
     const result = await pool.query(`
-      INSERT INTO lessons (course_id, section_id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *
-    `, [courseId, section_id || null, title, description || null, youtube_url, youtube_id, duration_minutes || 0, order, is_preview || false]);
+      INSERT INTO lessons (course_id, section_id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, materials)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *
+    `, [courseId, section_id || null, title, description || null, youtube_url, youtube_id, duration_minutes || 0, order, is_preview || false, JSON.stringify(cleanMaterials)]);
     await pool.query(`
       UPDATE courses SET total_lessons = (SELECT COUNT(*) FROM lessons WHERE course_id = $1 AND is_active = true), updated_at = CURRENT_TIMESTAMP WHERE id = $1
     `, [courseId]);
@@ -420,7 +482,7 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const { id } = req.params;
-    const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, is_active, section_id } = req.body;
+    const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, is_active, section_id, materials } = req.body;
     const youtube_id = youtube_url ? extractYoutubeId(youtube_url) : undefined;
     let query = `
       UPDATE lessons SET
@@ -432,9 +494,11 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
         lesson_order = COALESCE($6, lesson_order),
         is_preview = COALESCE($7, is_preview),
         is_active = COALESCE($8, is_active),
+        materials = COALESCE($9, materials),
     `;
-    const params: any[] = [title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, is_active];
-    if (section_id !== undefined) { query += `section_id = $9,`; params.push(section_id); }
+    const params: any[] = [title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, is_active,
+      materials !== undefined ? JSON.stringify(sanitizeMaterials(materials)) : null];
+    if (section_id !== undefined) { query += `section_id = $10,`; params.push(section_id); }
     query += ` updated_at = CURRENT_TIMESTAMP WHERE id = $${params.length + 1} RETURNING *`;
     params.push(id);
     const result = await pool.query(query, params);
@@ -600,11 +664,11 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
       SELECT id, title, description, section_order FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
-      SELECT id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, section_id
+      SELECT id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, section_id, materials
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
     const lessons = lessonsResult.rows.map((lesson) => {
-      if (!hasAccess && !lesson.is_preview) return { ...lesson, youtube_url: null, youtube_id: null };
+      if (!hasAccess && !lesson.is_preview) return { ...lesson, youtube_url: null, youtube_id: null, materials: [] };
       return lesson;
     });
     const sections = sectionsResult.rows.map((section) => ({ ...section, lessons: lessons.filter(l => l.section_id === section.id) }));
@@ -630,12 +694,12 @@ router.get('/:slug', async (req, res) => {
       SELECT id, title, description, section_order FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
-      SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id
+      SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id, materials
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
-    // Public payload: only preview lessons expose youtube; paid lessons are nulled
-    // so their video id never reaches an unauthenticated visitor.
-    const lessons = lessonsResult.rows.map((l) => (l.is_preview ? l : { ...l, youtube_id: null, youtube_url: null }));
+    // Public payload: only preview lessons expose youtube + materials; paid lessons
+    // are nulled so their video id / documents never reach an unauthenticated visitor.
+    const lessons = lessonsResult.rows.map((l) => (l.is_preview ? l : { ...l, youtube_id: null, youtube_url: null, materials: [] }));
     const sections = sectionsResult.rows.map((section) => ({ ...section, lessons: lessons.filter(l => l.section_id === section.id) }));
     const unassignedLessons = lessons.filter(l => l.section_id === null);
     res.json({ ...course, sections, unassigned_lessons: unassignedLessons, lessons });
