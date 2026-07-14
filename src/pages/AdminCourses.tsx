@@ -57,6 +57,7 @@ import {
   FileText,
   Link2,
   X,
+  Eye,
 } from 'lucide-react';
 
 interface Course {
@@ -810,6 +811,15 @@ const AdminCourses = () => {
                                 <Button
                                   size="sm"
                                   variant="ghost"
+                                  className="text-purple-400"
+                                  title="ดูตัวอย่างแบบที่นักเรียนเห็น"
+                                  onClick={() => window.open(`/app/courses/${course.slug}/learn/${lesson.id}`, '_blank', 'noopener')}
+                                >
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
                                   onClick={() => handleOpenLessonDialog(course, lesson)}
                                 >
                                   <Pencil className="h-4 w-4" />
@@ -880,7 +890,7 @@ const AdminCourses = () => {
                                           <TableHead className="w-16">นาที</TableHead>
                                           <TableHead className="w-20">Preview</TableHead>
                                           <TableHead className="w-28">หมวด</TableHead>
-                                          <TableHead className="w-24">Actions</TableHead>
+                                          <TableHead className="w-32">Actions</TableHead>
                                         </TableRow>
                                       </TableHeader>
                                       <TableBody>
@@ -910,7 +920,7 @@ const AdminCourses = () => {
                                       <TableHead className="w-16">นาที</TableHead>
                                       <TableHead className="w-20">Preview</TableHead>
                                       <TableHead className="w-28">หมวด</TableHead>
-                                      <TableHead className="w-24">Actions</TableHead>
+                                      <TableHead className="w-32">Actions</TableHead>
                                     </TableRow>
                                   </TableHeader>
                                   <TableBody>
@@ -930,7 +940,7 @@ const AdminCourses = () => {
                                     <TableHead className="w-16">นาที</TableHead>
                                     <TableHead className="w-20">Preview</TableHead>
                                     <TableHead className="w-28">หมวด</TableHead>
-                                    <TableHead className="w-24">Actions</TableHead>
+                                    <TableHead className="w-32">Actions</TableHead>
                                   </TableRow>
                                 </TableHeader>
                                 <TableBody>
