@@ -27,6 +27,7 @@ interface LessonMaterial {
   title: string;
   url: string;
   type: 'link' | 'pdf';
+  enabled?: boolean;
 }
 
 interface Lesson {
@@ -262,11 +263,11 @@ const CourseLearn = () => {
                 </div>
                 {currentLesson.description && <p className="text-gray-300 text-sm whitespace-pre-wrap">{currentLesson.description}</p>}
 
-                {currentLesson.materials && currentLesson.materials.length > 0 && (
+                {currentLesson.materials && currentLesson.materials.filter((m) => m.enabled !== false).length > 0 && (
                   <div className="mt-4 pt-4 border-t border-gray-800">
                     <p className="text-sm font-medium text-white mb-2">เอกสารประกอบ</p>
                     <div className="flex flex-wrap gap-2">
-                      {currentLesson.materials.map((m, idx) => (
+                      {currentLesson.materials.filter((m) => m.enabled !== false).map((m, idx) => (
                         <a
                           key={idx}
                           href={api.mediaUrl(m.url)}

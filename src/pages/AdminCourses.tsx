@@ -96,6 +96,7 @@ interface LessonMaterial {
   title: string;
   url: string;
   type: 'link' | 'pdf';
+  enabled?: boolean;
 }
 
 interface Lesson {
@@ -416,7 +417,18 @@ const AdminCourses = () => {
 
   // ---- Lesson materials (downloadable documents) ----
   const addMaterialLink = () =>
-    setLessonForm((prev) => ({ ...prev, materials: [...prev.materials, { title: '', url: '', type: 'link' }] }));
+    setLessonForm((prev) => ({ ...prev, materials: [...prev.materials, { title: '', url: '', type: 'link', enabled: true }] }));
+
+  // Google Drive: paste a share link; it's converted to a direct-download link
+  // on the server when the lesson is saved.
+  const addGoogleDriveLink = () => {
+    const url = window.prompt('วางลิงก์แชร์ Google Drive ที่นี่ (ตั้งค่าแชร์เป็น "ทุกคนที่มีลิงก์" ก่อน)');
+    if (!url || !url.trim()) return;
+    setLessonForm((prev) => ({
+      ...prev,
+      materials: [...prev.materials, { title: '', url: url.trim(), type: 'link', enabled: true }],
+    }));
+  };
 
   const updateMaterial = (idx: number, patch: Partial<LessonMaterial>) =>
     setLessonForm((prev) => ({
@@ -439,7 +451,7 @@ const AdminCourses = () => {
       setUploadingMaterial(true);
       const { url, name } = await api.uploadCourseMaterial(file);
       const title = (name || '').replace(/\.pdf$/i, '');
-      setLessonForm((prev) => ({ ...prev, materials: [...prev.materials, { title, url, type: 'pdf' }] }));
+      setLessonForm((prev) => ({ ...prev, materials: [...prev.materials, { title, url, type: 'pdf', enabled: true }] }));
       toast.success('อัปโหลดเอกสารสำเร็จ');
     } catch (error: any) {
       toast.error(`อัปโหลดไม่สำเร็จ: ${error.message || 'Failed to upload'}`);
@@ -1230,6 +1242,12 @@ const AdminCourses = () => {
                   )}
                   {lessonForm.materials.map((m, idx) => (
                     <div key={idx} className="flex items-center gap-2">
+                      <div className="flex items-center gap-1 flex-shrink-0" title="ติ๊ก = โชว์ให้นักเรียนเห็น">
+                        <Checkbox
+                          checked={m.enabled !== false}
+                          onCheckedChange={(checked) => updateMaterial(idx, { enabled: checked === true })}
+                        />
+                      </div>
                       {m.type === 'pdf' ? (
                         <FileText className="h-4 w-4 text-purple-400 flex-shrink-0" />
                       ) : (
@@ -1244,7 +1262,7 @@ const AdminCourses = () => {
                       <Input
                         value={m.url}
                         onChange={(e) => updateMaterial(idx, { url: e.target.value })}
-                        placeholder="ลิงก์เอกสาร (https://...)"
+                        placeholder="ลิงก์เอกสาร / Google Drive (https://...)"
                         readOnly={m.type === 'pdf'}
                         className="flex-1"
                       />
@@ -1260,10 +1278,14 @@ const AdminCourses = () => {
                     </div>
                   ))}
                 </div>
-                <div className="flex gap-2 mt-2">
+                <div className="flex flex-wrap gap-2 mt-2">
                   <Button type="button" variant="outline" size="sm" onClick={addMaterialLink}>
                     <Plus className="h-4 w-4 mr-1" />
                     เพิ่มลิงก์เอกสาร
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={addGoogleDriveLink}>
+                    <Link2 className="h-4 w-4 mr-1" />
+                    Google Drive
                   </Button>
                   <Button
                     type="button"

@@ -45,6 +45,17 @@ interface LessonMaterial {
   title: string;
   url: string;
   type: 'link' | 'pdf';
+  enabled: boolean; // false = hidden from students (admin keeps the row)
+}
+
+// Convert a Google Drive "share/view" link into a direct-download link so the
+// student's download button fetches the file instead of opening Drive's UI.
+function normalizeMaterialUrl(url: string): string {
+  const fileMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileMatch) return `https://drive.google.com/uc?export=download&id=${fileMatch[1]}`;
+  const openMatch = url.match(/drive\.google\.com\/open\?id=([a-zA-Z0-9_-]+)/);
+  if (openMatch) return `https://drive.google.com/uc?export=download&id=${openMatch[1]}`;
+  return url;
 }
 
 // Keep only well-formed rows with a non-empty url; coerce shape defensively.
@@ -52,11 +63,17 @@ function sanitizeMaterials(input: unknown): LessonMaterial[] {
   if (!Array.isArray(input)) return [];
   return input
     .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
-    .map((m): LessonMaterial => ({
-      title: typeof m.title === 'string' ? m.title.trim() : '',
-      url: typeof m.url === 'string' ? m.url.trim() : '',
-      type: m.type === 'pdf' ? 'pdf' : 'link',
-    }))
+    .map((m): LessonMaterial => {
+      const type = m.type === 'pdf' ? 'pdf' : 'link';
+      const url = typeof m.url === 'string' ? m.url.trim() : '';
+      return {
+        title: typeof m.title === 'string' ? m.title.trim() : '',
+        // Only normalize pasted links; uploaded PDFs already point at our proxy.
+        url: type === 'link' ? normalizeMaterialUrl(url) : url,
+        type,
+        enabled: typeof m.enabled === 'boolean' ? m.enabled : true,
+      };
+    })
     .filter((m) => m.url.length > 0);
 }
 
@@ -669,7 +686,9 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
     `, [course.id]);
     const lessons = lessonsResult.rows.map((lesson) => {
       if (!hasAccess && !lesson.is_preview) return { ...lesson, youtube_url: null, youtube_id: null, materials: [] };
-      return lesson;
+      // Students only see materials flagged enabled (admin can hide without deleting).
+      const materials = Array.isArray(lesson.materials) ? lesson.materials.filter((m: any) => m?.enabled !== false) : [];
+      return { ...lesson, materials };
     });
     const sections = sectionsResult.rows.map((section) => ({ ...section, lessons: lessons.filter(l => l.section_id === section.id) }));
     const unassignedLessons = lessons.filter(l => l.section_id === null);
@@ -699,7 +718,11 @@ router.get('/:slug', async (req, res) => {
     `, [course.id]);
     // Public payload: only preview lessons expose youtube + materials; paid lessons
     // are nulled so their video id / documents never reach an unauthenticated visitor.
-    const lessons = lessonsResult.rows.map((l) => (l.is_preview ? l : { ...l, youtube_id: null, youtube_url: null, materials: [] }));
+    const lessons = lessonsResult.rows.map((l) => {
+      if (!l.is_preview) return { ...l, youtube_id: null, youtube_url: null, materials: [] };
+      const materials = Array.isArray(l.materials) ? l.materials.filter((m: any) => m?.enabled !== false) : [];
+      return { ...l, materials };
+    });
     const sections = sectionsResult.rows.map((section) => ({ ...section, lessons: lessons.filter(l => l.section_id === section.id) }));
     const unassignedLessons = lessons.filter(l => l.section_id === null);
     res.json({ ...course, sections, unassigned_lessons: unassignedLessons, lessons });
