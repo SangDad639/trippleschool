@@ -150,6 +150,19 @@ const CourseLearn = () => {
 
   const goToLesson = (lesson: Lesson) => navigate(`/app/courses/${slug}/learn/${lesson.id}`);
 
+  // Download an inline HTML document as an .html file (built in the browser).
+  const downloadHtmlDoc = (content: string, name?: string) => {
+    const blob = new Blob([content], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(name || 'เอกสาร').replace(/\.html?$/i, '')}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const goToPreviousLesson = () => {
     if (!course || !currentLesson) return;
     const currentIndex = course.lessons.findIndex((l) => l.id === currentLesson.id);
@@ -341,7 +354,17 @@ const CourseLearn = () => {
                         const hasVisibleText = clean.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
                         return (
                           <div key={idx} className="mt-3 rounded-lg border border-gray-800 overflow-hidden">
-                            {m.title && <p className="text-sm font-semibold text-white bg-gray-900/60 px-4 py-2">{m.title}</p>}
+                            <div className="flex items-center justify-between gap-2 bg-gray-900/60 px-4 py-2">
+                              <p className="text-sm font-semibold text-white truncate">{m.title || 'เอกสารประกอบ'}</p>
+                              <button
+                                type="button"
+                                onClick={() => downloadHtmlDoc(m.content || '', m.fileName || m.title)}
+                                className="inline-flex items-center gap-1 rounded-md border border-purple-500/40 bg-purple-500/10 px-2.5 py-1 text-xs text-purple-300 transition-colors hover:bg-purple-500/20 hover:text-purple-200 flex-shrink-0"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                                ดาวน์โหลด
+                              </button>
+                            </div>
                             <div className="bg-white text-gray-900 p-4 max-h-[600px] overflow-auto">
                               {hasVisibleText ? (
                                 <div
