@@ -1355,19 +1355,21 @@ const AdminCourses = () => {
                             อัปโหลดไฟล์ HTML
                           </Button>
                           <span className="text-xs text-gray-500 ml-2">เลือกได้หลายไฟล์ หรือพิมพ์/วางเนื้อหาด้านล่าง</span>
-                          {(m.content || '').trim() && (
-                            <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-md bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400">
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              แนบแล้ว: {m.fileName || `เนื้อหา ${(m.content || '').length} ตัวอักษร`}
-                            </div>
-                          )}
                         </div>
+                        {(m.content || '').trim() && (
+                          <div className="mt-2 flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
+                            <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+                            <span className="truncate">
+                              แนบไฟล์แล้ว: <span className="font-semibold">{m.fileName || `เนื้อหา ${(m.content || '').length} ตัวอักษร`}</span>
+                            </span>
+                          </div>
+                        )}
                         <Textarea
                           value={m.content || ''}
                           onChange={(e) => updateMaterial(idx, { content: e.target.value })}
                           placeholder="อัปโหลดไฟล์ .html ด้านบน หรือพิมพ์เนื้อหาที่นี่ เช่น <h3>หัวข้อ</h3><p>ข้อความ...</p>"
-                          rows={6}
-                          className="font-mono text-xs"
+                          rows={(m.content || '').trim() ? 3 : 6}
+                          className="font-mono text-xs mt-2"
                         />
                       </div>
                     ) : (

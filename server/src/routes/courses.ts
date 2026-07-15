@@ -46,16 +46,30 @@ const materialUpload = multer({
   },
 });
 
-// HTML document: read as inline content (shown in the lesson, not downloaded). 5MB.
+// HTML document: read as inline content (shown in the lesson, not downloaded).
+// 25MB — Word/Docs exports embed base64 images and get large.
 const htmlUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const isHtml = file.mimetype === 'text/html' || /\.(html?|htm)$/i.test(file.originalname);
+    const isHtml = /text\/html|htm/i.test(file.mimetype) || /\.(html?|htm)$/i.test(file.originalname);
     if (isHtml) cb(null, true);
-    else cb(new Error('Only HTML files allowed'));
+    else cb(new Error('รองรับเฉพาะไฟล์ .html'));
   },
 });
+
+// Wrap a multer .single() so filter/size errors return JSON (not an HTML error
+// page) — the client can then show the real reason instead of "Request failed".
+function uploadSingle(mw: multer.Multer, field: string) {
+  return (req: Request, res: Response, next: () => void) =>
+    mw.single(field)(req, res, (err: any) => {
+      if (err) {
+        const msg = err?.code === 'LIMIT_FILE_SIZE' ? 'ไฟล์ใหญ่เกินกำหนด' : (err?.message || 'อัปโหลดไม่สำเร็จ');
+        return res.status(400).json({ error: msg });
+      }
+      next();
+    });
+}
 
 // A lesson material as accepted from the client / stored in the lessons.materials JSONB.
 //   link/pdf → downloadable (uses `url`)
@@ -166,7 +180,7 @@ router.get('/materials/*', async (req: Request, res: Response) => {
 });
 
 // ============ Admin: upload lesson document (PDF) ============
-router.post('/upload-material', authenticate, materialUpload.single('file'), async (req: AuthRequest, res: Response) => {
+router.post('/upload-material', authenticate, uploadSingle(materialUpload, 'file'), async (req: AuthRequest, res: Response) => {
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -184,7 +198,7 @@ router.post('/upload-material', authenticate, materialUpload.single('file'), asy
 // ============ Admin: upload HTML doc → return its text as inline content ============
 // The file itself isn't stored; its content goes into lessons.materials and is
 // sanitized (DOMPurify) on the client before rendering.
-router.post('/upload-html', authenticate, htmlUpload.single('file'), async (req: AuthRequest, res: Response) => {
+router.post('/upload-html', authenticate, uploadSingle(htmlUpload, 'file'), async (req: AuthRequest, res: Response) => {
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
