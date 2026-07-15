@@ -60,6 +60,7 @@ interface LessonMaterial {
   type: 'link' | 'pdf' | 'html';
   enabled: boolean; // false = hidden from students (admin keeps the row)
   content?: string;
+  fileName?: string; // original name of an uploaded HTML file (for the admin "attached" badge)
 }
 
 // Convert a Google Drive "share/view" link into a direct-download link so the
@@ -87,6 +88,7 @@ function sanitizeMaterials(input: unknown): LessonMaterial[] {
         type,
         enabled: typeof m.enabled === 'boolean' ? m.enabled : true,
         content: type === 'html' && typeof m.content === 'string' ? m.content : '',
+        fileName: type === 'html' && typeof m.fileName === 'string' ? m.fileName : undefined,
       };
     })
     // html rows are kept by their content; link/pdf rows by their url.

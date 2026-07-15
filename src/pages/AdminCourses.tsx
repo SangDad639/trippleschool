@@ -58,6 +58,7 @@ import {
   Link2,
   X,
   Eye,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface Course {
@@ -99,6 +100,7 @@ interface LessonMaterial {
   type: 'link' | 'pdf' | 'html';
   enabled?: boolean;
   content?: string;
+  fileName?: string;
 }
 
 interface Lesson {
@@ -448,21 +450,38 @@ const AdminCourses = () => {
   };
 
   const handleUploadHtml = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     if (e.target) e.target.value = '';
     const idx = htmlTargetIdxRef.current;
-    if (!file || idx === null) return;
+    if (files.length === 0 || idx === null) return;
     try {
       setUploadingHtmlIdx(idx);
-      const { content, name } = await api.uploadCourseHtml(file);
-      const fallbackTitle = (name || '').replace(/\.html?$/i, '');
-      setLessonForm((prev) => ({
-        ...prev,
-        materials: prev.materials.map((m, i) =>
-          i === idx ? { ...m, content, title: m.title?.trim() ? m.title : fallbackTitle } : m
-        ),
-      }));
-      toast.success('อัปโหลดไฟล์ HTML สำเร็จ');
+      // Upload all selected files; the first fills the clicked row, the rest
+      // become new HTML documents so several files can be attached at once.
+      const uploaded = await Promise.all(files.map((f) => api.uploadCourseHtml(f)));
+      const toMaterial = (u: { content: string; name: string }): LessonMaterial => ({
+        title: (u.name || '').replace(/\.html?$/i, ''),
+        url: '',
+        type: 'html',
+        content: u.content,
+        fileName: u.name,
+        enabled: true,
+      });
+      setLessonForm((prev) => {
+        const materials = [...prev.materials];
+        const first = uploaded[0];
+        if (materials[idx]) {
+          materials[idx] = {
+            ...materials[idx],
+            content: first.content,
+            fileName: first.name,
+            title: materials[idx].title?.trim() ? materials[idx].title : (first.name || '').replace(/\.html?$/i, ''),
+          };
+        }
+        for (const u of uploaded.slice(1)) materials.push(toMaterial(u));
+        return { ...prev, materials };
+      });
+      toast.success(files.length > 1 ? `อัปโหลด ${files.length} ไฟล์สำเร็จ` : 'อัปโหลดไฟล์ HTML สำเร็จ');
     } catch (error: any) {
       toast.error(`อัปโหลดไม่สำเร็จ: ${error.message || 'Failed to upload'}`);
     } finally {
@@ -1334,7 +1353,13 @@ const AdminCourses = () => {
                             )}
                             อัปโหลดไฟล์ HTML
                           </Button>
-                          <span className="text-xs text-gray-500 ml-2">หรือพิมพ์/วางเนื้อหาด้านล่าง</span>
+                          <span className="text-xs text-gray-500 ml-2">เลือกได้หลายไฟล์ หรือพิมพ์/วางเนื้อหาด้านล่าง</span>
+                          {(m.content || '').trim() && (
+                            <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-md bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400">
+                              <CheckCircle2 className="h-3.5 w-3.5" />
+                              แนบแล้ว: {m.fileName || `เนื้อหา ${(m.content || '').length} ตัวอักษร`}
+                            </div>
+                          )}
                         </div>
                         <Textarea
                           value={m.content || ''}
@@ -1421,6 +1446,7 @@ const AdminCourses = () => {
                     ref={htmlInputRef}
                     type="file"
                     accept=".html,.htm,text/html"
+                    multiple
                     className="hidden"
                     onChange={handleUploadHtml}
                   />
