@@ -30,13 +30,19 @@ const thumbUpload = multer({
   },
 });
 
-// Lesson documents: PDF only, up to 20MB.
+// Lesson documents: common document/media types, up to 50MB. Served as an
+// attachment (forced download) via the /materials proxy.
+const ALLOWED_MATERIAL_EXTS = new Set([
+  'pdf', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'csv', 'txt',
+  'zip', 'rar', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'mp3', 'mp4',
+]);
 const materialUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    if (file.mimetype === 'application/pdf') cb(null, true);
-    else cb(new Error('Only PDF files allowed'));
+    const ext = (file.originalname.split('.').pop() || '').toLowerCase();
+    if (ALLOWED_MATERIAL_EXTS.has(ext)) cb(null, true);
+    else cb(new Error('ชนิดไฟล์นี้ไม่รองรับ'));
   },
 });
 
@@ -144,9 +150,14 @@ router.post('/upload-thumbnail', authenticate, thumbUpload.single('thumbnail'), 
 router.get('/materials/*', async (req: Request, res: Response) => {
   try {
     const key = (req.params as any)[0];
+    const rawName = typeof req.query.name === 'string' ? req.query.name : '';
+    const safeName = rawName.replace(/[\r\n"\\]/g, '').slice(0, 200);
     const obj = await getFile(key);
     if (obj.ContentType) res.setHeader('Content-Type', obj.ContentType);
-    res.setHeader('Content-Disposition', 'attachment');
+    res.setHeader(
+      'Content-Disposition',
+      safeName ? `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}` : 'attachment'
+    );
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     (obj.Body as any).pipe(res);
   } catch (error) {
@@ -160,7 +171,8 @@ router.post('/upload-material', authenticate, materialUpload.single('file'), asy
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
     const rand = Math.random().toString(36).slice(2, 10);
-    const key = `course-materials/${Date.now()}-${rand}.pdf`;
+    const ext = (req.file.originalname.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
+    const key = `course-materials/${Date.now()}-${rand}.${ext}`;
     await uploadFile(req.file.buffer, key, req.file.mimetype, { contentDisposition: 'attachment' });
     res.json({ url: `/api/courses/materials/${key}`, name: req.file.originalname });
   } catch (error) {

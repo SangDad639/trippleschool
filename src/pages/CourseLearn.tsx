@@ -30,6 +30,7 @@ interface LessonMaterial {
   type: 'link' | 'pdf' | 'html';
   enabled?: boolean;
   content?: string;
+  fileName?: string;
 }
 
 interface Lesson {
@@ -316,10 +317,12 @@ const CourseLearn = () => {
                         <div className="flex flex-wrap gap-2">
                           {downloads.map((m, idx) => {
                             const isFolder = /\/drive\/folders\//.test(m.url);
+                            const isOurFile = m.url.startsWith('/api/courses/materials/');
+                            const href = api.mediaUrl(m.url) + (isOurFile && m.fileName ? `?name=${encodeURIComponent(m.fileName)}` : '');
                             return (
                               <a
                                 key={idx}
-                                href={api.mediaUrl(m.url)}
+                                href={href}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-2 rounded-md border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-sm text-purple-300 transition-colors hover:bg-purple-500/20 hover:text-purple-200"

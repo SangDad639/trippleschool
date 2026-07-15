@@ -503,10 +503,6 @@ const AdminCourses = () => {
     const file = e.target.files?.[0];
     if (e.target) e.target.value = ''; // allow re-selecting the same file
     if (!file) return;
-    if (file.type !== 'application/pdf') {
-      toast.error('รองรับเฉพาะไฟล์ PDF');
-      return;
-    }
     try {
       setUploadingMaterial(true);
       const { url, name } = await api.uploadCourseMaterial(file);
@@ -1310,7 +1306,7 @@ const AdminCourses = () => {
               <div className="border-t border-gray-800 pt-4">
                 <Label>เอกสารประกอบ</Label>
                 <p className="text-xs text-gray-500 mt-0.5 mb-2">
-                  ปุ่มดาวน์โหลด (ลิงก์ / Google Drive / PDF) หรือ "เอกสาร HTML" ที่แสดงเนื้อหาในหน้าเลย (นักเรียนก็อปข้อความได้)
+                  ปุ่มดาวน์โหลด (ลิงก์ / Google Drive / อัปโหลดไฟล์เอง — กดแล้วโหลดทันที) หรือ "เอกสาร HTML" ที่แสดงเนื้อหาในหน้าเลย (นักเรียนก็อปข้อความได้)
                 </p>
                 <div className="space-y-2">
                   {lessonForm.materials.length === 0 && (
@@ -1389,7 +1385,7 @@ const AdminCourses = () => {
                             <Link2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
                           )}
                           <Input
-                            value={m.type === 'pdf' ? (m.fileName || 'ไฟล์ PDF') : m.url}
+                            value={m.type === 'pdf' ? (m.fileName || 'ไฟล์แนบ') : m.url}
                             onChange={(e) => updateMaterial(idx, { url: e.target.value })}
                             placeholder="ลิงก์เอกสาร / Google Drive (https://...)"
                             readOnly={m.type === 'pdf'}
@@ -1439,12 +1435,12 @@ const AdminCourses = () => {
                     ) : (
                       <Upload className="h-4 w-4 mr-1" />
                     )}
-                    อัปโหลด PDF
+                    อัปโหลดไฟล์
                   </Button>
                   <input
                     ref={materialInputRef}
                     type="file"
-                    accept="application/pdf"
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt,.zip,.rar,.png,.jpg,.jpeg,.webp,.gif,.mp3,.mp4"
                     className="hidden"
                     onChange={handleUploadMaterial}
                   />
