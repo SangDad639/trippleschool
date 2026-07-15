@@ -88,7 +88,7 @@ function sanitizeMaterials(input: unknown): LessonMaterial[] {
         type,
         enabled: typeof m.enabled === 'boolean' ? m.enabled : true,
         content: type === 'html' && typeof m.content === 'string' ? m.content : '',
-        fileName: type === 'html' && typeof m.fileName === 'string' ? m.fileName : undefined,
+        fileName: typeof m.fileName === 'string' ? m.fileName : undefined,
       };
     })
     // html rows are kept by their content; link/pdf rows by their url.

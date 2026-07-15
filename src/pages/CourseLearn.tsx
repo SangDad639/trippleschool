@@ -21,7 +21,6 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
-  FileText,
 } from 'lucide-react';
 
 interface LessonMaterial {
@@ -283,8 +282,8 @@ const CourseLearn = () => {
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-2 rounded-md border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-sm text-purple-300 transition-colors hover:bg-purple-500/20 hover:text-purple-200"
                             >
-                              {m.type === 'pdf' ? <FileText className="h-4 w-4" /> : <Download className="h-4 w-4" />}
-                              {m.title || 'เอกสาร'}
+                              <Download className="h-4 w-4" />
+                              {m.title?.trim() || 'ดาวน์โหลดเอกสาร'}
                             </a>
                           ))}
                         </div>

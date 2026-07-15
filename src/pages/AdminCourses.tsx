@@ -513,8 +513,7 @@ const AdminCourses = () => {
     try {
       setUploadingMaterial(true);
       const { url, name } = await api.uploadCourseMaterial(file);
-      const title = (name || '').replace(/\.pdf$/i, '');
-      setLessonForm((prev) => ({ ...prev, materials: [...prev.materials, { title, url, type: 'pdf', enabled: true }] }));
+      setLessonForm((prev) => ({ ...prev, materials: [...prev.materials, { title: '', url, type: 'pdf', fileName: name, enabled: true }] }));
       toast.success('อัปโหลดเอกสารสำเร็จ');
     } catch (error: any) {
       toast.error(`อัปโหลดไม่สำเร็จ: ${error.message || 'Failed to upload'}`);
@@ -1394,11 +1393,11 @@ const AdminCourses = () => {
                         <Input
                           value={m.title}
                           onChange={(e) => updateMaterial(idx, { title: e.target.value })}
-                          placeholder="ชื่อปุ่ม เช่น สไลด์บทที่ 1"
+                          placeholder="ชื่อปุ่ม (เว้นว่าง = ปุ่ม “ดาวน์โหลดเอกสาร”)"
                           className="flex-1"
                         />
                         <Input
-                          value={m.url}
+                          value={m.type === 'pdf' ? (m.fileName || 'ไฟล์ PDF') : m.url}
                           onChange={(e) => updateMaterial(idx, { url: e.target.value })}
                           placeholder="ลิงก์เอกสาร / Google Drive (https://...)"
                           readOnly={m.type === 'pdf'}
@@ -1489,7 +1488,7 @@ const AdminCourses = () => {
                                   className="inline-flex items-center gap-2 rounded-md border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-sm text-purple-300"
                                 >
                                   {m.type === 'pdf' ? <FileText className="h-4 w-4" /> : <Upload className="h-4 w-4 rotate-180" />}
-                                  {m.title || 'เอกสาร'}
+                                  {m.title?.trim() || 'ดาวน์โหลดเอกสาร'}
                                 </span>
                               ))}
                             </div>
