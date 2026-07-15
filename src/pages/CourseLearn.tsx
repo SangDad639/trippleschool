@@ -314,18 +314,21 @@ const CourseLearn = () => {
                       <p className="text-sm font-medium text-white mb-2">เอกสารประกอบ</p>
                       {downloads.length > 0 && (
                         <div className="flex flex-wrap gap-2">
-                          {downloads.map((m, idx) => (
-                            <a
-                              key={idx}
-                              href={api.mediaUrl(m.url)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-2 rounded-md border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-sm text-purple-300 transition-colors hover:bg-purple-500/20 hover:text-purple-200"
-                            >
-                              <Download className="h-4 w-4" />
-                              ดาวน์โหลด
-                            </a>
-                          ))}
+                          {downloads.map((m, idx) => {
+                            const isFolder = /\/drive\/folders\//.test(m.url);
+                            return (
+                              <a
+                                key={idx}
+                                href={api.mediaUrl(m.url)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 rounded-md border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-sm text-purple-300 transition-colors hover:bg-purple-500/20 hover:text-purple-200"
+                              >
+                                {isFolder ? <FolderOpen className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+                                {isFolder ? 'เปิดโฟลเดอร์เอกสาร' : 'ดาวน์โหลด'}
+                              </a>
+                            );
+                          })}
                         </div>
                       )}
                       {htmlDocs.map((m, idx) => (

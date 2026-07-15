@@ -1375,34 +1375,41 @@ const AdminCourses = () => {
                         />
                       </div>
                     ) : (
-                      <div key={idx} className="flex items-center gap-2">
-                        <div className="flex items-center gap-1 flex-shrink-0" title="ติ๊ก = โชว์ให้นักเรียนเห็น">
-                          <Checkbox
-                            checked={m.enabled !== false}
-                            onCheckedChange={(checked) => updateMaterial(idx, { enabled: checked === true })}
+                      <div key={idx}>
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 flex-shrink-0" title="ติ๊ก = โชว์ให้นักเรียนเห็น">
+                            <Checkbox
+                              checked={m.enabled !== false}
+                              onCheckedChange={(checked) => updateMaterial(idx, { enabled: checked === true })}
+                            />
+                          </div>
+                          {m.type === 'pdf' ? (
+                            <FileText className="h-4 w-4 text-purple-400 flex-shrink-0" />
+                          ) : (
+                            <Link2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          )}
+                          <Input
+                            value={m.type === 'pdf' ? (m.fileName || 'ไฟล์ PDF') : m.url}
+                            onChange={(e) => updateMaterial(idx, { url: e.target.value })}
+                            placeholder="ลิงก์เอกสาร / Google Drive (https://...)"
+                            readOnly={m.type === 'pdf'}
+                            className="flex-1"
                           />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-400 hover:text-red-300 flex-shrink-0"
+                            onClick={() => removeMaterial(idx)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
                         </div>
-                        {m.type === 'pdf' ? (
-                          <FileText className="h-4 w-4 text-purple-400 flex-shrink-0" />
-                        ) : (
-                          <Link2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                        {/\/drive\/folders\//.test(m.url) && (
+                          <p className="text-xs text-yellow-400/90 mt-1 ml-7">
+                            ⚠️ นี่คือลิงก์ “โฟลเดอร์” — ปุ่มจะเปิดโฟลเดอร์ใน Google Drive (นักเรียนเลือกโหลดไฟล์ในนั้นเอง). ถ้าอยากให้กดแล้วโหลดไฟล์เดียวทันที ให้ใช้ลิงก์แชร์ของ “ไฟล์” แทน
+                          </p>
                         )}
-                        <Input
-                          value={m.type === 'pdf' ? (m.fileName || 'ไฟล์ PDF') : m.url}
-                          onChange={(e) => updateMaterial(idx, { url: e.target.value })}
-                          placeholder="ลิงก์เอกสาร / Google Drive (https://...)"
-                          readOnly={m.type === 'pdf'}
-                          className="flex-1"
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-400 hover:text-red-300 flex-shrink-0"
-                          onClick={() => removeMaterial(idx)}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
                       </div>
                     )
                   )}
