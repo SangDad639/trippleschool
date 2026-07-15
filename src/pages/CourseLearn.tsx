@@ -306,7 +306,7 @@ const CourseLearn = () => {
 
                 {(() => {
                   const visible = (currentLesson.materials || []).filter((m) => m.enabled !== false);
-                  const downloads = visible.filter((m) => m.type !== 'html');
+                  const downloads = visible.filter((m) => m.type !== 'html' && (m.url || '').trim());
                   const htmlDocs = visible.filter((m) => m.type === 'html' && (m.content || '').trim());
                   if (downloads.length === 0 && htmlDocs.length === 0) return null;
                   return (

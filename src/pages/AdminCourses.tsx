@@ -429,16 +429,13 @@ const AdminCourses = () => {
   const addMaterialLink = () =>
     setLessonForm((prev) => ({ ...prev, materials: [...prev.materials, { title: '', url: '', type: 'link', enabled: true }] }));
 
-  // Google Drive: paste a share link; it's converted to a direct-download link
-  // on the server when the lesson is saved.
-  const addGoogleDriveLink = () => {
-    const url = window.prompt('วางลิงก์แชร์ Google Drive ที่นี่ (ตั้งค่าแชร์เป็น "ทุกคนที่มีลิงก์" ก่อน)');
-    if (!url || !url.trim()) return;
+  // Google Drive: adds a normal inline link row. Paste a Drive share link into
+  // the field; the server converts it to a direct-download link when saved.
+  const addGoogleDriveLink = () =>
     setLessonForm((prev) => ({
       ...prev,
-      materials: [...prev.materials, { title: '', url: url.trim(), type: 'link', enabled: true }],
+      materials: [...prev.materials, { title: '', url: '', type: 'link', enabled: true }],
     }));
-  };
 
   // HTML document: content shown inline in the lesson so students can copy the text.
   const addHtmlDoc = () =>
