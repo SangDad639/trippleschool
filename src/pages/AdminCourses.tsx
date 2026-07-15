@@ -1391,12 +1391,6 @@ const AdminCourses = () => {
                           <Link2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
                         )}
                         <Input
-                          value={m.title}
-                          onChange={(e) => updateMaterial(idx, { title: e.target.value })}
-                          placeholder="ชื่อปุ่ม (เว้นว่าง = ปุ่ม “ดาวน์โหลดเอกสาร”)"
-                          className="flex-1"
-                        />
-                        <Input
                           value={m.type === 'pdf' ? (m.fileName || 'ไฟล์ PDF') : m.url}
                           onChange={(e) => updateMaterial(idx, { url: e.target.value })}
                           placeholder="ลิงก์เอกสาร / Google Drive (https://...)"
@@ -1487,8 +1481,8 @@ const AdminCourses = () => {
                                   key={idx}
                                   className="inline-flex items-center gap-2 rounded-md border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-sm text-purple-300"
                                 >
-                                  {m.type === 'pdf' ? <FileText className="h-4 w-4" /> : <Upload className="h-4 w-4 rotate-180" />}
-                                  {m.title?.trim() || 'ดาวน์โหลดเอกสาร'}
+                                  <Upload className="h-4 w-4 rotate-180" />
+                                  ดาวน์โหลด
                                 </span>
                               ))}
                             </div>
