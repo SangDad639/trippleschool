@@ -334,15 +334,29 @@ const CourseLearn = () => {
                           })}
                         </div>
                       )}
-                      {htmlDocs.map((m, idx) => (
-                        <div key={idx} className="mt-3 rounded-lg border border-gray-800 bg-gray-900/40 p-4">
-                          {m.title && <p className="text-sm font-semibold text-white mb-2">{m.title}</p>}
-                          <div
-                            className="prose prose-invert prose-sm max-w-none text-gray-200 select-text"
-                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(m.content || '') }}
-                          />
-                        </div>
-                      ))}
+                      {htmlDocs.map((m, idx) => {
+                        const clean = DOMPurify.sanitize(m.content || '');
+                        // Uploaded docs (Word/Docs exports) carry their own dark text colors,
+                        // so render on a white "paper" surface to stay readable regardless.
+                        const hasVisibleText = clean.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
+                        return (
+                          <div key={idx} className="mt-3 rounded-lg border border-gray-800 overflow-hidden">
+                            {m.title && <p className="text-sm font-semibold text-white bg-gray-900/60 px-4 py-2">{m.title}</p>}
+                            <div className="bg-white text-gray-900 p-4 max-h-[600px] overflow-auto">
+                              {hasVisibleText ? (
+                                <div
+                                  className="prose prose-sm max-w-none select-text"
+                                  dangerouslySetInnerHTML={{ __html: clean }}
+                                />
+                              ) : (
+                                <pre className="whitespace-pre-wrap break-words text-sm text-gray-800 select-text font-sans">
+                                  {(m.content || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() || 'ไม่มีเนื้อหา'}
+                                </pre>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })()}

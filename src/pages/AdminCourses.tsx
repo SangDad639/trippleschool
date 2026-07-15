@@ -1487,15 +1487,24 @@ const AdminCourses = () => {
                               ))}
                             </div>
                           )}
-                          {htmlDocs.map((m, idx) => (
-                            <div key={idx} className="mt-3 rounded-lg border border-gray-800 bg-gray-900/40 p-4">
-                              {m.title && <p className="text-sm font-semibold text-white mb-2">{m.title}</p>}
-                              <div
-                                className="prose prose-invert prose-sm max-w-none text-gray-200"
-                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(m.content || '') }}
-                              />
-                            </div>
-                          ))}
+                          {htmlDocs.map((m, idx) => {
+                            const clean = DOMPurify.sanitize(m.content || '');
+                            const hasVisibleText = clean.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
+                            return (
+                              <div key={idx} className="mt-3 rounded-lg border border-gray-800 overflow-hidden">
+                                {m.title && <p className="text-sm font-semibold text-white bg-gray-900/60 px-4 py-2">{m.title}</p>}
+                                <div className="bg-white text-gray-900 p-4 max-h-[400px] overflow-auto">
+                                  {hasVisibleText ? (
+                                    <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: clean }} />
+                                  ) : (
+                                    <pre className="whitespace-pre-wrap break-words text-sm text-gray-800 font-sans">
+                                      {(m.content || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() || 'ไม่มีเนื้อหา'}
+                                    </pre>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
                           {downloads.length === 0 && htmlDocs.length === 0 && (
                             <p className="text-gray-500 text-sm">ยังไม่มีเอกสารที่จะแสดง (ต้องมีลิงก์/ไฟล์/เนื้อหา และติ๊กเปิดไว้)</p>
                           )}
