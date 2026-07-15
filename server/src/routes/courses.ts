@@ -41,11 +41,14 @@ const materialUpload = multer({
 });
 
 // A lesson material as accepted from the client / stored in the lessons.materials JSONB.
+//   link/pdf → downloadable (uses `url`)
+//   html     → inline content shown in the lesson page (uses `content`; sanitized on render)
 interface LessonMaterial {
   title: string;
   url: string;
-  type: 'link' | 'pdf';
+  type: 'link' | 'pdf' | 'html';
   enabled: boolean; // false = hidden from students (admin keeps the row)
+  content?: string;
 }
 
 // Convert a Google Drive "share/view" link into a direct-download link so the
@@ -64,7 +67,7 @@ function sanitizeMaterials(input: unknown): LessonMaterial[] {
   return input
     .filter((m): m is Record<string, unknown> => !!m && typeof m === 'object')
     .map((m): LessonMaterial => {
-      const type = m.type === 'pdf' ? 'pdf' : 'link';
+      const type = m.type === 'pdf' ? 'pdf' : m.type === 'html' ? 'html' : 'link';
       const url = typeof m.url === 'string' ? m.url.trim() : '';
       return {
         title: typeof m.title === 'string' ? m.title.trim() : '',
@@ -72,9 +75,11 @@ function sanitizeMaterials(input: unknown): LessonMaterial[] {
         url: type === 'link' ? normalizeMaterialUrl(url) : url,
         type,
         enabled: typeof m.enabled === 'boolean' ? m.enabled : true,
+        content: type === 'html' && typeof m.content === 'string' ? m.content : '',
       };
     })
-    .filter((m) => m.url.length > 0);
+    // html rows are kept by their content; link/pdf rows by their url.
+    .filter((m) => (m.type === 'html' ? (m.content || '').trim().length > 0 : m.url.length > 0));
 }
 
 // Extract YouTube ID from common URL formats (or a bare 11-char id)

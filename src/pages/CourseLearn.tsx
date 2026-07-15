@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+import DOMPurify from 'dompurify';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -26,8 +27,9 @@ import {
 interface LessonMaterial {
   title: string;
   url: string;
-  type: 'link' | 'pdf';
+  type: 'link' | 'pdf' | 'html';
   enabled?: boolean;
+  content?: string;
 }
 
 interface Lesson {
@@ -263,25 +265,42 @@ const CourseLearn = () => {
                 </div>
                 {currentLesson.description && <p className="text-gray-300 text-sm whitespace-pre-wrap">{currentLesson.description}</p>}
 
-                {currentLesson.materials && currentLesson.materials.filter((m) => m.enabled !== false).length > 0 && (
-                  <div className="mt-4 pt-4 border-t border-gray-800">
-                    <p className="text-sm font-medium text-white mb-2">เอกสารประกอบ</p>
-                    <div className="flex flex-wrap gap-2">
-                      {currentLesson.materials.filter((m) => m.enabled !== false).map((m, idx) => (
-                        <a
-                          key={idx}
-                          href={api.mediaUrl(m.url)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2 rounded-md border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-sm text-purple-300 transition-colors hover:bg-purple-500/20 hover:text-purple-200"
-                        >
-                          {m.type === 'pdf' ? <FileText className="h-4 w-4" /> : <Download className="h-4 w-4" />}
-                          {m.title || 'เอกสาร'}
-                        </a>
+                {(() => {
+                  const visible = (currentLesson.materials || []).filter((m) => m.enabled !== false);
+                  const downloads = visible.filter((m) => m.type !== 'html');
+                  const htmlDocs = visible.filter((m) => m.type === 'html' && (m.content || '').trim());
+                  if (downloads.length === 0 && htmlDocs.length === 0) return null;
+                  return (
+                    <div className="mt-4 pt-4 border-t border-gray-800">
+                      <p className="text-sm font-medium text-white mb-2">เอกสารประกอบ</p>
+                      {downloads.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                          {downloads.map((m, idx) => (
+                            <a
+                              key={idx}
+                              href={api.mediaUrl(m.url)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-2 rounded-md border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-sm text-purple-300 transition-colors hover:bg-purple-500/20 hover:text-purple-200"
+                            >
+                              {m.type === 'pdf' ? <FileText className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+                              {m.title || 'เอกสาร'}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {htmlDocs.map((m, idx) => (
+                        <div key={idx} className="mt-3 rounded-lg border border-gray-800 bg-gray-900/40 p-4">
+                          {m.title && <p className="text-sm font-semibold text-white mb-2">{m.title}</p>}
+                          <div
+                            className="prose prose-invert prose-sm max-w-none text-gray-200 select-text"
+                            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(m.content || '') }}
+                          />
+                        </div>
                       ))}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </CardContent>
             </Card>
 

@@ -96,8 +96,9 @@ interface Section {
 interface LessonMaterial {
   title: string;
   url: string;
-  type: 'link' | 'pdf';
+  type: 'link' | 'pdf' | 'html';
   enabled?: boolean;
+  content?: string;
 }
 
 interface Lesson {
@@ -431,6 +432,13 @@ const AdminCourses = () => {
     }));
   };
 
+  // HTML document: content shown inline in the lesson so students can copy the text.
+  const addHtmlDoc = () =>
+    setLessonForm((prev) => ({
+      ...prev,
+      materials: [...prev.materials, { title: '', url: '', type: 'html', content: '', enabled: true }],
+    }));
+
   const updateMaterial = (idx: number, patch: Partial<LessonMaterial>) =>
     setLessonForm((prev) => ({
       ...prev,
@@ -469,7 +477,9 @@ const AdminCourses = () => {
 
     try {
       setSaving(true);
-      const materials = lessonForm.materials.filter((m) => m.url.trim());
+      const materials = lessonForm.materials.filter((m) =>
+        m.type === 'html' ? (m.content || '').trim() : m.url.trim()
+      );
       if (editingLesson) {
         await api.updateLesson(editingLesson.id, {
           ...lessonForm,
@@ -1244,54 +1254,94 @@ const AdminCourses = () => {
               <div className="border-t border-gray-800 pt-4">
                 <Label>เอกสารประกอบ</Label>
                 <p className="text-xs text-gray-500 mt-0.5 mb-2">
-                  เพิ่มปุ่มดาวน์โหลดเอกสาร — ตั้งชื่อปุ่มเอง แล้วใส่ลิงก์ หรืออัปโหลดไฟล์ PDF
+                  ปุ่มดาวน์โหลด (ลิงก์ / Google Drive / PDF) หรือ "เอกสาร HTML" ที่แสดงเนื้อหาในหน้าเลย (นักเรียนก็อปข้อความได้)
                 </p>
                 <div className="space-y-2">
                   {lessonForm.materials.length === 0 && (
                     <p className="text-gray-500 text-sm">ยังไม่มีเอกสาร</p>
                   )}
-                  {lessonForm.materials.map((m, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <div className="flex items-center gap-1 flex-shrink-0" title="ติ๊ก = โชว์ให้นักเรียนเห็น">
-                        <Checkbox
-                          checked={m.enabled !== false}
-                          onCheckedChange={(checked) => updateMaterial(idx, { enabled: checked === true })}
+                  {lessonForm.materials.map((m, idx) =>
+                    m.type === 'html' ? (
+                      <div key={idx} className="rounded-md border border-gray-700 p-3 space-y-2">
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1 flex-shrink-0" title="ติ๊ก = โชว์ให้นักเรียนเห็น">
+                            <Checkbox
+                              checked={m.enabled !== false}
+                              onCheckedChange={(checked) => updateMaterial(idx, { enabled: checked === true })}
+                            />
+                          </div>
+                          <FileText className="h-4 w-4 text-emerald-400 flex-shrink-0" />
+                          <Input
+                            value={m.title}
+                            onChange={(e) => updateMaterial(idx, { title: e.target.value })}
+                            placeholder="หัวข้อเอกสาร เช่น สรุปเนื้อหา"
+                            className="flex-1"
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-red-400 hover:text-red-300 flex-shrink-0"
+                            onClick={() => removeMaterial(idx)}
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <Textarea
+                          value={m.content || ''}
+                          onChange={(e) => updateMaterial(idx, { content: e.target.value })}
+                          placeholder="วางเนื้อหา HTML ที่นี่ เช่น <h3>หัวข้อ</h3><p>ข้อความ...</p> (ใส่ข้อความธรรมดาก็ได้)"
+                          rows={6}
+                          className="font-mono text-xs"
                         />
                       </div>
-                      {m.type === 'pdf' ? (
-                        <FileText className="h-4 w-4 text-purple-400 flex-shrink-0" />
-                      ) : (
-                        <Link2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                      )}
-                      <Input
-                        value={m.title}
-                        onChange={(e) => updateMaterial(idx, { title: e.target.value })}
-                        placeholder="ชื่อปุ่ม เช่น สไลด์บทที่ 1"
-                        className="flex-1"
-                      />
-                      <Input
-                        value={m.url}
-                        onChange={(e) => updateMaterial(idx, { url: e.target.value })}
-                        placeholder="ลิงก์เอกสาร / Google Drive (https://...)"
-                        readOnly={m.type === 'pdf'}
-                        className="flex-1"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-400 hover:text-red-300 flex-shrink-0"
-                        onClick={() => removeMaterial(idx)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
+                    ) : (
+                      <div key={idx} className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 flex-shrink-0" title="ติ๊ก = โชว์ให้นักเรียนเห็น">
+                          <Checkbox
+                            checked={m.enabled !== false}
+                            onCheckedChange={(checked) => updateMaterial(idx, { enabled: checked === true })}
+                          />
+                        </div>
+                        {m.type === 'pdf' ? (
+                          <FileText className="h-4 w-4 text-purple-400 flex-shrink-0" />
+                        ) : (
+                          <Link2 className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                        )}
+                        <Input
+                          value={m.title}
+                          onChange={(e) => updateMaterial(idx, { title: e.target.value })}
+                          placeholder="ชื่อปุ่ม เช่น สไลด์บทที่ 1"
+                          className="flex-1"
+                        />
+                        <Input
+                          value={m.url}
+                          onChange={(e) => updateMaterial(idx, { url: e.target.value })}
+                          placeholder="ลิงก์เอกสาร / Google Drive (https://...)"
+                          readOnly={m.type === 'pdf'}
+                          className="flex-1"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-400 hover:text-red-300 flex-shrink-0"
+                          onClick={() => removeMaterial(idx)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2 mt-2">
                   <Button type="button" variant="outline" size="sm" onClick={addMaterialLink}>
                     <Plus className="h-4 w-4 mr-1" />
                     เพิ่มลิงก์เอกสาร
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={addHtmlDoc}>
+                    <FileText className="h-4 w-4 mr-1" />
+                    เอกสาร HTML
                   </Button>
                   <Button type="button" variant="outline" size="sm" onClick={addGoogleDriveLink}>
                     <Link2 className="h-4 w-4 mr-1" />
