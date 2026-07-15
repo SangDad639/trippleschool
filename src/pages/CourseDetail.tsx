@@ -511,9 +511,9 @@ const CourseDetail = () => {
                     key={lesson.id}
                     className={`flex items-center justify-between p-2.5 rounded-md transition-colors ${canAccess ? 'bg-gray-800/50 hover:bg-gray-800 cursor-pointer' : 'bg-gray-800/30'}`}
                     onClick={() => {
-                      if (lesson.is_preview && lesson.youtube_id) {
-                        setPreviewLesson(previewLesson?.id === lesson.id ? null : lesson);
-                      } else if (hasAccess) {
+                      // Preview (or owned) lessons open the full lesson player, where the
+                      // preview plays and the paid lessons show a locked overlay.
+                      if (lesson.is_preview || hasAccess) {
                         navigate(`/app/courses/${course.slug}/learn/${lesson.id}`);
                       } else {
                         openBuyDialog();

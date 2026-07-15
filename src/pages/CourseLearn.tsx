@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronUp,
   Download,
+  Lock,
 } from 'lucide-react';
 
 interface LessonMaterial {
@@ -80,6 +81,8 @@ const CourseLearn = () => {
   const [completing, setCompleting] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [expandedSections, setExpandedSections] = useState<Record<number, boolean>>({});
+  // Purchased (or admin) → full access. Non-buyers may still watch preview lessons.
+  const [hasAccess, setHasAccess] = useState(false);
 
   useEffect(() => {
     if (slug) loadCourse();
@@ -104,14 +107,19 @@ const CourseLearn = () => {
       setLoading(true);
       const data = await api.getCourseFull(slug!);
       // isEnrolled = has an APPROVED purchase for THIS course (or is admin).
-      if (!data.isEnrolled) {
+      // Non-buyers are NOT redirected away — they can still watch preview lessons;
+      // paid lessons render a locked overlay instead of the video.
+      const access = !!data.isEnrolled;
+      const previewLessons = (data.lessons || []).filter((l: Lesson) => l.is_preview);
+      if (!access && previewLessons.length === 0) {
         toast.error('กรุณาซื้อคอร์สนี้ก่อน');
         navigate('/app/courses/' + slug);
         return;
       }
+      setHasAccess(access);
       setCourse(data);
-      // data.enrollment is the approved row (or null for admins). When null we
-      // simply skip progress writes — don't crash.
+      // data.enrollment is the approved row (or null for admins/non-buyers). When
+      // null we simply skip progress writes — don't crash.
       setEnrollment(data.enrollment ?? null);
     } catch (error) {
       console.error('Failed to load course:', error);
@@ -200,10 +208,21 @@ const CourseLearn = () => {
         className={`flex items-center gap-2.5 py-2.5 px-4 cursor-pointer border-b border-gray-800/50 transition-colors ${isActive ? 'bg-purple-500/10 border-l-2 border-l-purple-500' : 'hover:bg-gray-800/50'}`}
       >
         <div className="flex-shrink-0">
-          {completed ? <CheckCircle className="h-4 w-4 text-green-400" /> : isActive ? <PlayCircle className="h-4 w-4 text-purple-400" /> : <Circle className="h-4 w-4 text-gray-500" />}
+          {!hasAccess && !lesson.is_preview ? (
+            <Lock className="h-4 w-4 text-gray-500" />
+          ) : completed ? (
+            <CheckCircle className="h-4 w-4 text-green-400" />
+          ) : isActive ? (
+            <PlayCircle className="h-4 w-4 text-purple-400" />
+          ) : (
+            <Circle className="h-4 w-4 text-gray-500" />
+          )}
         </div>
         <div className="flex-1 min-w-0">
-          <p className={`text-sm font-medium truncate ${isActive ? 'text-purple-400' : 'text-white'}`}>{index + 1}. {lesson.title}</p>
+          <p className={`text-sm font-medium truncate ${isActive ? 'text-purple-400' : 'text-white'}`}>
+            {index + 1}. {lesson.title}
+            {!hasAccess && lesson.is_preview && <span className="ml-1.5 text-xs text-yellow-400">(ตัวอย่าง)</span>}
+          </p>
           {lesson.duration_minutes > 0 && <p className="text-xs text-gray-400">{lesson.duration_minutes} นาที</p>}
         </div>
       </div>
@@ -235,8 +254,27 @@ const CourseLearn = () => {
               </div>
             )}
 
+            {!hasAccess && (
+              <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-3">
+                <p className="text-sm text-yellow-200">
+                  คุณกำลังดู <span className="font-semibold">ตัวอย่างคอร์ส</span> — ซื้อคอร์สเพื่อปลดล็อกทุกบทเรียน
+                </p>
+                <Button size="sm" className="bg-yellow-500 text-black hover:bg-yellow-400" onClick={() => navigate(`/courses/${slug}`)}>
+                  ซื้อคอร์ส
+                </Button>
+              </div>
+            )}
+
             <div className="relative aspect-video bg-gray-900 rounded-lg overflow-hidden mb-5">
-              {currentLesson.youtube_id ? (
+              {!hasAccess && !currentLesson.is_preview ? (
+                <div className="w-full h-full flex flex-col items-center justify-center gap-3 px-6 text-center">
+                  <Lock className="h-10 w-10 text-gray-500" />
+                  <p className="text-gray-300 text-sm">บทเรียนนี้สำหรับผู้ที่ซื้อคอร์สแล้ว</p>
+                  <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => navigate(`/courses/${slug}`)}>
+                    ซื้อคอร์สเพื่อดูบทนี้
+                  </Button>
+                </div>
+              ) : currentLesson.youtube_id ? (
                 <iframe
                   key={currentLesson.id}
                   src={`https://www.youtube.com/embed/${currentLesson.youtube_id}?rel=0`}
@@ -257,10 +295,12 @@ const CourseLearn = () => {
                     <span className="text-purple-400 text-sm font-medium">บทที่ {currentIndex + 1}</span>
                     <h1 className="text-lg font-bold text-white mt-1">{currentLesson.title}</h1>
                   </div>
-                  <Button onClick={handleMarkComplete} disabled={completing || isCurrentCompleted} variant={isCurrentCompleted ? 'outline' : 'default'} size="sm" className={`h-8 text-sm ${isCurrentCompleted ? 'text-green-400 border-green-400/50' : ''}`}>
-                    {completing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
-                    {isCurrentCompleted ? 'เรียนจบแล้ว' : 'เรียนจบบทนี้'}
-                  </Button>
+                  {enrollment && (
+                    <Button onClick={handleMarkComplete} disabled={completing || isCurrentCompleted} variant={isCurrentCompleted ? 'outline' : 'default'} size="sm" className={`h-8 text-sm ${isCurrentCompleted ? 'text-green-400 border-green-400/50' : ''}`}>
+                      {completing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                      {isCurrentCompleted ? 'เรียนจบแล้ว' : 'เรียนจบบทนี้'}
+                    </Button>
+                  )}
                 </div>
                 {currentLesson.description && <p className="text-gray-300 text-sm whitespace-pre-wrap">{currentLesson.description}</p>}
 
