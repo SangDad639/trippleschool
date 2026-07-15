@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import DOMPurify from 'dompurify';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -230,6 +231,7 @@ const AdminCourses = () => {
   const [uploadingHtmlIdx, setUploadingHtmlIdx] = useState<number | null>(null);
   const htmlTargetIdxRef = useRef<number | null>(null);
   const htmlInputRef = useRef<HTMLInputElement>(null);
+  const [showMaterialPreview, setShowMaterialPreview] = useState(false);
 
   // Section dialog
   const [sectionDialogOpen, setSectionDialogOpen] = useState(false);
@@ -419,6 +421,7 @@ const AdminCourses = () => {
       setEditingLesson(null);
       setLessonForm(initialLessonForm);
     }
+    setShowMaterialPreview(false);
     setLessonDialogOpen(true);
   };
 
@@ -843,6 +846,12 @@ const AdminCourses = () => {
                               <div className="flex items-center gap-2">
                                 <Youtube className="h-4 w-4 text-red-500" />
                                 <span className="text-white">{lesson.title}</span>
+                                {(lesson.materials?.length ?? 0) > 0 && (
+                                  <Badge className="bg-emerald-500/10 text-emerald-400 gap-1">
+                                    <FileText className="h-3 w-3" />
+                                    {lesson.materials!.length}
+                                  </Badge>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell>{lesson.duration_minutes}</TableCell>
@@ -1451,6 +1460,57 @@ const AdminCourses = () => {
                     onChange={handleUploadHtml}
                   />
                 </div>
+
+                {/* Live preview — exactly what students see, from the current form (works before saving) */}
+                {lessonForm.materials.filter((m) => m.enabled !== false).length > 0 && (
+                  <div className="mt-3">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-purple-400"
+                      onClick={() => setShowMaterialPreview((v) => !v)}
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      {showMaterialPreview ? 'ซ่อนตัวอย่าง' : 'ดูตัวอย่าง (แบบที่นักเรียนเห็น)'}
+                    </Button>
+                    {showMaterialPreview && (() => {
+                      const visible = lessonForm.materials.filter((m) => m.enabled !== false);
+                      const downloads = visible.filter((m) => m.type !== 'html' && m.url.trim());
+                      const htmlDocs = visible.filter((m) => m.type === 'html' && (m.content || '').trim());
+                      return (
+                        <div className="mt-2 rounded-lg border border-gray-700 bg-gray-900/50 p-4">
+                          <p className="text-sm font-medium text-white mb-2">เอกสารประกอบ</p>
+                          {downloads.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {downloads.map((m, idx) => (
+                                <span
+                                  key={idx}
+                                  className="inline-flex items-center gap-2 rounded-md border border-purple-500/40 bg-purple-500/10 px-3 py-2 text-sm text-purple-300"
+                                >
+                                  {m.type === 'pdf' ? <FileText className="h-4 w-4" /> : <Upload className="h-4 w-4 rotate-180" />}
+                                  {m.title || 'เอกสาร'}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          {htmlDocs.map((m, idx) => (
+                            <div key={idx} className="mt-3 rounded-lg border border-gray-800 bg-gray-900/40 p-4">
+                              {m.title && <p className="text-sm font-semibold text-white mb-2">{m.title}</p>}
+                              <div
+                                className="prose prose-invert prose-sm max-w-none text-gray-200"
+                                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(m.content || '') }}
+                              />
+                            </div>
+                          ))}
+                          {downloads.length === 0 && htmlDocs.length === 0 && (
+                            <p className="text-gray-500 text-sm">ยังไม่มีเอกสารที่จะแสดง (ต้องมีลิงก์/ไฟล์/เนื้อหา และติ๊กเปิดไว้)</p>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
             <DialogFooter>
