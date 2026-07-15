@@ -225,6 +225,9 @@ const AdminCourses = () => {
   const [courseLessons, setCourseLessons] = useState<Record<number, Lesson[]>>({});
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
   const materialInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingHtmlIdx, setUploadingHtmlIdx] = useState<number | null>(null);
+  const htmlTargetIdxRef = useRef<number | null>(null);
+  const htmlInputRef = useRef<HTMLInputElement>(null);
 
   // Section dialog
   const [sectionDialogOpen, setSectionDialogOpen] = useState(false);
@@ -438,6 +441,35 @@ const AdminCourses = () => {
       ...prev,
       materials: [...prev.materials, { title: '', url: '', type: 'html', content: '', enabled: true }],
     }));
+
+  const pickHtmlFileFor = (idx: number) => {
+    htmlTargetIdxRef.current = idx;
+    htmlInputRef.current?.click();
+  };
+
+  const handleUploadHtml = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (e.target) e.target.value = '';
+    const idx = htmlTargetIdxRef.current;
+    if (!file || idx === null) return;
+    try {
+      setUploadingHtmlIdx(idx);
+      const { content, name } = await api.uploadCourseHtml(file);
+      const fallbackTitle = (name || '').replace(/\.html?$/i, '');
+      setLessonForm((prev) => ({
+        ...prev,
+        materials: prev.materials.map((m, i) =>
+          i === idx ? { ...m, content, title: m.title?.trim() ? m.title : fallbackTitle } : m
+        ),
+      }));
+      toast.success('อัปโหลดไฟล์ HTML สำเร็จ');
+    } catch (error: any) {
+      toast.error(`อัปโหลดไม่สำเร็จ: ${error.message || 'Failed to upload'}`);
+    } finally {
+      setUploadingHtmlIdx(null);
+      htmlTargetIdxRef.current = null;
+    }
+  };
 
   const updateMaterial = (idx: number, patch: Partial<LessonMaterial>) =>
     setLessonForm((prev) => ({
@@ -1287,10 +1319,27 @@ const AdminCourses = () => {
                             <X className="h-4 w-4" />
                           </Button>
                         </div>
+                        <div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={uploadingHtmlIdx === idx}
+                            onClick={() => pickHtmlFileFor(idx)}
+                          >
+                            {uploadingHtmlIdx === idx ? (
+                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                            ) : (
+                              <Upload className="h-4 w-4 mr-1" />
+                            )}
+                            อัปโหลดไฟล์ HTML
+                          </Button>
+                          <span className="text-xs text-gray-500 ml-2">หรือพิมพ์/วางเนื้อหาด้านล่าง</span>
+                        </div>
                         <Textarea
                           value={m.content || ''}
                           onChange={(e) => updateMaterial(idx, { content: e.target.value })}
-                          placeholder="วางเนื้อหา HTML ที่นี่ เช่น <h3>หัวข้อ</h3><p>ข้อความ...</p> (ใส่ข้อความธรรมดาก็ได้)"
+                          placeholder="อัปโหลดไฟล์ .html ด้านบน หรือพิมพ์เนื้อหาที่นี่ เช่น <h3>หัวข้อ</h3><p>ข้อความ...</p>"
                           rows={6}
                           className="font-mono text-xs"
                         />
@@ -1367,6 +1416,13 @@ const AdminCourses = () => {
                     accept="application/pdf"
                     className="hidden"
                     onChange={handleUploadMaterial}
+                  />
+                  <input
+                    ref={htmlInputRef}
+                    type="file"
+                    accept=".html,.htm,text/html"
+                    className="hidden"
+                    onChange={handleUploadHtml}
                   />
                 </div>
               </div>

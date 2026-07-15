@@ -40,6 +40,17 @@ const materialUpload = multer({
   },
 });
 
+// HTML document: read as inline content (shown in the lesson, not downloaded). 5MB.
+const htmlUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const isHtml = file.mimetype === 'text/html' || /\.(html?|htm)$/i.test(file.originalname);
+    if (isHtml) cb(null, true);
+    else cb(new Error('Only HTML files allowed'));
+  },
+});
+
 // A lesson material as accepted from the client / stored in the lessons.materials JSONB.
 //   link/pdf → downloadable (uses `url`)
 //   html     → inline content shown in the lesson page (uses `content`; sanitized on render)
@@ -153,6 +164,21 @@ router.post('/upload-material', authenticate, materialUpload.single('file'), asy
   } catch (error) {
     console.error('Error uploading material:', error);
     res.status(500).json({ error: 'Failed to upload material' });
+  }
+});
+
+// ============ Admin: upload HTML doc → return its text as inline content ============
+// The file itself isn't stored; its content goes into lessons.materials and is
+// sanitized (DOMPurify) on the client before rendering.
+router.post('/upload-html', authenticate, htmlUpload.single('file'), async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const content = req.file.buffer.toString('utf-8');
+    res.json({ content, name: req.file.originalname });
+  } catch (error) {
+    console.error('Error uploading HTML:', error);
+    res.status(500).json({ error: 'Failed to upload HTML' });
   }
 });
 
