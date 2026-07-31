@@ -2923,10 +2923,11 @@ class ApiClient {
   }
 
   // Enrollments (admin) — review + approve/reject/revoke buy requests.
-  async getAdminEnrollments(params?: { status?: string; course_id?: number; limit?: number; offset?: number }): Promise<{ enrollments: any[]; total: number }> {
+  async getAdminEnrollments(params?: { status?: string; course_id?: number; search?: string; limit?: number; offset?: number }): Promise<{ enrollments: any[]; total: number }> {
     const qs = new URLSearchParams();
     if (params?.status) qs.set('status', params.status);
     if (params?.course_id != null) qs.set('course_id', String(params.course_id));
+    if (params?.search) qs.set('search', params.search);
     if (params?.limit != null) qs.set('limit', String(params.limit));
     if (params?.offset != null) qs.set('offset', String(params.offset));
     const suffix = qs.toString();

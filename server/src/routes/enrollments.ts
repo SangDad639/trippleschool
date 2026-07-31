@@ -188,13 +188,15 @@ router.put('/:id/progress', authenticate, async (req: AuthRequest, res: Response
 router.get('/admin/all', authenticate, async (req: AuthRequest, res: Response) => {
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
-    const { status, course_id, limit = 50, offset = 0 } = req.query;
+    const { status, course_id, search, limit = 50, offset = 0 } = req.query;
     let where = ` WHERE 1=1`;
     const params: any[] = [];
     let i = 1;
     if (status) { where += ` AND e.status = $${i}`; params.push(status); i++; }
     if (course_id) { where += ` AND e.course_id = $${i}`; params.push(course_id); i++; }
-    const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM course_enrollments e${where}`, params);
+    if (search) { where += ` AND u.email ILIKE $${i}`; params.push(`%${search}%`); i++; }
+    // count query JOINs users too so the u.email search filter is valid + count matches
+    const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM course_enrollments e JOIN users u ON e.user_id = u.id${where}`, params);
     const result = await pool.query(`
       SELECT e.*, u.email as user_email, c.name as course_name, c.slug as course_slug, c.price, c.discount_price,
              approver.email as approved_by_email

@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
@@ -43,6 +44,7 @@ import {
   RefreshCcw,
   Image as ImageIcon,
   Eye,
+  Search,
 } from 'lucide-react';
 
 interface Enrollment {
@@ -88,6 +90,8 @@ const AdminEnrollments = () => {
   // Filters
   const [statusFilter, setStatusFilter] = useState('pending');
   const [courseFilter, setCourseFilter] = useState('all');
+  const [emailSearch, setEmailSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
@@ -114,7 +118,16 @@ const AdminEnrollments = () => {
     if (!user?.isAdmin) return;
     loadEnrollments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, courseFilter, page]);
+  }, [statusFilter, courseFilter, page, debouncedSearch]);
+
+  // Debounce the email search box → server-side search across ALL pages.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(emailSearch.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(t);
+  }, [emailSearch]);
 
   const loadData = async () => {
     await Promise.all([loadEnrollments(), loadStats(), loadCourses()]);
@@ -144,6 +157,7 @@ const AdminEnrollments = () => {
       const data = await api.getAdminEnrollments({
         status: statusFilter === 'all' ? undefined : statusFilter,
         course_id: courseFilter === 'all' ? undefined : parseInt(courseFilter),
+        search: debouncedSearch || undefined,
         limit: pageSize,
         offset: (page - 1) * pageSize,
       });
@@ -321,6 +335,8 @@ const AdminEnrollments = () => {
           </div>
         )}
 
+        {/* Filters: course + email search on one row */}
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
         {/* Course Filter */}
         <div className="flex items-center gap-3">
           <span className="text-muted-foreground text-sm">กรองตามคอร์ส:</span>
@@ -342,6 +358,26 @@ const AdminEnrollments = () => {
               ล้าง
             </Button>
           )}
+        </div>
+
+        {/* Email search (server-side, across all pages) */}
+        <div className="flex items-center gap-3">
+          <span className="text-muted-foreground text-sm">ค้นหาอีเมล:</span>
+          <div className="relative w-64">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+            <Input
+              value={emailSearch}
+              onChange={(e) => setEmailSearch(e.target.value)}
+              placeholder="พิมพ์อีเมล..."
+              className="pl-8"
+            />
+          </div>
+          {emailSearch && (
+            <Button variant="ghost" size="sm" onClick={() => setEmailSearch('')}>
+              ล้าง
+            </Button>
+          )}
+        </div>
         </div>
 
         {/* Bulk Actions */}
