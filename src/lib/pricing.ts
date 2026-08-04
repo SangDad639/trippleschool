@@ -20,8 +20,8 @@ interface PlanPricing {
 }
 
 export const PRICING: Record<PlanType, PlanPricing> = {
-  monthly: { subtotal: 690, vat: 48.3, total: 738.3, days: 30 },
-  yearly: { subtotal: 3990, vat: 279.3, total: 4269.3, days: 365 },
+  monthly: { subtotal: 1190, vat: 83.3, total: 1273.3, days: 30 },
+  yearly: { subtotal: 5890, vat: 412.3, total: 6302.3, days: 365 },
 };
 
 export function planFromDays(days: number): PlanType {

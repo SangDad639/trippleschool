@@ -150,7 +150,7 @@ const Subscription = () => {
             popular: isLongest,
             // Only the legacy monthly→yearly pair has a stable "-58%" anchor.
             // Skip savings badge for other plans (would need known reference).
-            savings: isLongest && p.slug === 'yearly' ? '-52%' : undefined,
+            savings: isLongest && p.slug === 'yearly' ? '-59%' : undefined,
           };
         });
       })()
@@ -173,7 +173,7 @@ const Subscription = () => {
           features: [...baseFeatures, ...yearlyBonusFeatures],
           icon: Crown,
           popular: true,
-          savings: '-52%',
+          savings: '-59%',
         },
       ];
 

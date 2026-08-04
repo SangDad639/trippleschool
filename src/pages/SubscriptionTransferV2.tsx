@@ -219,7 +219,7 @@ const SubscriptionTransferV2 = () => {
             <span className="block text-sm font-normal mt-1 opacity-80">
               ฿{getPlanPricing('yearly').subtotal.toLocaleString()}/{l('ปี', 'yr')}
             </span>
-            <span className="absolute -top-2 -right-1 px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-bold">-52%</span>
+            <span className="absolute -top-2 -right-1 px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-bold">-59%</span>
           </button>
         </div>
 

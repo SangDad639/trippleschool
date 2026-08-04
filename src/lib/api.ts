@@ -2851,7 +2851,7 @@ class ApiClient {
   async getCourseSections(courseId: number) {
     return this.request(`/api/courses/${courseId}/sections`);
   }
-  async createSection(courseId: number, data: { title: string; description?: string; section_order?: number }) {
+  async createSection(courseId: number, data: { title: string; description?: string; section_order?: number; mode?: 'basic' | 'update' }) {
     return this.request(`/api/courses/${courseId}/sections`, { method: 'POST', body: JSON.stringify(data) });
   }
   async updateSection(sectionId: number, data: Record<string, unknown>) {
@@ -2899,18 +2899,7 @@ class ApiClient {
   async deleteReview(id: number) {
     return this.request(`/api/courses/reviews/${id}`, { method: 'DELETE' });
   }
-  // Enrollments (learner) — per-course purchase → admin approval model.
-  // POST a buy request for a course. Optional payment slip (image, ≤10MB).
-  // FormData is detected by request() which then skips the JSON Content-Type
-  // header so the browser sets the multipart boundary.
-  async enrollCourse(courseId: number, slip?: File) {
-    const formData = new FormData();
-    if (slip) formData.append('slip', slip);
-    return this.request(`/api/enrollments/${courseId}/enroll`, {
-      method: 'POST',
-      body: formData,
-    });
-  }
+  // Enrollments = progress records (subscribers auto-enroll on course access). No per-course purchase.
   async getMyEnrollments(status?: string) {
     const qs = status ? `?status=${encodeURIComponent(status)}` : '';
     return this.request(`/api/enrollments/mine${qs}`);
@@ -2920,33 +2909,6 @@ class ApiClient {
   }
   async updateEnrollmentProgress(enrollmentId: number, data: { completed_lesson_id?: number; last_lesson_id?: number }) {
     return this.request(`/api/enrollments/${enrollmentId}/progress`, { method: 'PUT', body: JSON.stringify(data) });
-  }
-
-  // Enrollments (admin) — review + approve/reject/revoke buy requests.
-  async getAdminEnrollments(params?: { status?: string; course_id?: number; search?: string; limit?: number; offset?: number }): Promise<{ enrollments: any[]; total: number }> {
-    const qs = new URLSearchParams();
-    if (params?.status) qs.set('status', params.status);
-    if (params?.course_id != null) qs.set('course_id', String(params.course_id));
-    if (params?.search) qs.set('search', params.search);
-    if (params?.limit != null) qs.set('limit', String(params.limit));
-    if (params?.offset != null) qs.set('offset', String(params.offset));
-    const suffix = qs.toString();
-    return this.request(`/api/enrollments/admin/all${suffix ? `?${suffix}` : ''}`);
-  }
-  async getEnrollmentStats(): Promise<{ pending_count: number; approved_count: number; rejected_count: number; total_count: number }> {
-    return this.request('/api/enrollments/admin/stats');
-  }
-  async approveEnrollment(id: number) {
-    return this.request(`/api/enrollments/admin/${id}/approve`, { method: 'PUT' });
-  }
-  async rejectEnrollment(id: number, reason?: string) {
-    return this.request(`/api/enrollments/admin/${id}/reject`, { method: 'PUT', body: JSON.stringify({ reason }) });
-  }
-  async revokeEnrollment(id: number, reason?: string) {
-    return this.request(`/api/enrollments/admin/${id}/revoke`, { method: 'PUT', body: JSON.stringify({ reason }) });
-  }
-  async bulkApproveEnrollments(enrollment_ids: number[]) {
-    return this.request('/api/enrollments/admin/bulk-approve', { method: 'POST', body: JSON.stringify({ enrollment_ids }) });
   }
 }
 

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import CoursePrice from '@/components/CoursePrice';
 import StarRating from '@/components/StarRating';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -173,8 +172,6 @@ const Courses = ({ basePath = '/app/courses' }: { basePath?: string } = {}) => {
                 <SelectItem value={SORT_DEFAULT}>✨ แนะนำ</SelectItem>
                 <SelectItem value="popular">🔥 ยอดนิยม</SelectItem>
                 <SelectItem value="new">🆕 ใหม่ล่าสุด</SelectItem>
-                <SelectItem value="price_asc">⬆️ ราคาน้อย→มาก</SelectItem>
-                <SelectItem value="price_desc">⬇️ ราคามาก→น้อย</SelectItem>
               </SelectContent>
             </Select>
             <span className="text-gray-400 text-sm whitespace-nowrap">{filteredCourses.length} คอร์ส</span>
@@ -291,10 +288,6 @@ const CourseCard = ({ course, onClick }: { course: Course; onClick: () => void }
           <Badge className={`${difficultyColors[course.difficulty] || difficultyColors.beginner} border text-xs px-2 py-0.5`}>
             {difficultyLabels[course.difficulty] || 'เริ่มต้น'}
           </Badge>
-        </div>
-
-        <div className="mt-2 pt-2 border-t border-gray-700/60">
-          <CoursePrice price={course.price} discountPrice={course.discount_price} size="sm" />
         </div>
       </CardContent>
     </Card>
