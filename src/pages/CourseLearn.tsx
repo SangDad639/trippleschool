@@ -267,11 +267,16 @@ const CourseLearn = () => {
             {!hasAccess && (
               <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-3">
                 <p className="text-sm text-yellow-200">
-                  คุณกำลังดู <span className="font-semibold">ตัวอย่างคอร์ส</span> — สมัครสมาชิกเพื่อปลดล็อกทุกบทเรียน
+                  คุณกำลังดู <span className="font-semibold">ตัวอย่างคอร์ส</span> — ซื้อคอร์สนี้ หรือสมัครสมาชิกเพื่อปลดล็อกทุกบทเรียน
                 </p>
-                <Button size="sm" className="bg-yellow-500 text-black hover:bg-yellow-400" onClick={() => navigate('/subscription')}>
-                  สมัครสมาชิก
-                </Button>
+                <div className="flex gap-2 flex-shrink-0">
+                  <Button size="sm" variant="outline" className="border-yellow-500/50 text-yellow-200 hover:bg-yellow-500/20" onClick={() => navigate(`/courses/${slug}`)}>
+                    ซื้อคอร์ส
+                  </Button>
+                  <Button size="sm" className="bg-yellow-500 text-black hover:bg-yellow-400" onClick={() => navigate('/subscription')}>
+                    สมัครสมาชิก
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -279,10 +284,15 @@ const CourseLearn = () => {
               {!hasAccess && !currentLesson.is_preview ? (
                 <div className="w-full h-full flex flex-col items-center justify-center gap-3 px-6 text-center">
                   <Lock className="h-10 w-10 text-gray-500" />
-                  <p className="text-gray-300 text-sm">บทเรียนนี้สำหรับสมาชิกเท่านั้น</p>
-                  <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => navigate('/subscription')}>
-                    สมัครสมาชิกเพื่อดูบทนี้
-                  </Button>
+                  <p className="text-gray-300 text-sm">บทเรียนนี้สำหรับผู้ที่ซื้อคอร์ส หรือสมาชิกเท่านั้น</p>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="border-purple-500/50 text-purple-300 hover:bg-purple-500/10" onClick={() => navigate(`/courses/${slug}`)}>
+                      ซื้อคอร์สนี้
+                    </Button>
+                    <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => navigate('/subscription')}>
+                      สมัครสมาชิก
+                    </Button>
+                  </div>
                 </div>
               ) : currentLesson.youtube_id ? (
                 <iframe

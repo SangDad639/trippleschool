@@ -19,9 +19,12 @@ interface PlanPricing {
   days: number;
 }
 
+// 50% launch discount — actual charged subtotal is halved (595 / 2945).
+// The pre-discount price (1,190 / 5,890 = subtotal × 2) is shown struck-through
+// with a "-50%" badge in the UI. VAT/total are computed from the discounted subtotal.
 export const PRICING: Record<PlanType, PlanPricing> = {
-  monthly: { subtotal: 1190, vat: 83.3, total: 1273.3, days: 30 },
-  yearly: { subtotal: 5890, vat: 412.3, total: 6302.3, days: 365 },
+  monthly: { subtotal: 595, vat: 41.65, total: 636.65, days: 30 },
+  yearly: { subtotal: 2945, vat: 206.15, total: 3151.15, days: 365 },
 };
 
 export function planFromDays(days: number): PlanType {

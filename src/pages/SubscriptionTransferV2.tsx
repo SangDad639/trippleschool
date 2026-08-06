@@ -204,6 +204,7 @@ const SubscriptionTransferV2 = () => {
           >
             {l('รายเดือน', 'Monthly')}
             <span className="block text-sm font-normal mt-1 opacity-80">
+              <span className="line-through opacity-60 mr-1">฿{(getPlanPricing('monthly').subtotal * 2).toLocaleString()}</span>
               ฿{getPlanPricing('monthly').subtotal.toLocaleString()}/{l('เดือน', 'mo')}
             </span>
           </button>
@@ -217,9 +218,10 @@ const SubscriptionTransferV2 = () => {
           >
             {l('รายปี', 'Yearly')}
             <span className="block text-sm font-normal mt-1 opacity-80">
+              <span className="line-through opacity-60 mr-1">฿{(getPlanPricing('yearly').subtotal * 2).toLocaleString()}</span>
               ฿{getPlanPricing('yearly').subtotal.toLocaleString()}/{l('ปี', 'yr')}
             </span>
-            <span className="absolute -top-2 -right-1 px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-bold">-59%</span>
+            <span className="absolute -top-2 -right-1 px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-bold">-50%</span>
           </button>
         </div>
 

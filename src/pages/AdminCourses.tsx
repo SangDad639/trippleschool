@@ -46,6 +46,7 @@ import {
   Trash2,
   BookOpen,
   GraduationCap,
+  Users,
   ChevronUp,
   ChevronDown,
   Youtube,
@@ -705,6 +706,10 @@ const AdminCourses = () => {
             <p className="text-gray-400">สร้างและจัดการคอร์สเรียนและบทเรียน</p>
           </div>
           <div className="flex gap-2">
+            <Button onClick={() => navigate('/admin/enrollments')} variant="outline">
+              <Users className="h-4 w-4 mr-2" />
+              จัดการ Enrollments
+            </Button>
             <Button onClick={() => handleOpenCourseDialog()} className="bg-purple-600 hover:bg-purple-700">
               <Plus className="h-4 w-4 mr-2" />
               สร้างคอร์สใหม่
@@ -1203,7 +1208,26 @@ const AdminCourses = () => {
                   className="w-32"
                 />
               </div>
-              {/* ราคา/ราคาลด ถอดออก — เข้าเรียนทุกคอร์สผ่านการสมัครสมาชิก (subscription) ไม่ขายรายคอร์ส */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>ราคาปกติ (บาท)</Label>
+                  <Input
+                    type="number"
+                    value={courseForm.price}
+                    onChange={(e) => setCourseForm({ ...courseForm, price: parseInt(e.target.value) || 0 })}
+                    placeholder="0 = ฟรี"
+                  />
+                </div>
+                <div>
+                  <Label>ราคาลด (บาท)</Label>
+                  <Input
+                    type="number"
+                    value={courseForm.discount_price ?? ''}
+                    onChange={(e) => setCourseForm({ ...courseForm, discount_price: e.target.value ? parseInt(e.target.value) : null })}
+                    placeholder="ไม่ใส่ = ไม่มีลด"
+                  />
+                </div>
+              </div>
               <div className="flex items-center gap-2">
                 <Checkbox
                   checked={courseForm.is_featured}

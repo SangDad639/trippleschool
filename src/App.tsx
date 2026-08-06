@@ -49,6 +49,7 @@ import CourseDetail from "@/pages/CourseDetail";
 import CourseLearn from "@/pages/CourseLearn";
 import MyCourses from "@/pages/MyCourses";
 import AdminCourses from "@/pages/AdminCourses";
+import AdminEnrollments from "@/pages/AdminEnrollments";
 
 // Login/Register page
 const AuthPage = () => {
@@ -346,6 +347,7 @@ function AppRoutes() {
       <Route path="/admin/banners" element={<ProtectedRoute><AdminBanners /></ProtectedRoute>} />
       <Route path="/admin/banners/:id/edit" element={<ProtectedRoute><AdminBannerEditor /></ProtectedRoute>} />
       <Route path="/admin/courses" element={<ProtectedRoute><AdminCourses /></ProtectedRoute>} />
+      <Route path="/admin/enrollments" element={<ProtectedRoute><AdminEnrollments /></ProtectedRoute>} />
 
       {/* ---------- User ---------- */}
       <Route path="/affiliate" element={<ProtectedRoute><Affiliate /></ProtectedRoute>} />
