@@ -2851,7 +2851,7 @@ class ApiClient {
   async getCourseSections(courseId: number) {
     return this.request(`/api/courses/${courseId}/sections`);
   }
-  async createSection(courseId: number, data: { title: string; description?: string; section_order?: number }) {
+  async createSection(courseId: number, data: { title: string; description?: string; section_order?: number; mode?: 'basic' | 'update' }) {
     return this.request(`/api/courses/${courseId}/sections`, { method: 'POST', body: JSON.stringify(data) });
   }
   async updateSection(sectionId: number, data: Record<string, unknown>) {
@@ -2899,10 +2899,9 @@ class ApiClient {
   async deleteReview(id: number) {
     return this.request(`/api/courses/reviews/${id}`, { method: 'DELETE' });
   }
-  // Enrollments (learner) — per-course purchase → admin approval model.
+  // Enrollments — per-course purchase (slip → admin approval) + progress records.
+  // Subscribers also get an auto 'approved' enrollment (source='subscription') for progress.
   // POST a buy request for a course. Optional payment slip (image, ≤10MB).
-  // FormData is detected by request() which then skips the JSON Content-Type
-  // header so the browser sets the multipart boundary.
   async enrollCourse(courseId: number, slip?: File) {
     const formData = new FormData();
     if (slip) formData.append('slip', slip);

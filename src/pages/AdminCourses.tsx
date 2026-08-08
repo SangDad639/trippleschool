@@ -90,6 +90,7 @@ interface Section {
   course_id: number;
   title: string;
   description: string;
+  mode?: 'basic' | 'update';
   section_order: number;
   is_active: boolean;
   lessons: Lesson[];
@@ -150,6 +151,7 @@ const initialLessonForm = {
 const initialSectionForm = {
   title: '',
   description: '',
+  mode: 'basic' as 'basic' | 'update',
 };
 
 // Reusable add/edit/remove bullet-list editor for string[] fields.
@@ -592,6 +594,7 @@ const AdminCourses = () => {
       setSectionForm({
         title: section.title,
         description: section.description || '',
+        mode: section.mode ?? 'basic',
       });
     } else {
       setEditingSection(null);
@@ -901,6 +904,12 @@ const AdminCourses = () => {
 
                         return (
                           <div className="space-y-4">
+                            {sections.length > 0 && (
+                              <div className="flex items-start gap-2 text-xs text-gray-400 bg-gray-800/40 border border-gray-700 rounded-md px-3 py-2">
+                                <Layers className="h-4 w-4 text-purple-400 flex-shrink-0 mt-0.5" />
+                                <span>เนื้อหาแบ่งเป็น 2 โหมด: หมวด <b className="text-slate-300">พื้นฐาน</b> กับ <b className="text-amber-400">อัพเดท</b> จะแยกเป็น 2 แท็บให้ผู้เรียน (ตั้งโหมดในปุ่มแก้ไขหมวด) — บทเรียนที่ "ไม่จัดหมวด" จะอยู่แท็บพื้นฐาน</span>
+                              </div>
+                            )}
                             {/* Sections with Lessons */}
                             {sections.map((section, sectionIndex) => {
                               const sectionLessons = lessons.filter(l => l.section_id === section.id);
@@ -931,6 +940,9 @@ const AdminCourses = () => {
                                       </div>
                                       <FolderOpen className="h-4 w-4 text-purple-400" />
                                       <span className="text-white font-medium">{section.title}</span>
+                                      <Badge className={`text-xs ${section.mode === 'update' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' : 'bg-slate-500/15 text-slate-300 border-slate-500/30'}`}>
+                                        {section.mode === 'update' ? 'อัพเดท' : 'พื้นฐาน'}
+                                      </Badge>
                                       <Badge variant="secondary" className="text-xs">{sectionLessons.length} บท</Badge>
                                     </div>
                                     <div className="flex gap-1">
@@ -1552,6 +1564,22 @@ const AdminCourses = () => {
                   rows={3}
                   placeholder="คำอธิบายสั้นๆ เกี่ยวกับหมวดนี้"
                 />
+              </div>
+              <div>
+                <Label>โหมด</Label>
+                <p className="text-xs text-gray-500 mt-0.5 mb-1">เลือกว่าหมวดนี้เป็นเนื้อหาพื้นฐาน หรือเนื้อหาอัพเดท</p>
+                <Select
+                  value={sectionForm.mode}
+                  onValueChange={(value) => setSectionForm({ ...sectionForm, mode: value as 'basic' | 'update' })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="basic">พื้นฐาน</SelectItem>
+                    <SelectItem value="update">อัพเดท</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <DialogFooter>

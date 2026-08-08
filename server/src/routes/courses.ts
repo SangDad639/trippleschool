@@ -8,6 +8,7 @@ import multer from 'multer';
 import pool from '../db.js';
 import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth.js';
 import { uploadFile, getFile } from '../utils/s3.js';
+import { hasActiveSubscription } from '../services/stripeService.js';
 
 const router = Router();
 
@@ -19,6 +20,13 @@ async function hasApprovedEnrollment(userId: number | undefined, courseId: numbe
     [userId, courseId]
   );
   return r.rows.length > 0;
+}
+
+/** Course access: admin, active subscription (unlocks ALL courses), or approved purchase. */
+async function hasSubscriptionOrEnrollment(userId: number | undefined, courseId: number): Promise<boolean> {
+  if (!userId) return false;
+  if (await hasActiveSubscription(userId)) return true;
+  return hasApprovedEnrollment(userId, courseId);
 }
 
 const thumbUpload = multer({
@@ -369,7 +377,7 @@ router.get('/:courseId/sections', optionalAuth, async (req: AuthRequest, res) =>
     const { courseId } = req.params;
     // Reveal paid-lesson youtube_id only to admins / enrolled owners. Anonymous
     // or non-owner callers get it masked (preview lessons stay visible).
-    const hasAccess = !!req.isAdmin || (req.userId ? await hasApprovedEnrollment(req.userId, Number(courseId)) : false);
+    const hasAccess = !!req.isAdmin || (await hasSubscriptionOrEnrollment(req.userId, Number(courseId)));
     const sectionsResult = await pool.query(`
       SELECT * FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
     `, [courseId]);
@@ -394,8 +402,9 @@ router.post('/:courseId/sections', authenticate, async (req: AuthRequest, res) =
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const { courseId } = req.params;
-    const { title, description, section_order } = req.body;
+    const { title, description, section_order, mode } = req.body;
     if (!title) return res.status(400).json({ error: 'Title is required' });
+    const sectionMode = mode === 'update' ? 'update' : 'basic';
     let order = section_order;
     if (order === undefined || order === null) {
       const maxOrderResult = await pool.query(`
@@ -404,9 +413,9 @@ router.post('/:courseId/sections', authenticate, async (req: AuthRequest, res) =
       order = maxOrderResult.rows[0].next_order;
     }
     const result = await pool.query(`
-      INSERT INTO course_sections (course_id, title, description, section_order)
-      VALUES ($1, $2, $3, $4) RETURNING *
-    `, [courseId, title, description || null, order]);
+      INSERT INTO course_sections (course_id, title, description, section_order, mode)
+      VALUES ($1, $2, $3, $4, $5) RETURNING *
+    `, [courseId, title, description || null, order, sectionMode]);
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error creating section:', error);
@@ -437,15 +446,17 @@ router.put('/sections/:id', authenticate, async (req: AuthRequest, res) => {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const { id } = req.params;
     const { title, description, section_order, is_active } = req.body;
+    const mode = req.body.mode === 'basic' || req.body.mode === 'update' ? req.body.mode : null;
     const result = await pool.query(`
       UPDATE course_sections SET
         title = COALESCE($1, title),
         description = COALESCE($2, description),
         section_order = COALESCE($3, section_order),
         is_active = COALESCE($4, is_active),
+        mode = COALESCE($6, mode),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $5 RETURNING *
-    `, [title, description, section_order, is_active, id]);
+    `, [title, description, section_order, is_active, id, mode]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Section not found' });
     res.json(result.rows[0]);
   } catch (error) {
@@ -508,7 +519,7 @@ router.get('/:courseId/lessons', optionalAuth, async (req: AuthRequest, res) => 
   try {
     const { courseId } = req.params;
     // Reveal paid-lesson youtube_id/youtube_url only to admins / enrolled owners.
-    const hasAccess = !!req.isAdmin || (req.userId ? await hasApprovedEnrollment(req.userId, Number(courseId)) : false);
+    const hasAccess = !!req.isAdmin || (await hasSubscriptionOrEnrollment(req.userId, Number(courseId)));
     const result = await pool.query(`
       SELECT * FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [courseId]);
@@ -643,7 +654,7 @@ router.get('/:slug/lessons/:lessonId/video', authenticate, async (req: AuthReque
     );
     if (lessonResult.rows.length === 0) return res.status(404).json({ error: 'Lesson not found' });
     const lesson = lessonResult.rows[0];
-    const hasAccess = lesson.is_preview || req.isAdmin || (await hasApprovedEnrollment(req.userId, courseId));
+    const hasAccess = lesson.is_preview || req.isAdmin || (await hasSubscriptionOrEnrollment(req.userId, courseId));
     if (!hasAccess) {
       return res.status(403).json({
         error: 'กรุณาซื้อคอร์สนี้ก่อนรับชมบทเรียน',
@@ -729,15 +740,28 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
       FROM courses c WHERE c.slug = $1 AND c.is_active = true`, [slug]);
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const course = courseResult.rows[0];
-    // Per-course access: an APPROVED purchase for this course (or admin) unlocks paid lessons.
-    const hasAccess = req.isAdmin || (await hasApprovedEnrollment(userId, course.id));
+    // Access: admin, active subscription (unlocks ALL courses), or approved purchase.
+    const isSubscriber = userId ? await hasActiveSubscription(userId) : false;
     const enrollmentResult = await pool.query(
       `SELECT * FROM course_enrollments WHERE user_id = $1 AND course_id = $2`,
       [userId, course.id]
     );
-    const enrollment = enrollmentResult.rows[0] || null;
+    let enrollment = enrollmentResult.rows[0] || null;
+    // Subscribers get an auto 'approved' enrollment (source='subscription') so access,
+    // progress, "my courses" and the "เริ่มเรียน" CTA all flow through the normal path.
+    if (isSubscriber && !enrollment && userId) {
+      await pool.query(
+        `INSERT INTO course_enrollments (user_id, course_id, status, source, approved_at)
+         VALUES ($1, $2, 'approved', 'subscription', CURRENT_TIMESTAMP)
+         ON CONFLICT (user_id, course_id) DO NOTHING`,
+        [userId, course.id]
+      );
+      const re = await pool.query(`SELECT * FROM course_enrollments WHERE user_id = $1 AND course_id = $2`, [userId, course.id]);
+      enrollment = re.rows[0] || null;
+    }
+    const hasAccess = req.isAdmin || isSubscriber || (enrollment?.status === 'approved');
     const sectionsResult = await pool.query(`
-      SELECT id, title, description, section_order FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
+      SELECT id, title, description, section_order, mode FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
       SELECT id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, section_id, materials
@@ -769,7 +793,7 @@ router.get('/:slug', async (req, res) => {
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const course = courseResult.rows[0];
     const sectionsResult = await pool.query(`
-      SELECT id, title, description, section_order FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
+      SELECT id, title, description, section_order, mode FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
       SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id, materials

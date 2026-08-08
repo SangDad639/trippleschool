@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { PRICING } from '@/lib/pricing';
+import { baseFeatures, yearlyBonusFeatures } from '@/lib/planFeatures';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Calendar, Check, Crown, Loader2, Sparkles, CalendarDays, CreditCard, AlertCircle, XCircle, LogOut, ShieldAlert } from 'lucide-react';
@@ -80,21 +81,6 @@ const Subscription = () => {
     return () => clearInterval(pollInterval);
   }, [user, hasSubscription, loading, refreshSubscription]);
 
-  // Pricing-card feature entry — same shape as Landing.tsx. `highlight` is set
-  // only on the yearly-bonus rows. Annotated so the spread in `features:
-  // [...base, ...bonus]` doesn't widen the union and drop the highlight field.
-  type FeatureItem = { title: string; desc: string; highlight?: boolean };
-  const baseFeatures: FeatureItem[] = [
-    { title: 'เข้าถึงทุกคอร์ส', desc: 'ปลดล็อกทุกบทเรียนที่เสียเงินทั้งหมด' },
-    { title: 'วิดีโอความละเอียดสูง', desc: 'เรียนได้ทุกที่ทุกเวลา' },
-    { title: 'อัปเดตเนื้อหาใหม่', desc: 'คอร์สใหม่เพิ่มเรื่อย ๆ ไม่มีค่าใช้จ่ายเพิ่ม' },
-    { title: 'ติดตามความคืบหน้า', desc: 'บันทึกบทเรียนที่เรียนจบอัตโนมัติ' },
-  ];
-
-  const yearlyBonusFeatures: FeatureItem[] = [
-    { title: 'คุ้มกว่ารายเดือน', desc: 'จ่ายครั้งเดียวใช้ได้ทั้งปี', highlight: true },
-    { title: 'ราคาคงที่ทั้งปี', desc: 'ไม่ต้องต่ออายุทุกเดือน', highlight: true },
-  ];
 
   // Plan selection — show subtotal (before VAT) to match marketing /#pricing.
   // VAT is revealed at the actual checkout step (/subscription/transfer-v2).
@@ -132,6 +118,7 @@ const Subscription = () => {
     icon: typeof Calendar;
     popular?: boolean;
     savings?: string;
+    originalPrice?: string;
   };
   const plans: BuyViewPlan[] = apiPlans
     ? (() => {
@@ -142,15 +129,15 @@ const Subscription = () => {
             id: p.slug,
             name: p.name,
             price: `฿${p.subtotal.toLocaleString()}`,
+            // 50% launch discount → show pre-discount (subtotal × 2) struck-through.
+            originalPrice: `฿${(p.subtotal * 2).toLocaleString()}`,
             period: p.days === 30 ? '/month' : p.days === 365 ? '/year' : `/${p.days}d`,
             description: p.description || '',
             // Longest plan gets the bonus-features list (same convention as Landing).
             features: isLongest ? [...baseFeatures, ...yearlyBonusFeatures] : baseFeatures,
             icon: isLongest ? Crown : Calendar,
             popular: isLongest,
-            // Only the legacy monthly→yearly pair has a stable "-58%" anchor.
-            // Skip savings badge for other plans (would need known reference).
-            savings: isLongest && p.slug === 'yearly' ? '-52%' : undefined,
+            savings: '-50%',
           };
         });
       })()
@@ -159,21 +146,24 @@ const Subscription = () => {
           id: 'monthly',
           name: t('subscription.monthly'),
           price: `฿${PRICING.monthly.subtotal.toLocaleString()}`,
+          originalPrice: `฿${(PRICING.monthly.subtotal * 2).toLocaleString()}`,
           period: '/month',
           description: t('landing.monthlyDesc'),
           features: baseFeatures,
           icon: Calendar,
+          savings: '-50%',
         },
         {
           id: 'yearly',
           name: t('subscription.yearly'),
           price: `฿${PRICING.yearly.subtotal.toLocaleString()}`,
+          originalPrice: `฿${(PRICING.yearly.subtotal * 2).toLocaleString()}`,
           period: '/year',
           description: t('landing.yearlyDesc'),
           features: [...baseFeatures, ...yearlyBonusFeatures],
           icon: Crown,
           popular: true,
-          savings: '-52%',
+          savings: '-50%',
         },
       ];
 
@@ -269,10 +259,12 @@ const Subscription = () => {
                         <p className="text-sm text-muted-foreground">{t('subscription.perfectForTrying')}</p>
                       </div>
                     </div>
-                    <div className="flex items-baseline gap-1">
+                    <div className="flex items-baseline gap-1 flex-wrap">
+                      <span className="text-lg text-gray-500 line-through mr-1">฿{(getPlanPricing('monthly').subtotal * 2).toLocaleString()}</span>
                       <span className="text-4xl font-bold">฿{getPlanPricing('monthly').subtotal.toLocaleString()}</span>
                       <span className="text-xs text-gray-500 ml-0.5">THB</span>
                       <span className="text-muted-foreground">/month</span>
+                      <span className="ml-2 px-2 py-1 rounded-md bg-red-500/20 text-red-400 text-xs font-medium">-50%</span>
                     </div>
                     {currentPlan !== 'monthly' && (
                       <Button
@@ -315,13 +307,12 @@ const Subscription = () => {
                         <p className="text-sm text-muted-foreground">{t('subscription.save140annually')}</p>
                       </div>
                     </div>
-                    <div className="flex items-baseline gap-1">
+                    <div className="flex items-baseline gap-1 flex-wrap">
+                      <span className="text-lg text-gray-500 line-through mr-1">฿{(getPlanPricing('yearly').subtotal * 2).toLocaleString()}</span>
                       <span className="text-4xl font-bold">฿{getPlanPricing('yearly').subtotal.toLocaleString()}</span>
                       <span className="text-xs text-gray-500 ml-0.5">THB</span>
                       <span className="text-muted-foreground">/year</span>
-                      <span className="ml-2 px-2 py-1 rounded-md bg-green-500/20 text-green-500 text-xs font-medium">
-                        {t('subscription.save140')}
-                      </span>
+                      <span className="ml-2 px-2 py-1 rounded-md bg-red-500/20 text-red-400 text-xs font-medium">-50%</span>
                     </div>
                     {currentPlan !== 'yearly' && (
                       <Button
@@ -439,7 +430,10 @@ const Subscription = () => {
                         </div>
                       </div>
 
-                      <div className="flex items-baseline gap-1">
+                      <div className="flex items-baseline gap-1 flex-wrap">
+                        {plan.originalPrice && (
+                          <span className="text-xl text-gray-500 line-through mr-1">{plan.originalPrice}</span>
+                        )}
                         <span className={`text-5xl font-bold bg-gradient-to-r ${
                           plan.popular
                             ? 'from-[#FFD700] via-[#FFB300] to-[#FFA500]'
@@ -450,7 +444,7 @@ const Subscription = () => {
                         <span className="text-xs text-gray-500 ml-0.5">THB</span>
                         <span className="text-muted-foreground">{plan.period}</span>
                         {plan.savings && (
-                          <span className="ml-2 px-2 py-1 rounded-md bg-green-500/20 text-green-500 text-sm font-medium">
+                          <span className="ml-2 px-2 py-1 rounded-md bg-red-500/20 text-red-400 text-sm font-medium">
                             {plan.savings}
                           </span>
                         )}

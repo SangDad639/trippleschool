@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Loader2,
   ChevronLeft,
@@ -51,6 +52,7 @@ interface Section {
   title: string;
   description: string;
   section_order: number;
+  mode?: 'basic' | 'update';
   lessons: Lesson[];
 }
 
@@ -107,20 +109,14 @@ const CourseLearn = () => {
     try {
       setLoading(true);
       const data = await api.getCourseFull(slug!);
-      // isEnrolled = has an APPROVED purchase for THIS course (or is admin).
-      // Non-buyers are NOT redirected away — they can still watch preview lessons;
-      // paid lessons render a locked overlay instead of the video.
+      // hasAccess = active subscription or admin. Non-members are NOT redirected away —
+      // they can still watch preview lessons; member-only lessons render a locked
+      // overlay with a "subscribe" CTA instead of the video.
       const access = !!data.isEnrolled;
-      const previewLessons = (data.lessons || []).filter((l: Lesson) => l.is_preview);
-      if (!access && previewLessons.length === 0) {
-        toast.error('กรุณาซื้อคอร์สนี้ก่อน');
-        navigate('/app/courses/' + slug);
-        return;
-      }
       setHasAccess(access);
       setCourse(data);
-      // data.enrollment is the approved row (or null for admins/non-buyers). When
-      // null we simply skip progress writes — don't crash.
+      // data.enrollment is the progress row (or null for non-members). When null we
+      // simply skip progress writes — don't crash.
       setEnrollment(data.enrollment ?? null);
     } catch (error) {
       console.error('Failed to load course:', error);
@@ -271,11 +267,16 @@ const CourseLearn = () => {
             {!hasAccess && (
               <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-3">
                 <p className="text-sm text-yellow-200">
-                  คุณกำลังดู <span className="font-semibold">ตัวอย่างคอร์ส</span> — ซื้อคอร์สเพื่อปลดล็อกทุกบทเรียน
+                  คุณกำลังดู <span className="font-semibold">ตัวอย่างคอร์ส</span> — ซื้อคอร์สนี้ หรือสมัครสมาชิกเพื่อปลดล็อกทุกบทเรียน
                 </p>
-                <Button size="sm" className="bg-yellow-500 text-black hover:bg-yellow-400" onClick={() => navigate(`/courses/${slug}`)}>
-                  ซื้อคอร์ส
-                </Button>
+                <div className="flex gap-2 flex-shrink-0">
+                  <Button size="sm" variant="outline" className="border-yellow-500/50 text-yellow-200 hover:bg-yellow-500/20" onClick={() => navigate(`/courses/${slug}`)}>
+                    ซื้อคอร์ส
+                  </Button>
+                  <Button size="sm" className="bg-yellow-500 text-black hover:bg-yellow-400" onClick={() => navigate('/subscription')}>
+                    สมัครสมาชิก
+                  </Button>
+                </div>
               </div>
             )}
 
@@ -283,10 +284,15 @@ const CourseLearn = () => {
               {!hasAccess && !currentLesson.is_preview ? (
                 <div className="w-full h-full flex flex-col items-center justify-center gap-3 px-6 text-center">
                   <Lock className="h-10 w-10 text-gray-500" />
-                  <p className="text-gray-300 text-sm">บทเรียนนี้สำหรับผู้ที่ซื้อคอร์สแล้ว</p>
-                  <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => navigate(`/courses/${slug}`)}>
-                    ซื้อคอร์สเพื่อดูบทนี้
-                  </Button>
+                  <p className="text-gray-300 text-sm">บทเรียนนี้สำหรับผู้ที่ซื้อคอร์ส หรือสมาชิกเท่านั้น</p>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" className="border-purple-500/50 text-purple-300 hover:bg-purple-500/10" onClick={() => navigate(`/courses/${slug}`)}>
+                      ซื้อคอร์สนี้
+                    </Button>
+                    <Button size="sm" className="bg-purple-600 hover:bg-purple-700" onClick={() => navigate('/subscription')}>
+                      สมัครสมาชิก
+                    </Button>
+                  </div>
                 </div>
               ) : currentLesson.youtube_id ? (
                 <iframe
@@ -413,42 +419,72 @@ const CourseLearn = () => {
               const unassignedLessons = course.unassigned_lessons || [];
               const hasSections = sections.length > 0;
 
-              if (hasSections) {
+              // One collapsible section group (reused by both tabs).
+              const renderSectionGroup = (section: Section) => {
+                const sectionLessons = section.lessons || [];
+                const isExpanded = expandedSections[section.id] !== false;
+                const completedCount = sectionLessons.filter((l) => isLessonCompleted(l.id)).length;
+                const hasCurrentLesson = sectionLessons.some((l) => l.id === currentLesson.id);
                 return (
-                  <div>
-                    {sections.map((section) => {
-                      const sectionLessons = section.lessons || [];
-                      const isExpanded = expandedSections[section.id] !== false;
-                      const completedCount = sectionLessons.filter((l) => isLessonCompleted(l.id)).length;
-                      const hasCurrentLesson = sectionLessons.some((l) => l.id === currentLesson.id);
-                      return (
-                        <div key={section.id}>
-                          <div onClick={() => toggleSection(section.id)} className={`flex items-center justify-between py-2.5 px-4 cursor-pointer border-b border-gray-800 bg-gray-800/50 hover:bg-gray-800/70 ${hasCurrentLesson ? 'border-l-2 border-l-purple-500' : ''}`}>
-                            <div className="flex items-center gap-2"><FolderOpen className="h-4 w-4 text-purple-400" /><span className="text-sm font-medium text-white truncate">{section.title}</span></div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-400">{completedCount}/{sectionLessons.length}</span>
-                              {isExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
-                            </div>
-                          </div>
-                          {isExpanded && (
-                            <div className="bg-gray-900/50">
-                              {sectionLessons.length > 0 ? sectionLessons.map((lesson, idx) => renderLessonRow(lesson, idx)) : <p className="text-xs text-gray-500 text-center py-3">ยังไม่มีบทเรียน</p>}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-
-                    {unassignedLessons.length > 0 && (
-                      <div>
-                        <div className="flex items-center gap-2 py-2.5 px-4 bg-gray-800/30 border-b border-gray-800">
-                          <BookOpen className="h-4 w-4 text-gray-400" /><span className="text-sm font-medium text-gray-300">อื่นๆ</span>
-                          <span className="text-xs text-gray-500 ml-auto">{unassignedLessons.length} บท</span>
-                        </div>
-                        <div>{unassignedLessons.map((lesson, idx) => renderLessonRow(lesson, idx))}</div>
+                  <div key={section.id}>
+                    <div onClick={() => toggleSection(section.id)} className={`flex items-center justify-between py-2.5 px-4 cursor-pointer border-b border-gray-800 bg-gray-800/50 hover:bg-gray-800/70 ${hasCurrentLesson ? 'border-l-2 border-l-purple-500' : ''}`}>
+                      <div className="flex items-center gap-2"><FolderOpen className="h-4 w-4 text-purple-400" /><span className="text-sm font-medium text-white truncate">{section.title}</span></div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400">{completedCount}/{sectionLessons.length}</span>
+                        {isExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}
+                      </div>
+                    </div>
+                    {isExpanded && (
+                      <div className="bg-gray-900/50">
+                        {sectionLessons.length > 0 ? sectionLessons.map((lesson, idx) => renderLessonRow(lesson, idx)) : <p className="text-xs text-gray-500 text-center py-3">ยังไม่มีบทเรียน</p>}
                       </div>
                     )}
                   </div>
+                );
+              };
+
+              const unassignedGroup = unassignedLessons.length > 0 ? (
+                <div>
+                  <div className="flex items-center gap-2 py-2.5 px-4 bg-gray-800/30 border-b border-gray-800">
+                    <BookOpen className="h-4 w-4 text-gray-400" /><span className="text-sm font-medium text-gray-300">อื่นๆ</span>
+                    <span className="text-xs text-gray-500 ml-auto">{unassignedLessons.length} บท</span>
+                  </div>
+                  <div>{unassignedLessons.map((lesson, idx) => renderLessonRow(lesson, idx))}</div>
+                </div>
+              ) : null;
+
+              if (hasSections) {
+                const basicSections = sections.filter((s) => (s.mode ?? 'basic') === 'basic');
+                const updateSections = sections.filter((s) => s.mode === 'update');
+
+                // No update sections → keep the original single-list sidebar (no tabs).
+                if (updateSections.length === 0) {
+                  return (
+                    <div>
+                      {sections.map(renderSectionGroup)}
+                      {unassignedGroup}
+                    </div>
+                  );
+                }
+
+                // Default to the tab that holds the currently-playing lesson (fallback พื้นฐาน).
+                const currentSection = sections.find((s) => s.lessons.some((l) => l.id === currentLesson.id));
+                const defaultTab = currentSection?.mode === 'update' ? 'update' : 'basic';
+
+                return (
+                  <Tabs key={defaultTab} defaultValue={defaultTab} className="w-full">
+                    <TabsList className="grid grid-cols-2 w-[calc(100%-1.5rem)] mx-3 my-3">
+                      <TabsTrigger value="basic">พื้นฐาน</TabsTrigger>
+                      <TabsTrigger value="update">อัพเดท</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="basic" className="mt-0">
+                      {basicSections.map(renderSectionGroup)}
+                      {unassignedGroup}
+                    </TabsContent>
+                    <TabsContent value="update" className="mt-0">
+                      {updateSections.map(renderSectionGroup)}
+                    </TabsContent>
+                  </Tabs>
                 );
               }
 

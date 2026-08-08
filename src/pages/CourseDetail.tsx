@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import {
   Dialog,
   DialogContent,
@@ -31,16 +32,14 @@ import {
   ArrowLeft,
   GraduationCap,
   FolderOpen,
-  Upload,
-  ShoppingCart,
   Star,
   Users,
+  Upload,
+  ShoppingCart,
   CheckCircle2,
   ListChecks,
   MessageSquare,
 } from 'lucide-react';
-
-const MAX_SLIP_BYTES = 10 * 1024 * 1024; // 10MB
 
 interface Lesson {
   id: number;
@@ -59,6 +58,7 @@ interface Section {
   title: string;
   description: string;
   section_order: number;
+  mode?: 'basic' | 'update';
   lessons: Lesson[];
 }
 
@@ -109,6 +109,8 @@ const difficultyLabels: Record<string, string> = {
   advanced: 'ขั้นสูง',
 };
 
+const MAX_SLIP_BYTES = 10 * 1024 * 1024; // 10MB
+
 const CourseDetail = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -121,17 +123,17 @@ const CourseDetail = () => {
   const [loading, setLoading] = useState(true);
   const [previewLesson, setPreviewLesson] = useState<Lesson | null>(null);
 
-  // Reviews (public read).
-  const [reviews, setReviews] = useState<Review[]>([]);
-  const [reviewAvg, setReviewAvg] = useState(0);
-  const [reviewCount, setReviewCount] = useState(0);
-
   // Slip-upload (buy) dialog state
   const [buyDialogOpen, setBuyDialogOpen] = useState(false);
   const [slipFile, setSlipFile] = useState<File | null>(null);
   const [slipPreview, setSlipPreview] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Reviews (public read).
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewAvg, setReviewAvg] = useState(0);
+  const [reviewCount, setReviewCount] = useState(0);
 
   useEffect(() => {
     if (slug) {
@@ -176,7 +178,7 @@ const CourseDetail = () => {
     }
   };
 
-  const isFree = !!course && course.price === 0;
+  const isFree = course ? course.price === 0 : false;
   const buyAmount = course ? (course.discount_price ?? course.price) : 0;
   const status = enrollment?.status ?? null;
 
@@ -222,7 +224,6 @@ const CourseDetail = () => {
 
   const handleConfirmBuy = async () => {
     if (!course) return;
-    // Paid courses require a slip; free courses can confirm without one.
     if (!isFree && !slipFile) {
       toast.error('กรุณาอัปโหลดสลิปการโอนเงิน');
       return;
@@ -388,7 +389,7 @@ const CourseDetail = () => {
                 {hasAccess || status === 'approved' ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5 text-green-400 text-sm mb-1">
-                      <CheckCircle className="h-3.5 w-3.5" /><span>✓ ซื้อคอร์สแล้ว</span>
+                      <CheckCircle className="h-3.5 w-3.5" /><span>✓ เข้าเรียนได้</span>
                     </div>
                     {enrollment && enrollment.progress_percent > 0 && (
                       <div className="mb-2">
@@ -437,7 +438,12 @@ const CourseDetail = () => {
                       {isFree ? <Play className="h-3.5 w-3.5 mr-1.5" /> : <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />}
                       {isFree ? 'ลงทะเบียนเรียนฟรี' : `ซื้อคอร์สนี้ ฿${buyAmount.toLocaleString()}`}
                     </Button>
-                    <p className="text-gray-500 text-xs text-center">ดูบทเรียนตัวอย่างฟรี • ซื้อเพื่อปลดล็อกทุกบทเรียน</p>
+                    <div className="py-1 text-center"><span className="text-gray-500 text-xs">— หรือ —</span></div>
+                    <Button variant="outline" onClick={() => navigate('/subscription')} className="w-full h-8 text-sm border-purple-500/40 text-purple-300 hover:bg-purple-500/10">
+                      <GraduationCap className="h-3.5 w-3.5 mr-1.5" />
+                      สมัครสมาชิก เข้าเรียนได้ทุกคอร์ส
+                    </Button>
+                    <p className="text-gray-500 text-xs text-center">ดูบทเรียนตัวอย่างฟรี • ซื้อคอร์สนี้ หรือสมัครสมาชิกเพื่อปลดล็อกทั้งหมด</p>
                   </div>
                 )}
               </CardContent>
@@ -504,21 +510,12 @@ const CourseDetail = () => {
               const hasSections = sections.length > 0;
 
               const renderLessonRow = (lesson: Lesson, index: number) => {
-                const canAccess = lesson.is_preview || hasAccess;
                 const isCompleted = enrollment?.completed_lessons?.includes(lesson.id);
                 return (
                   <div
                     key={lesson.id}
-                    className={`flex items-center justify-between p-2.5 rounded-md transition-colors ${canAccess ? 'bg-gray-800/50 hover:bg-gray-800 cursor-pointer' : 'bg-gray-800/30'}`}
-                    onClick={() => {
-                      // Preview (or owned) lessons open the full lesson player, where the
-                      // preview plays and the paid lessons show a locked overlay.
-                      if (lesson.is_preview || hasAccess) {
-                        navigate(`/app/courses/${course.slug}/learn/${lesson.id}`);
-                      } else {
-                        openBuyDialog();
-                      }
-                    }}
+                    className="flex items-center justify-between p-2.5 rounded-md transition-colors bg-gray-800/50 hover:bg-gray-800 cursor-pointer"
+                    onClick={() => navigate(`/app/courses/${course.slug}/learn/${lesson.id}`)}
                   >
                     <div className="flex items-center gap-2.5">
                       <div className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-700 text-white text-xs font-medium">
@@ -553,57 +550,86 @@ const CourseDetail = () => {
                 return <p className="text-gray-400 text-center py-8">ยังไม่มีบทเรียน</p>;
               }
 
-              if (hasSections) {
-                return (
-                  <div className="space-y-2">
-                    <Accordion type="multiple" defaultValue={sections.map(s => s.id.toString())} className="space-y-2">
-                      {sections.map((section) => {
-                        const sectionLessons = section.lessons || [];
-                        const { completedCount, totalDuration } = getSectionStats(sectionLessons);
-                        return (
-                          <AccordionItem key={section.id} value={section.id.toString()} className="border border-gray-700 rounded-md overflow-hidden bg-gray-800/30">
-                            <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-gray-800/50">
-                              <div className="flex items-center justify-between w-full mr-3">
-                                <div className="flex items-center gap-2">
-                                  <FolderOpen className="h-4 w-4 text-purple-400" />
-                                  <div className="text-left">
-                                    <h3 className="text-white text-sm font-medium">{section.title}</h3>
-                                    {section.description && <p className="text-gray-400 text-xs">{section.description}</p>}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2 text-gray-400 text-xs">
-                                  <span>{sectionLessons.length} บท</span>
-                                  {totalDuration > 0 && <span>{formatDuration(totalDuration)}</span>}
-                                  {hasAccess && completedCount > 0 && (
-                                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{completedCount}/{sectionLessons.length}</Badge>
-                                  )}
-                                </div>
+              // Accordion for an arbitrary list of sections (reused by both tabs).
+              const renderSectionAccordion = (list: Section[]) => (
+                <Accordion type="multiple" defaultValue={list.map(s => s.id.toString())} className="space-y-2">
+                  {list.map((section) => {
+                    const sectionLessons = section.lessons || [];
+                    const { completedCount, totalDuration } = getSectionStats(sectionLessons);
+                    return (
+                      <AccordionItem key={section.id} value={section.id.toString()} className="border border-gray-700 rounded-md overflow-hidden bg-gray-800/30">
+                        <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-gray-800/50">
+                          <div className="flex items-center justify-between w-full mr-3">
+                            <div className="flex items-center gap-2">
+                              <FolderOpen className="h-4 w-4 text-purple-400" />
+                              <div className="text-left">
+                                <h3 className="text-white text-sm font-medium">{section.title}</h3>
+                                {section.description && <p className="text-gray-400 text-xs">{section.description}</p>}
                               </div>
-                            </AccordionTrigger>
-                            <AccordionContent className="px-3 pb-3 pt-1">
-                              <div className="space-y-1.5">
-                                {sectionLessons.length > 0 ? (
-                                  sectionLessons.map((lesson, idx) => renderLessonRow(lesson, idx))
-                                ) : (
-                                  <p className="text-gray-500 text-center py-2 text-xs">ยังไม่มีบทเรียนในหมวดนี้</p>
-                                )}
-                              </div>
-                            </AccordionContent>
-                          </AccordionItem>
-                        );
-                      })}
-                    </Accordion>
+                            </div>
+                            <div className="flex items-center gap-2 text-gray-400 text-xs">
+                              <span>{sectionLessons.length} บท</span>
+                              {totalDuration > 0 && <span>{formatDuration(totalDuration)}</span>}
+                              {hasAccess && completedCount > 0 && (
+                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{completedCount}/{sectionLessons.length}</Badge>
+                              )}
+                            </div>
+                          </div>
+                        </AccordionTrigger>
+                        <AccordionContent className="px-3 pb-3 pt-1">
+                          <div className="space-y-1.5">
+                            {sectionLessons.length > 0 ? (
+                              sectionLessons.map((lesson, idx) => renderLessonRow(lesson, idx))
+                            ) : (
+                              <p className="text-gray-500 text-center py-2 text-xs">ยังไม่มีบทเรียนในหมวดนี้</p>
+                            )}
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    );
+                  })}
+                </Accordion>
+              );
 
-                    {unassignedLessons.length > 0 && (
-                      <div className="border border-gray-700 rounded-md overflow-hidden bg-gray-800/20">
-                        <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700">
-                          <div className="flex items-center gap-2"><BookOpen className="h-4 w-4 text-gray-400" /><span className="text-gray-300 text-sm font-medium">บทเรียนอื่นๆ</span></div>
-                          <span className="text-gray-400 text-xs">{unassignedLessons.length} บท</span>
-                        </div>
-                        <div className="p-3 space-y-1.5">{unassignedLessons.map((lesson, idx) => renderLessonRow(lesson, idx))}</div>
-                      </div>
-                    )}
+              const unassignedBlock = unassignedLessons.length > 0 ? (
+                <div className="border border-gray-700 rounded-md overflow-hidden bg-gray-800/20">
+                  <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700">
+                    <div className="flex items-center gap-2"><BookOpen className="h-4 w-4 text-gray-400" /><span className="text-gray-300 text-sm font-medium">บทเรียนอื่นๆ</span></div>
+                    <span className="text-gray-400 text-xs">{unassignedLessons.length} บท</span>
                   </div>
+                  <div className="p-3 space-y-1.5">{unassignedLessons.map((lesson, idx) => renderLessonRow(lesson, idx))}</div>
+                </div>
+              ) : null;
+
+              if (hasSections) {
+                const basicSections = sections.filter(s => (s.mode ?? 'basic') === 'basic');
+                const updateSections = sections.filter(s => s.mode === 'update');
+
+                // No update sections → render exactly as before (no tabs).
+                if (updateSections.length === 0) {
+                  return (
+                    <div className="space-y-2">
+                      {renderSectionAccordion(sections)}
+                      {unassignedBlock}
+                    </div>
+                  );
+                }
+
+                // Mixed basic/update → two tabs; unassigned lessons live under พื้นฐาน.
+                return (
+                  <Tabs defaultValue="basic">
+                    <TabsList className="mb-3">
+                      <TabsTrigger value="basic">พื้นฐาน</TabsTrigger>
+                      <TabsTrigger value="update">อัพเดท</TabsTrigger>
+                    </TabsList>
+                    <TabsContent value="basic" className="mt-0 space-y-2">
+                      {renderSectionAccordion(basicSections)}
+                      {unassignedBlock}
+                    </TabsContent>
+                    <TabsContent value="update" className="mt-0 space-y-2">
+                      {renderSectionAccordion(updateSections)}
+                    </TabsContent>
+                  </Tabs>
                 );
               }
 

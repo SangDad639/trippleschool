@@ -208,10 +208,14 @@ router.post('/google', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Google credential is required' });
     }
 
-    // Verify Google ID token
+    // Verify Google ID token. Accept both the web client (browser Sign-In) and
+    // the Triple Voice desktop client (loopback OAuth) so the same Triple School
+    // accounts work in the desktop app.
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: [process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_DESKTOP_CLIENT_ID].filter(
+        Boolean
+      ) as string[],
     });
     const payload = ticket.getPayload();
     if (!payload || !payload.email) {
