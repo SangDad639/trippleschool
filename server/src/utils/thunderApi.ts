@@ -80,24 +80,51 @@ export async function verifySlipImage(
     throw new ThunderError('CONFIG_ERROR', 'THUNDER_API_KEY not configured');
   }
 
-  // Build multipart form data
-  const formData = new FormData();
-  // Convert Node Buffer → Uint8Array (BlobPart compatible)
-  const blob = new Blob([new Uint8Array(imageBuffer)], { type: mimeType });
-  formData.append('image', blob, 'slip.jpg');
-  formData.append('checkDuplicate', 'true');
-  // Ask Thunder to populate `matchedAccount` in the response (cross-reference
-  // the slip's receiver against Thunder's known account database).
-  formData.append('matchAccount', 'true');
-
   console.log('[Thunder] Sending slip to', `${baseUrl}/verify/bank`);
-  const response = await fetch(`${baseUrl}/verify/bank`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: formData,
-  });
+
+  // One fetch attempt with a 15s timeout. A fresh FormData/Blob is built per
+  // attempt because fetch consumes the body stream (can't be reused on retry).
+  const attempt = async (): Promise<Awaited<ReturnType<typeof fetch>>> => {
+    const formData = new FormData();
+    const blob = new Blob([new Uint8Array(imageBuffer)], { type: mimeType });
+    formData.append('image', blob, 'slip.jpg');
+    formData.append('checkDuplicate', 'true');
+    // Ask Thunder to populate `matchedAccount` (cross-reference the slip's
+    // receiver against Thunder's known account database).
+    formData.append('matchAccount', 'true');
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 15000);
+    try {
+      return await fetch(`${baseUrl}/verify/bank`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+        body: formData,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
+  // Retry once on network error / timeout. A real HTTP error response is NOT
+  // retried here — it's handled below.
+  let response: Awaited<ReturnType<typeof fetch>>;
+  try {
+    response = await attempt();
+  } catch {
+    try {
+      response = await attempt();
+    } catch (err: any) {
+      const aborted = err?.name === 'AbortError';
+      throw new ThunderError(
+        aborted ? 'TIMEOUT' : 'NETWORK_ERROR',
+        aborted
+          ? 'หมดเวลาเชื่อมต่อระบบตรวจสลิป กรุณาลองใหม่อีกครั้ง'
+          : 'เชื่อมต่อระบบตรวจสลิปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง'
+      );
+    }
+  }
 
   const result: any = await response.json();
   console.log('[Thunder] Response:', JSON.stringify(result).substring(0, 500));

@@ -3,6 +3,7 @@ import multer from 'multer';
 import fs from 'fs';
 import path from 'path';
 import { authenticate, requireAdmin, requireSuperAdmin, AuthRequest } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 import { createAffiliateCommission } from '../services/stripeService.js';
 import pool from '../db.js';
 import { getBucketName, uploadFile, getSignedFileUrl, getFile } from '../utils/s3.js';
@@ -38,6 +39,13 @@ const invoiceUpload = multer({
 });
 
 const router = express.Router();
+
+// Throttle admin slip verification (per admin user).
+const adminSlipRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 30,
+  keyBy: (req) => (req.userId ? `admin-slip:${req.userId}` : undefined),
+});
 
 type UserStatusFilter =
   | 'all'
@@ -1022,7 +1030,7 @@ router.delete('/notifications/:id', authenticate, requireAdmin, async (req: Auth
  *     transRef: string,          // Thunder reference
  *   }
  */
-router.post('/upload-extend-slip', authenticate, requireAdmin, slipUpload.single('slip'), async (req: AuthRequest, res: Response) => {
+router.post('/upload-extend-slip', authenticate, requireAdmin, adminSlipRateLimit, slipUpload.single('slip'), async (req: AuthRequest, res: Response) => {
   try {
     const { userId, days, planSlug: bodyPlanSlug } = req.body;
 
@@ -1119,7 +1127,7 @@ router.post('/upload-extend-slip', authenticate, requireAdmin, slipUpload.single
       });
     }
 
-    if (!allowedAmounts.includes(thunderData.amountInSlip)) {
+    if (!allowedAmounts.some((a) => Math.abs(a - thunderData.amountInSlip) < 0.01)) {
       const expectedLabel = allowedAmounts.map((a) => `฿${a}`).join(' or ');
       return res.status(400).json({
         error: `Amount mismatch: expected ${expectedLabel}, got ฿${thunderData.amountInSlip}`,
@@ -1146,6 +1154,21 @@ router.post('/upload-extend-slip', authenticate, requireAdmin, slipUpload.single
         error: `Slip too old (${Math.floor(ageMs / 3600000)}h ago)`,
         errorCode: 'EXPIRED_SLIP',
       });
+    }
+
+    // Record transRef to block replay (shared dedup store with the user flow).
+    // UNIQUE(trans_ref) → the same slip can't be verified/used twice.
+    try {
+      await pool.query(
+        `INSERT INTO verified_slips (trans_ref, user_id, plan_slug, amount, source)
+         VALUES ($1, $2, $3, $4, 'admin')`,
+        [thunderData.rawSlip.transRef, Number(userId), planRecord?.slug ?? resolvedSlug, paidAmount]
+      );
+    } catch (dupErr: any) {
+      if (dupErr?.code === '23505') {
+        return res.status(400).json({ error: 'Slip already used', errorCode: 'DUPLICATE_SLIP' });
+      }
+      throw dupErr;
     }
 
     console.log(

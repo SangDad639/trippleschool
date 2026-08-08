@@ -139,6 +139,22 @@ const SubscriptionTransferV2 = () => {
       th: 'สลิปนี้เก่าเกิน 24 ชั่วโมง ไม่สามารถใช้ได้\nกรุณาโอนเงินใหม่แล้วอัปโหลดสลิปล่าสุด',
       en: 'This slip is older than 24 hours and cannot be used.\nPlease make a new transfer and upload the latest slip.',
     },
+    TIMEOUT: {
+      th: 'ระบบตรวจสลิปใช้เวลานานเกินไป\nกรุณาลองใหม่อีกครั้ง',
+      en: 'Slip verification timed out.\nPlease try again.',
+    },
+    NETWORK_ERROR: {
+      th: 'เชื่อมต่อระบบตรวจสลิปไม่สำเร็จ\nกรุณาลองใหม่อีกครั้ง',
+      en: 'Could not reach the slip verification service.\nPlease try again.',
+    },
+    RATE_LIMITED: {
+      th: 'คุณลองยืนยันสลิปถี่เกินไป\nกรุณารอสักครู่แล้วลองใหม่อีกครั้ง',
+      en: 'Too many verification attempts.\nPlease wait a moment and try again.',
+    },
+    CONFIG_ERROR: {
+      th: 'ระบบตรวจสลิปยังไม่พร้อมใช้งาน\nกรุณาติดต่อทีมงาน',
+      en: 'Slip verification is not configured.\nPlease contact support.',
+    },
     INTERNAL_ERROR: {
       th: 'เกิดข้อผิดพลาดในระบบ กรุณาลองใหม่อีกครั้ง\nหากยังไม่สำเร็จ กรุณาติดต่อทีมงาน',
       en: 'A system error occurred. Please try again.\nIf the problem persists, please contact support.',

@@ -69,6 +69,35 @@ export const optionalAuth = (req: AuthRequest, _res: Response, next: NextFunctio
   next();
 };
 
+/**
+ * Like `authenticate`, but also accepts the JWT via a `?token=` query param.
+ * Needed for protected media proxies loaded through <img>/<a> tags, which
+ * cannot set an Authorization header. Populates the same req claims.
+ */
+export const authenticateQueryOrHeader = (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const headerToken = req.headers.authorization?.replace('Bearer ', '');
+    const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
+    const token = headerToken || queryToken;
+    if (!token) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    const decoded = jwt.verify(token, JWT_SECRET) as {
+      userId: number;
+      email: string;
+      isAdmin: boolean;
+      isSuperAdmin?: boolean;
+    };
+    req.userId = decoded.userId;
+    req.userEmail = decoded.email;
+    req.isAdmin = decoded.isAdmin;
+    req.isSuperAdmin = !!decoded.isSuperAdmin;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+};
+
 export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
   if (!req.isAdmin) {
     return res.status(403).json({ error: 'Admin access required' });

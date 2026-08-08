@@ -2,7 +2,8 @@ import express, { Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { authenticate, AuthRequest } from '../middleware/auth.js';
+import { authenticate, authenticateQueryOrHeader, requireAdmin, AuthRequest } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 import { createAffiliateCommission } from '../services/stripeService.js';
 import pool from '../db.js';
 import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -38,6 +39,14 @@ const slipUpload = multer({
 });
 
 const router = express.Router();
+
+// Throttle slip verification: max 10 attempts / 10 min per user (fallback IP).
+// Protects Thunder quota and blocks brute-forcing the payment endpoint.
+const verifyRateLimit = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 10,
+  keyBy: (req) => (req.userId ? `verify:${req.userId}` : undefined),
+});
 
 /**
  * GET /api/subscription/pricing
@@ -302,7 +311,7 @@ router.post('/upload-slip', authenticate, slipUpload.single('slip'), async (req:
  * GET /api/subscription/slips/*
  * Proxy payment slip from S3
  */
-router.get('/slips/*', async (req, res: Response) => {
+router.get('/slips/*', authenticateQueryOrHeader, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const key = (req.params as any)[0];
     const response = await s3.send(new GetObjectCommand({
@@ -313,7 +322,8 @@ router.get('/slips/*', async (req, res: Response) => {
     if (response.ContentType) {
       res.setHeader('Content-Type', response.ContentType);
     }
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    // Payment slips contain PII — never cache in shared/public caches.
+    res.setHeader('Cache-Control', 'private, no-store');
 
     const stream = response.Body as any;
     stream.pipe(res);
@@ -328,7 +338,7 @@ router.get('/slips/*', async (req, res: Response) => {
  * Auto-approve subscription via Thunder API slip verification.
  * Replaces the manual admin approval flow for bank transfers.
  */
-router.post('/v2/verify-and-approve', authenticate, slipUpload.single('slip'), async (req: AuthRequest, res: Response) => {
+router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.single('slip'), async (req: AuthRequest, res: Response) => {
   const userId = req.userId!;
   const client = await pool.connect();
 
@@ -413,8 +423,8 @@ router.post('/v2/verify-and-approve', authenticate, slipUpload.single('slip'), a
       });
     }
 
-    // 3d. Amount check
-    if (thunderData.amountInSlip !== expectedAmount) {
+    // 3d. Amount check (tolerance ฿0.01 — avoid float-equality fragility)
+    if (Math.abs(thunderData.amountInSlip - expectedAmount) > 0.01) {
       return res.status(400).json({
         error: `Amount mismatch: expected ฿${expectedAmount}, got ฿${thunderData.amountInSlip}`,
         errorCode: 'INVALID_AMOUNT',
@@ -435,6 +445,24 @@ router.post('/v2/verify-and-approve', authenticate, slipUpload.single('slip'), a
 
     // 4. All validations passed - approve subscription in transaction
     await client.query('BEGIN');
+
+    // 4a. Record the slip's transRef FIRST (idempotency + race guard). The
+    // UNIQUE(trans_ref) constraint blocks replaying the same slip or two
+    // concurrent submits of it — the duplicate INSERT throws 23505 and we roll
+    // back without granting anything. Defense-in-depth beyond Thunder's flag.
+    try {
+      await client.query(
+        `INSERT INTO verified_slips (trans_ref, user_id, plan_slug, amount, source)
+         VALUES ($1, $2, $3, $4, 'autoapprove')`,
+        [thunderData.rawSlip.transRef, userId, plan, thunderData.amountInSlip]
+      );
+    } catch (dupErr: any) {
+      await client.query('ROLLBACK');
+      if (dupErr?.code === '23505') {
+        return res.status(400).json({ error: 'Slip already used', errorCode: 'DUPLICATE_SLIP' });
+      }
+      throw dupErr;
+    }
 
     // Get current subscription expiry + referrer
     const userResult = await client.query(

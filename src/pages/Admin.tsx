@@ -234,6 +234,16 @@ const Admin = () => {
   // Per-(user × plan) commission override dialog (super admin only)
   const [commissionUser, setCommissionUser] = useState<AdminUser | null>(null);
   const [viewSlipUrl, setViewSlipUrl] = useState<string | null>(null);
+  // Build a slip image URL. The payment-slip proxy (/api/subscription/slips/*) is
+  // now admin-protected and reads the JWT from a `?token=` query param (an <img>
+  // can't send an Authorization header). Presigned S3 / other URLs are untouched.
+  const slipSrc = (raw: string) => {
+    if (!raw) return raw;
+    const full = raw.startsWith('/') ? `${api.getApiUrl()}${raw}` : raw;
+    if (!full.includes('/api/subscription/slips/')) return full;
+    const token = localStorage.getItem('auth_token');
+    return token ? `${full}${full.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : full;
+  };
   const [searchQuery, setSearchQuery] = useState('');
   // Debounced search — drives the actual server query (300ms after user stops typing)
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -1066,10 +1076,10 @@ const Admin = () => {
                     {u.paymentSlipUrl && (
                       <div className="flex items-center gap-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                         <img
-                          src={`${api.getApiUrl()}${u.paymentSlipUrl}`}
+                          src={slipSrc(u.paymentSlipUrl)}
                           alt="Payment slip"
                           className="w-16 h-16 object-cover rounded-lg cursor-pointer border border-border hover:opacity-80 transition-opacity"
-                          onClick={() => setViewSlipUrl(`${api.getApiUrl()}${u.paymentSlipUrl}`)}
+                          onClick={() => setViewSlipUrl(slipSrc(u.paymentSlipUrl))}
                         />
                         <div className="flex-1">
                           <p className="text-sm font-medium text-blue-400">
@@ -1146,7 +1156,7 @@ const Admin = () => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => setViewSlipUrl(`${api.getApiUrl()}${u.paymentSlipUrl}`)}
+                            onClick={() => setViewSlipUrl(slipSrc(u.paymentSlipUrl))}
                             className="text-xs border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
                           >
                             <ImageIcon className="h-3.5 w-3.5 mr-1" />
@@ -1665,7 +1675,7 @@ const Admin = () => {
                                                   <Button
                                                     variant="outline"
                                                     size="sm"
-                                                    onClick={(e) => { e.stopPropagation(); setViewSlipUrl(tx.slipUrl!); }}
+                                                    onClick={(e) => { e.stopPropagation(); setViewSlipUrl(slipSrc(tx.slipUrl!)); }}
                                                     className="h-6 text-[10px] border-green-500/30 text-green-400 hover:bg-green-500/10 px-2"
                                                   >
                                                     <ImageIcon className="h-3 w-3 mr-1" />
@@ -2266,12 +2276,7 @@ const Admin = () => {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => {
-                              const url = log.slip_url!.startsWith('/')
-                                ? `${api.getApiUrl()}${log.slip_url}`
-                                : log.slip_url!;
-                              setViewSlipUrl(url);
-                            }}
+                            onClick={() => setViewSlipUrl(slipSrc(log.slip_url!))}
                             className="h-6 text-xs border-green-500/30 text-green-400 hover:bg-green-500/10"
                           >
                             <ImageIcon className="h-3 w-3 mr-1" />
