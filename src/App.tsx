@@ -31,6 +31,7 @@ import AdminNotificationBanner from "@/components/AdminNotificationBanner";
 import PublicHeader from "@/components/PublicHeader";
 import Storefront from "@/pages/Storefront";
 import PublicCatalog from "@/pages/PublicCatalog";
+import Pricing from "@/pages/Pricing";
 import Subscription from "@/pages/Subscription";
 import SubscriptionSuccess from "@/pages/SubscriptionSuccess";
 import Admin from "@/pages/Admin";
@@ -322,6 +323,7 @@ function AppRoutes() {
       {/* ---------- Public (no login) ---------- */}
       <Route path="/" element={<Storefront />} />
       <Route path="/courses" element={<PublicCatalog />} />
+      <Route path="/pricing" element={<Pricing />} />
       <Route path="/courses/:slug" element={<CourseDetail />} />
       <Route path="/tutorials" element={<Tutorials />} />
       <Route path="/affiliate-info" element={<AffiliateInfo />} />

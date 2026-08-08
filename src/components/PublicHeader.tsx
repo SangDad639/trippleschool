@@ -29,6 +29,7 @@ const PublicHeader = () => {
 
         <nav className="hidden sm:flex items-center gap-6 text-sm text-gray-300">
           <Link to="/courses" className="hover:text-white transition-colors">คอร์สทั้งหมด</Link>
+          <Link to="/pricing" className="hover:text-white transition-colors">ราคา</Link>
         </nav>
 
         <div className="flex items-center gap-2">
