@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -14,13 +15,32 @@ import { GraduationCap, User as UserIcon, Shield, LogOut, ChevronDown } from 'lu
 
 // Shared top navigation for the public (no-login) surface: storefront,
 // course catalog, and public course detail.
-const PublicHeader = () => {
+// `overlay` = Netflix-style: fixed over the hero, transparent at top and
+// solid once scrolled. Without it the header keeps the original sticky look.
+const PublicHeader = ({ overlay = false }: { overlay?: boolean } = {}) => {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
   const { language, setLanguage } = useLanguage();
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    if (!overlay) return;
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, [overlay]);
+
+  const headerClass = overlay
+    ? `fixed top-0 inset-x-0 z-50 transition-colors duration-300 ${
+        scrolled
+          ? 'bg-background/95 border-b border-border/60 backdrop-blur'
+          : 'bg-gradient-to-b from-black/70 to-transparent border-b border-transparent'
+      }`
+    : 'sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60';
 
   return (
-    <header className="sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className={headerClass}>
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
         <Link to="/" className="flex items-center gap-2 font-bold text-white">
           <GraduationCap className="h-6 w-6 text-purple-400" />
