@@ -69,6 +69,7 @@ const PublicHeader = () => {
                       <DropdownMenuItem onClick={() => navigate('/admin')}>แดชบอร์ดผู้ดูแล</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/admin/courses')}>จัดการคอร์ส</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/admin/enrollments')}>อนุมัติการลงทะเบียน</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/admin/chats')}>แชทลูกค้า</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/admin/affiliate')}>จ่ายค่าคอมมิชชั่น</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/admin/banners')}>จัดการแบนเนอร์</DropdownMenuItem>
                     </>

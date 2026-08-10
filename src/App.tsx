@@ -28,6 +28,7 @@ import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { LanguageProvider, useLanguage } from "@/contexts/LanguageContext";
 import SubscriptionWarningBanner from "@/components/SubscriptionWarningBanner";
 import AdminNotificationBanner from "@/components/AdminNotificationBanner";
+import AgentChatWidget from "@/components/AgentChatWidget";
 import PublicHeader from "@/components/PublicHeader";
 import Storefront from "@/pages/Storefront";
 import PublicCatalog from "@/pages/PublicCatalog";
@@ -51,6 +52,7 @@ import CourseLearn from "@/pages/CourseLearn";
 import MyCourses from "@/pages/MyCourses";
 import AdminCourses from "@/pages/AdminCourses";
 import AdminEnrollments from "@/pages/AdminEnrollments";
+import AdminChats from "@/pages/AdminChats";
 
 // Login/Register page
 const AuthPage = () => {
@@ -350,6 +352,7 @@ function AppRoutes() {
       <Route path="/admin/banners/:id/edit" element={<ProtectedRoute><AdminBannerEditor /></ProtectedRoute>} />
       <Route path="/admin/courses" element={<ProtectedRoute><AdminCourses /></ProtectedRoute>} />
       <Route path="/admin/enrollments" element={<ProtectedRoute><AdminEnrollments /></ProtectedRoute>} />
+      <Route path="/admin/chats" element={<ProtectedRoute><AdminChats /></ProtectedRoute>} />
 
       {/* ---------- User ---------- */}
       <Route path="/affiliate" element={<ProtectedRoute><Affiliate /></ProtectedRoute>} />
@@ -389,6 +392,7 @@ function App() {
               <SubscriptionWarningBanner />
               <AdminNotificationBanner />
               <AppRoutes />
+              <AgentChatWidget />
               <Toaster />
             </LanguageProvider>
           </SubscriptionProvider>

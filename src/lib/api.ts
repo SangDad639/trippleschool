@@ -2947,6 +2947,85 @@ class ApiClient {
   async bulkApproveEnrollments(enrollment_ids: number[]) {
     return this.request('/api/enrollments/admin/bulk-approve', { method: 'POST', body: JSON.stringify({ enrollment_ids }) });
   }
+
+  // ---------- Agent Chat (FAB widget) ----------
+  // Sends carry retries=0 + a long timeout: a timed-out LLM call must NOT be
+  // silently re-posted (would duplicate the user message + double-bill the AI).
+  async agentChatSend(data: { conversation_id?: number; guest_id?: string; text: string }): Promise<AgentChatThreadDto> {
+    return this.request('/api/agent-chat/message', { method: 'POST', body: JSON.stringify(data) }, 0, 90000);
+  }
+  async agentChatGetConversation(guestId?: string): Promise<AgentChatThreadDto> {
+    const qs = guestId ? `?guest_id=${encodeURIComponent(guestId)}` : '';
+    return this.request(`/api/agent-chat/conversation${qs}`);
+  }
+  async agentChatEscalate(data: { conversation_id: number; guest_id?: string; contact_info?: string }): Promise<AgentChatThreadDto> {
+    return this.request('/api/agent-chat/escalate', { method: 'POST', body: JSON.stringify(data) });
+  }
+  // Admin
+  async agentChatAdminCounts(): Promise<{ escalated: number; answered: number }> {
+    return this.request('/api/agent-chat/admin/counts');
+  }
+  async agentChatAdminList(params?: { status?: string; search?: string }): Promise<{ conversations: any[]; counts: any }> {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.search) qs.set('search', params.search);
+    const suffix = qs.toString();
+    return this.request(`/api/agent-chat/admin/list${suffix ? `?${suffix}` : ''}`);
+  }
+  async agentChatAdminGet(id: number): Promise<AgentChatThreadDto & { user_email: string | null }> {
+    return this.request(`/api/agent-chat/admin/${id}`);
+  }
+  async agentChatAdminReply(id: number, text: string): Promise<AgentChatThreadDto> {
+    return this.request(`/api/agent-chat/admin/${id}/reply`, { method: 'POST', body: JSON.stringify({ text }) });
+  }
+  async agentChatAdminSetStatus(id: number, status: string) {
+    return this.request(`/api/agent-chat/admin/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  }
+  // Knowledge base (คลังความรู้บอท)
+  async agentChatKnowledgeList(): Promise<{ knowledge: AgentKnowledgeDto[] }> {
+    return this.request('/api/agent-chat/admin/knowledge');
+  }
+  async agentChatKnowledgeCreate(data: { title: string; content: string }): Promise<{ knowledge: AgentKnowledgeDto }> {
+    return this.request('/api/agent-chat/admin/knowledge', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async agentChatKnowledgeUpdate(id: number, data: Partial<Pick<AgentKnowledgeDto, 'title' | 'content' | 'is_active' | 'display_order'>>): Promise<{ knowledge: AgentKnowledgeDto }> {
+    return this.request(`/api/agent-chat/admin/knowledge/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async agentChatKnowledgeDelete(id: number) {
+    return this.request(`/api/agent-chat/admin/knowledge/${id}`, { method: 'DELETE' });
+  }
+}
+
+export interface AgentKnowledgeDto {
+  id: number;
+  title: string;
+  content: string;
+  is_active: boolean;
+  display_order: number;
+  updated_at: string;
+}
+
+export interface AgentChatMessageDto {
+  id: number;
+  sender_type: 'user' | 'ai' | 'admin';
+  body: string;
+  created_at: string;
+}
+
+export interface AgentChatConversationDto {
+  id: number;
+  user_id: number | null;
+  guest_id: string | null;
+  status: 'ai' | 'escalated' | 'answered' | 'closed';
+  escalate_reason: string | null;
+  contact_info: string | null;
+  last_message_at: string;
+  created_at: string;
+}
+
+export interface AgentChatThreadDto {
+  conversation: AgentChatConversationDto | null;
+  messages: AgentChatMessageDto[];
 }
 
 // ---------- DTOs (re-exported for components) ----------
