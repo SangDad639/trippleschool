@@ -30,7 +30,7 @@ const PublicCatalog = () => {
   useEffect(() => {
     setLoading(true);
     api
-      .getCourses(sort !== SORT_DEFAULT ? { sort } : undefined)
+      .getCourses({ type: 'course', ...(sort !== SORT_DEFAULT ? { sort } : {}) })
       .then(setCourses)
       .catch((e) => {
         console.error('Failed to load courses:', e);

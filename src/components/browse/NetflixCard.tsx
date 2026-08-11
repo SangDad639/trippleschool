@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { api } from '@/lib/api';
 import StarRating from '@/components/StarRating';
 import CoursePrice from '@/components/CoursePrice';
@@ -18,11 +19,15 @@ interface NetflixCardProps {
   variant?: 'rail' | 'grid';
   /** Continue-watching progress (0-100) — renders a bottom progress bar. */
   progressPercent?: number;
+  /** Extra badge (enrollment status ฯลฯ) rendered on top of the badge stack. */
+  statusBadge?: ReactNode;
+  /** Owned-course contexts (my courses): the price line makes no sense there. */
+  hidePrice?: boolean;
 }
 
 // 16:9 Netflix-style card. Title sits on a permanent bottom gradient; hover
 // scales the card up and reveals meta (rating / lessons / level / price).
-const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent }: NetflixCardProps) => {
+const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statusBadge, hidePrice }: NetflixCardProps) => {
   const reviewCount = Number(course.review_count) || 0;
   const lessonCount = course.lesson_count || course.total_lessons || 0;
   const width = variant === 'rail' ? 'w-[230px] md:w-[270px] flex-none snap-start' : 'w-full';
@@ -64,9 +69,11 @@ const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent }: Net
               {difficultyLabels[course.difficulty] || 'เริ่มต้น'}
             </Badge>
           </div>
-          <div className="mt-1">
-            <CoursePrice price={course.price} discountPrice={course.discount_price} size="sm" />
-          </div>
+          {!hidePrice && (
+            <div className="mt-1">
+              <CoursePrice price={course.price} discountPrice={course.discount_price} size="sm" />
+            </div>
+          )}
         </div>
       </div>
 
@@ -77,6 +84,7 @@ const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent }: Net
 
       {/* Badges */}
       <div className="absolute top-2 left-2 flex flex-col items-start gap-1">
+        {statusBadge}
         {isBestseller(course) && (
           <Badge className="bg-orange-500 text-white text-[10px] px-1.5 py-0.5 flex items-center gap-0.5">
             <Star className="h-2.5 w-2.5 fill-white" />

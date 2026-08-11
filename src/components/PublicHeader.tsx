@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -11,7 +11,23 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { GraduationCap, User as UserIcon, Shield, LogOut, ChevronDown } from 'lucide-react';
+import { GraduationCap, User as UserIcon, Shield, LogOut, ChevronDown, Menu, Crown } from 'lucide-react';
+
+const NAV_ITEMS = [
+  { to: '/', label: 'Home' },
+  { to: '/tips', label: 'Tip' },
+  { to: '/courses', label: 'Course' },
+  { to: '/programs', label: 'Program' },
+  { to: '/pricing', label: 'Pricing' },
+];
+
+/** Whole days left on the subscription; null = none/expired. */
+function subscriptionDaysLeft(expiresAt?: string | null): number | null {
+  if (!expiresAt) return null;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (Number.isNaN(ms) || ms <= 0) return null;
+  return Math.ceil(ms / (24 * 60 * 60 * 1000));
+}
 
 // Shared top navigation for the public (no-login) surface: storefront,
 // course catalog, and public course detail.
@@ -19,6 +35,7 @@ import { GraduationCap, User as UserIcon, Shield, LogOut, ChevronDown } from 'lu
 // solid once scrolled. Without it the header keeps the original sticky look.
 const PublicHeader = ({ overlay = false }: { overlay?: boolean } = {}) => {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const { user, logout } = useAuth();
   const { language, setLanguage } = useLanguage();
   const [scrolled, setScrolled] = useState(false);
@@ -39,20 +56,66 @@ const PublicHeader = ({ overlay = false }: { overlay?: boolean } = {}) => {
       }`
     : 'sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60';
 
+  const isActive = (to: string) => (to === '/' ? pathname === '/' : pathname.startsWith(to));
+
+  const daysLeft = subscriptionDaysLeft(user?.subscriptionExpiresAt);
+
   return (
     <header className={headerClass}>
-      <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 font-bold text-white">
-          <GraduationCap className="h-6 w-6 text-purple-400" />
-          <span className="bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent">Triple School</span>
-        </Link>
+      <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+          <Link to="/" className="flex items-center gap-2 font-bold text-white shrink-0">
+            <GraduationCap className="h-6 w-6 text-purple-400" />
+            <span className="bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent">Triple School</span>
+          </Link>
 
-        <nav className="hidden sm:flex items-center gap-6 text-sm text-gray-300">
-          <Link to="/courses" className="hover:text-white transition-colors">คอร์สทั้งหมด</Link>
-          <Link to="/pricing" className="hover:text-white transition-colors">ราคา</Link>
-        </nav>
+          {/* Desktop nav — Netflix-style: active item white + bold */}
+          <nav className="hidden md:flex items-center gap-5 text-sm">
+            {NAV_ITEMS.map((item) => (
+              <Link
+                key={item.to}
+                to={item.to}
+                className={`transition-colors ${
+                  isActive(item.to) ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'
+                }`}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
 
-        <div className="flex items-center gap-2">
+          {/* Mobile nav — the 5 items collapse into a dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="ghost" className="md:hidden text-gray-300 hover:text-white px-2" aria-label="เมนู">
+                <Menu className="h-5 w-5" />
+                <span className="hidden sm:inline ml-1">เมนู</span>
+                <ChevronDown className="hidden sm:inline h-3.5 w-3.5 ml-0.5 opacity-70" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-44">
+              {NAV_ITEMS.map((item) => (
+                <DropdownMenuItem
+                  key={item.to}
+                  onClick={() => navigate(item.to)}
+                  className={isActive(item.to) ? 'font-semibold text-white' : ''}
+                >
+                  {item.label}
+                </DropdownMenuItem>
+              ))}
+              {!user && (
+                <>
+                  <DropdownMenuSeparator className="sm:hidden" />
+                  <DropdownMenuItem className="sm:hidden" onClick={() => navigate('/login')}>
+                    เข้าสู่ระบบ
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={() => setLanguage(language === 'th' ? 'en' : 'th')}
             className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded transition-colors"
@@ -63,6 +126,20 @@ const PublicHeader = ({ overlay = false }: { overlay?: boolean } = {}) => {
 
           {user ? (
             <>
+              {/* Subscription days-left chip (desktop; mobile sees it in the profile dropdown) */}
+              {daysLeft !== null && (
+                <button
+                  onClick={() => navigate('/subscription')}
+                  className={`hidden sm:inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
+                    daysLeft <= 7
+                      ? 'bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25'
+                      : 'bg-[#FFB300]/15 text-[#FFB300] border-[#FFB300]/30 hover:bg-[#FFB300]/25'
+                  }`}
+                  title="สมาชิกคงเหลือ"
+                >
+                  <Crown className="h-3.5 w-3.5" /> เหลือ {daysLeft} วัน
+                </button>
+              )}
               <Button size="sm" onClick={() => navigate('/app/my-courses')} className="bg-purple-600 hover:bg-purple-700">
                 คอร์สของฉัน
               </Button>
@@ -76,6 +153,14 @@ const PublicHeader = ({ overlay = false }: { overlay?: boolean } = {}) => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel className="truncate">{user.email}</DropdownMenuLabel>
+                  {daysLeft !== null && (
+                    <DropdownMenuItem
+                      onClick={() => navigate('/subscription')}
+                      className={`sm:hidden ${daysLeft <= 7 ? 'text-red-400 focus:text-red-400' : 'text-[#FFB300] focus:text-[#FFB300]'}`}
+                    >
+                      <Crown className="h-4 w-4 mr-2" /> สมาชิกเหลือ {daysLeft} วัน
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => navigate('/profile')}>บัญชีของฉัน</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => navigate('/app/my-courses')}>คอร์สของฉัน</DropdownMenuItem>
@@ -102,7 +187,7 @@ const PublicHeader = ({ overlay = false }: { overlay?: boolean } = {}) => {
             </>
           ) : (
             <>
-              <Button size="sm" variant="ghost" onClick={() => navigate('/login')} className="text-gray-300 hover:text-white">
+              <Button size="sm" variant="ghost" onClick={() => navigate('/login')} className="hidden sm:inline-flex text-gray-300 hover:text-white">
                 เข้าสู่ระบบ
               </Button>
               <Button size="sm" onClick={() => navigate('/subscription/transfer-v2')} className="bg-purple-600 hover:bg-purple-700">

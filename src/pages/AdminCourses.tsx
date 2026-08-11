@@ -83,6 +83,7 @@ interface Course {
   enrollment_count: number;
   price: number;
   discount_price: number | null;
+  content_type?: 'course' | 'tip';
   learning_outcomes?: string[];
   requirements?: string[];
 }
@@ -136,6 +137,7 @@ const initialCourseForm = {
   display_order: 0,
   price: 0,
   discount_price: null as number | null,
+  content_type: 'course' as 'course' | 'tip',
   learning_outcomes: [] as string[],
   requirements: [] as string[],
 };
@@ -314,6 +316,7 @@ const AdminCourses = () => {
         display_order: course.display_order || 0,
         price: course.price || 0,
         discount_price: course.discount_price,
+        content_type: course.content_type === 'tip' ? 'tip' : 'course',
         learning_outcomes: Array.isArray(course.learning_outcomes) ? course.learning_outcomes : [],
         requirements: Array.isArray(course.requirements) ? course.requirements : [],
       });
@@ -803,6 +806,9 @@ const AdminCourses = () => {
                               <Clapperboard className="h-3 w-3" /> Billboard หน้าแรก
                             </Badge>
                           )}
+                        {course.content_type === 'tip' && (
+                          <Badge className="bg-sky-500/15 text-sky-400 border border-sky-500/30">💡 Tip</Badge>
+                        )}
                         <Badge variant={course.is_active ? 'default' : 'secondary'}>
                           {course.is_active ? 'Active' : 'Inactive'}
                         </Badge>
@@ -1237,6 +1243,21 @@ const AdminCourses = () => {
                 </div>
               </div>
 
+              <div>
+                <Label>ประเภทคอนเทนต์</Label>
+                <Select
+                  value={courseForm.content_type}
+                  onValueChange={(value) => setCourseForm({ ...courseForm, content_type: value === 'tip' ? 'tip' : 'course' })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="course">📚 Course — คอร์สหลายตอน (แสดงในเมนู Course)</SelectItem>
+                    <SelectItem value="tip">💡 Tip — ตอนเดียวจบ (แสดงในเมนู Tip)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>ระดับความยาก</Label>

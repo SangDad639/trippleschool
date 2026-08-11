@@ -23,6 +23,7 @@ export interface BrowseCourse {
   enrollment_count?: string; // bigint serialized as string
   avg_rating?: number;
   review_count?: string; // bigint serialized as string
+  content_type?: 'course' | 'tip';
 }
 
 export interface BrowseRow {
@@ -64,6 +65,7 @@ export function buildRows(courses: BrowseCourse[]): BrowseRow[] {
   );
   const rows: BrowseRow[] = [
     { key: 'featured', title: 'คอร์สแนะนำ', courses: courses.filter((c) => c.is_featured) },
+    { key: 'tips', title: '💡 Tip — เรียนจบในตอนเดียว', courses: courses.filter((c) => c.content_type === 'tip') },
     { key: 'new', title: 'มาใหม่ล่าสุด', courses: byNewest.filter((c) => isNewCourse(c.created_at)) },
     { key: 'popular', title: 'ยอดนิยม', courses: byPopular.filter((c) => Number(c.enrollment_count) > 0) },
     { key: 'beginner', title: 'สำหรับผู้เริ่มต้น', courses: courses.filter((c) => c.difficulty === 'beginner') },
