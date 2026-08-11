@@ -47,6 +47,8 @@ import {
   BookOpen,
   GraduationCap,
   Users,
+  Star,
+  Clapperboard,
   ChevronUp,
   ChevronDown,
   Youtube,
@@ -361,6 +363,36 @@ const AdminCourses = () => {
   const handleToggleCourseActive = async (course: Course) => {
     try {
       await api.updateCourse(course.id, { is_active: !course.is_active });
+      loadCourses();
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
+    }
+  };
+
+  // ปัก/ถอนคอร์สแนะนำ — คุมแถว "คอร์สแนะนำ" และ Billboard หน้าแรก
+  const handleToggleFeatured = async (course: Course) => {
+    try {
+      await api.updateCourse(course.id, { is_featured: !course.is_featured });
+      toast.success(course.is_featured ? `เอา "${course.name}" ออกจากคอร์สแนะนำแล้ว` : `ปัก "${course.name}" เป็นคอร์สแนะนำแล้ว`);
+      loadCourses();
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
+    }
+  };
+
+  // เลื่อนลำดับการแสดง (display_order) ขึ้น/ลง — คุมลำดับทั้งหน้าเว็บ.
+  // Normalize ทั้งลิสต์เป็น 10,20,30,... ทุกครั้งที่ย้าย เพื่อแก้ปัญหาค่าซ้ำ (เดิมทุกตัวเป็น 0)
+  const handleMoveCourse = async (course: Course, dir: -1 | 1) => {
+    const idx = courses.findIndex((c) => c.id === course.id);
+    const target = idx + dir;
+    if (idx < 0 || target < 0 || target >= courses.length) return;
+    const reordered = [...courses];
+    [reordered[idx], reordered[target]] = [reordered[target], reordered[idx]];
+    try {
+      const updates = reordered
+        .map((c, i) => ({ id: c.id, order: (i + 1) * 10, current: c.display_order }))
+        .filter((u) => u.order !== u.current);
+      await Promise.all(updates.map((u) => api.updateCourse(u.id, { display_order: u.order })));
       loadCourses();
     } catch (error: any) {
       toast.error(`Error: ${error.message}`);
@@ -726,6 +758,11 @@ const AdminCourses = () => {
             </CardContent>
           </Card>
         ) : (
+          <>
+          <p className="text-gray-500 text-xs mb-3 flex items-center gap-1.5 flex-wrap">
+            <Star className="h-3.5 w-3.5 text-yellow-400" /> = ปักเป็น "คอร์สแนะนำ" (ขึ้นแถวแนะนำหน้าเว็บ · ตัวแรกสุดขึ้น Billboard หน้าแรก) ·
+            ใช้ลูกศร ▲▼ จัดลำดับการแสดงทั้งเว็บ
+          </p>
           <Accordion type="multiple" className="space-y-4">
             {courses.map((course) => (
               <AccordionItem key={course.id} value={course.id.toString()} className="border-0">
@@ -758,13 +795,55 @@ const AdminCourses = () => {
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2">
+                        {/* Billboard indicator: คอร์สแนะนำตัวแรกตามลำดับ = ขึ้น Billboard หน้าแรก */}
+                        {course.is_active && course.is_featured &&
+                          courses.find((c) => c.is_active && c.is_featured)?.id === course.id && (
+                            <Badge className="bg-purple-500/15 text-purple-400 border border-purple-500/30 flex items-center gap-1">
+                              <Clapperboard className="h-3 w-3" /> Billboard หน้าแรก
+                            </Badge>
+                          )}
                         <Badge variant={course.is_active ? 'default' : 'secondary'}>
                           {course.is_active ? 'Active' : 'Inactive'}
                         </Badge>
-                        {course.is_featured && (
-                          <Badge className="bg-yellow-500/10 text-yellow-500">Featured</Badge>
-                        )}
+
+                        {/* ปัก/ถอนคอร์สแนะนำ (span แทน button — อยู่ใน AccordionTrigger) */}
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title={course.is_featured ? 'เอาออกจากคอร์สแนะนำ' : 'ปักเป็นคอร์สแนะนำ'}
+                          onClick={(e) => { e.stopPropagation(); handleToggleFeatured(course); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleToggleFeatured(course); } }}
+                          className={`p-1.5 rounded-md border transition-colors ${
+                            course.is_featured
+                              ? 'bg-yellow-500/15 border-yellow-500/40 text-yellow-400 hover:bg-yellow-500/25'
+                              : 'border-gray-700 text-gray-500 hover:text-yellow-400 hover:border-yellow-500/40'
+                          }`}
+                        >
+                          <Star className={`h-4 w-4 ${course.is_featured ? 'fill-yellow-400' : ''}`} />
+                        </span>
+
+                        {/* จัดลำดับการแสดง */}
+                        <span className="flex flex-col">
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            title="เลื่อนขึ้น"
+                            onClick={(e) => { e.stopPropagation(); handleMoveCourse(course, -1); }}
+                            className={`p-0.5 rounded ${courses[0]?.id === course.id ? 'text-gray-700 pointer-events-none' : 'text-gray-400 hover:text-white'}`}
+                          >
+                            <ChevronUp className="h-4 w-4" />
+                          </span>
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            title="เลื่อนลง"
+                            onClick={(e) => { e.stopPropagation(); handleMoveCourse(course, 1); }}
+                            className={`p-0.5 rounded ${courses[courses.length - 1]?.id === course.id ? 'text-gray-700 pointer-events-none' : 'text-gray-400 hover:text-white'}`}
+                          >
+                            <ChevronDown className="h-4 w-4" />
+                          </span>
+                        </span>
                       </div>
                     </div>
                   </AccordionTrigger>
@@ -1031,6 +1110,7 @@ const AdminCourses = () => {
               </AccordionItem>
             ))}
           </Accordion>
+          </>
         )}
 
         {/* Course Dialog */}
