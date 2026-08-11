@@ -2800,12 +2800,13 @@ class ApiClient {
   // Courses (Course Learning System)
   // ============================================
 
-  async getCourses(params?: { featured?: boolean; difficulty?: string; search?: string; sort?: string }) {
+  async getCourses(params?: { featured?: boolean; difficulty?: string; search?: string; sort?: string; type?: 'course' | 'tip' }) {
     const qs = new URLSearchParams();
     if (params?.featured) qs.set('featured', 'true');
     if (params?.difficulty) qs.set('difficulty', params.difficulty);
     if (params?.search) qs.set('search', params.search);
     if (params?.sort) qs.set('sort', params.sort);
+    if (params?.type) qs.set('type', params.type);
     const q = qs.toString();
     return this.request(`/api/courses${q ? `?${q}` : ''}`);
   }

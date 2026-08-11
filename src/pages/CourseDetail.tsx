@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import PublicHeader from '@/components/PublicHeader';
 import CoursePrice from '@/components/CoursePrice';
 import StarRating from '@/components/StarRating';
 import ReviewList, { type Review } from '@/components/ReviewList';
@@ -121,7 +122,6 @@ const CourseDetail = () => {
   // hasAccess = approved purchase for THIS course (or admin) — comes from the BE.
   const [hasAccess, setHasAccess] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [previewLesson, setPreviewLesson] = useState<Lesson | null>(null);
 
   // Slip-upload (buy) dialog state
   const [buyDialogOpen, setBuyDialogOpen] = useState(false);
@@ -266,39 +266,29 @@ const CourseDetail = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <div className="max-w-5xl mx-auto px-4 py-6">
-        <Button variant="ghost" onClick={() => navigate('/courses')} className="mb-4 text-gray-400 hover:text-white">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          กลับไปหน้าคอร์สทั้งหมด
-        </Button>
+    <div className="min-h-screen bg-background text-foreground overflow-x-clip">
+      <PublicHeader overlay />
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-          <div className="lg:col-span-2">
-            <div className="relative aspect-video bg-gray-800 rounded-lg overflow-hidden">
-              {previewLesson ? (
-                <iframe
-                  src={`https://www.youtube.com/embed/${previewLesson.youtube_id}?autoplay=1`}
-                  title={previewLesson.title}
-                  className="w-full h-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
-              ) : course.thumbnail_url ? (
-                <img src={api.mediaUrl(course.thumbnail_url)} alt={course.name} className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <BookOpen className="h-20 w-20 text-gray-600" />
-                </div>
-              )}
-            </div>
+      {/* Netflix-style backdrop hero */}
+      <section className="relative h-[56vh] min-h-[440px] w-full overflow-hidden">
+        {course.thumbnail_url ? (
+          <img src={api.mediaUrl(course.thumbnail_url)} alt={course.name} className="absolute inset-0 w-full h-full object-cover" />
+        ) : (
+          <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
+            <BookOpen className="h-20 w-20 text-gray-600" />
           </div>
+        )}
+        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/40" />
 
-          <div>
-            <Card className="h-full">
-              <CardContent className="p-4">
-                <h1 className="text-lg font-bold text-white mb-2">{course.name}</h1>
-                {course.short_description && <p className="text-gray-400 text-sm mb-3">{course.short_description}</p>}
+        <div className="absolute inset-x-0 bottom-0 px-4 md:px-12 pb-8">
+          <div className="max-w-2xl">
+            <button onClick={() => navigate('/courses')} className="flex items-center gap-1 text-gray-300 hover:text-white text-sm mb-3 drop-shadow">
+              <ArrowLeft className="h-4 w-4" />
+              คอร์สทั้งหมด
+            </button>
+            <h1 className="text-white text-3xl md:text-5xl font-extrabold leading-tight mb-2 drop-shadow-lg text-balance">{course.name}</h1>
+            {course.short_description && <p className="text-gray-200 text-sm md:text-base line-clamp-2 mb-3 drop-shadow">{course.short_description}</p>}
 
                 {/* Stats bar */}
                 {(() => {
@@ -343,49 +333,28 @@ const CourseDetail = () => {
                     </Badge>
                   );
                   return stats.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs mb-3">{stats}</div>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs md:text-sm mb-3 drop-shadow">{stats}</div>
                   ) : null;
                 })()}
 
                 {course.instructor_name && (
-                  <div className="flex items-center gap-2 mb-3 pb-3 border-b border-gray-700">
+                  <div className="flex items-center gap-2 mb-4">
                     {course.instructor_avatar ? (
-                      <img src={course.instructor_avatar} alt={course.instructor_name} className="h-8 w-8 rounded-full object-cover" />
+                      <img src={course.instructor_avatar} alt={course.instructor_name} className="h-7 w-7 rounded-full object-cover" />
                     ) : (
-                      <div className="h-8 w-8 rounded-full bg-gray-700 flex items-center justify-center">
-                        <User className="h-4 w-4 text-gray-400" />
+                      <div className="h-7 w-7 rounded-full bg-gray-700 flex items-center justify-center">
+                        <User className="h-3.5 w-3.5 text-gray-400" />
                       </div>
                     )}
-                    <div>
-                      <p className="text-white text-sm font-medium">{course.instructor_name}</p>
-                      <p className="text-gray-400 text-xs">ผู้สอน</p>
-                    </div>
+                    <p className="text-gray-300 text-sm">ผู้สอน: <span className="text-white font-medium">{course.instructor_name}</span></p>
                   </div>
                 )}
 
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center justify-between text-gray-400 text-sm">
-                    <span className="flex items-center gap-1.5"><BookOpen className="h-3.5 w-3.5" />บทเรียน</span>
-                    <span className="text-white">{course.lessons?.length || 0} บท</span>
-                  </div>
-                  {course.duration_hours > 0 && (
-                    <div className="flex items-center justify-between text-gray-400 text-sm">
-                      <span className="flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />ระยะเวลา</span>
-                      <span className="text-white">{course.duration_hours} ชม.</span>
-                    </div>
-                  )}
-                  <div className="flex items-center justify-between text-gray-400 text-sm">
-                    <span className="flex items-center gap-1.5"><GraduationCap className="h-3.5 w-3.5" />ระดับ</span>
-                    <Badge className={`${difficultyColors[course.difficulty]} border text-xs`}>
-                      {difficultyLabels[course.difficulty] || 'เริ่มต้น'}
-                    </Badge>
-                  </div>
+                <div className="mb-3">
+                  <CoursePrice price={course.price} discountPrice={course.discount_price} size="lg" />
                 </div>
 
-                <div className="mb-4 pt-3 border-t border-gray-700 text-center">
-                  <CoursePrice price={course.price} discountPrice={course.discount_price} size="lg" className="justify-center" />
-                </div>
-
+                <div className="max-w-sm">
                 {hasAccess || status === 'approved' ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5 text-green-400 text-sm mb-1">
@@ -443,14 +412,15 @@ const CourseDetail = () => {
                       <GraduationCap className="h-3.5 w-3.5 mr-1.5" />
                       สมัครสมาชิก เข้าเรียนได้ทุกคอร์ส
                     </Button>
-                    <p className="text-gray-500 text-xs text-center">ดูบทเรียนตัวอย่างฟรี • ซื้อคอร์สนี้ หรือสมัครสมาชิกเพื่อปลดล็อกทั้งหมด</p>
+                    <p className="text-gray-400 text-xs">ดูบทเรียนตัวอย่างฟรี • ซื้อคอร์สนี้ หรือสมัครสมาชิกเพื่อปลดล็อกทั้งหมด</p>
                   </div>
                 )}
-              </CardContent>
-            </Card>
+                </div>
           </div>
         </div>
+      </section>
 
+      <div className="max-w-6xl mx-auto px-4 md:px-12 py-8">
         {course.learning_outcomes && course.learning_outcomes.length > 0 && (
           <Card className="mb-6">
             <CardHeader className="py-3 px-4">
