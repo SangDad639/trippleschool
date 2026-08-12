@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -11,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { GraduationCap, User as UserIcon, Shield, LogOut, ChevronDown, Menu, Crown } from 'lucide-react';
+import { GraduationCap, User as UserIcon, Shield, LogOut, ChevronDown, Menu, Crown, Search, X } from 'lucide-react';
 
 const NAV_ITEMS = [
   { to: '/', label: 'Home' },
@@ -29,16 +30,23 @@ function subscriptionDaysLeft(expiresAt?: string | null): number | null {
   return Math.ceil(ms / (24 * 60 * 60 * 1000));
 }
 
+interface PublicHeaderProps {
+  overlay?: boolean;
+  /** Netflix-style expanding search box. Provide to show the 🔍 icon; state lives in the page. */
+  search?: { query: string; onChange: (q: string) => void };
+}
+
 // Shared top navigation for the public (no-login) surface: storefront,
 // course catalog, and public course detail.
 // `overlay` = Netflix-style: fixed over the hero, transparent at top and
 // solid once scrolled. Without it the header keeps the original sticky look.
-const PublicHeader = ({ overlay = false }: { overlay?: boolean } = {}) => {
+const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
   const { language, setLanguage } = useLanguage();
   const [scrolled, setScrolled] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(!!search?.query);
 
   useEffect(() => {
     if (!overlay) return;
@@ -48,9 +56,24 @@ const PublicHeader = ({ overlay = false }: { overlay?: boolean } = {}) => {
     return () => window.removeEventListener('scroll', onScroll);
   }, [overlay]);
 
+  // Deep link (?q=...) arrives after the loading-state header already mounted
+  // without the search prop — pop the box open once the query shows up.
+  useEffect(() => {
+    if (search?.query) setSearchOpen(true);
+  }, [search?.query]);
+
+  const searching = !!search && (searchOpen || search.query.length > 0);
+
+  const closeSearch = () => {
+    search?.onChange('');
+    setSearchOpen(false);
+  };
+
+  // While the search box is in use the billboard behind may be replaced by
+  // results — keep the bar solid so text stays readable.
   const headerClass = overlay
     ? `fixed top-0 inset-x-0 z-50 transition-colors duration-300 ${
-        scrolled
+        scrolled || searching
           ? 'bg-background/95 border-b border-border/60 backdrop-blur'
           : 'bg-gradient-to-b from-black/70 to-transparent border-b border-transparent'
       }`
@@ -59,6 +82,33 @@ const PublicHeader = ({ overlay = false }: { overlay?: boolean } = {}) => {
   const isActive = (to: string) => (to === '/' ? pathname === '/' : pathname.startsWith(to));
 
   const daysLeft = subscriptionDaysLeft(user?.subscriptionExpiresAt);
+
+  const searchBox = (className: string) => (
+    <div className={`relative ${className}`}>
+      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500 pointer-events-none" />
+      <Input
+        autoFocus
+        value={search?.query ?? ''}
+        onChange={(e) => search?.onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') closeSearch();
+        }}
+        onBlur={() => {
+          if (!search?.query) setSearchOpen(false);
+        }}
+        placeholder="ค้นหาคอร์ส, Tip..."
+        className="pl-8 pr-8 h-9 bg-gray-800/70 border-gray-700 text-white text-sm w-full"
+      />
+      <button
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={closeSearch}
+        aria-label="ปิดการค้นหา"
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
 
   return (
     <header className={headerClass}>
@@ -116,6 +166,18 @@ const PublicHeader = ({ overlay = false }: { overlay?: boolean } = {}) => {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          {search && !searchOpen && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setSearchOpen(true)}
+              aria-label="ค้นหา"
+              className="text-gray-300 hover:text-white px-2"
+            >
+              <Search className="h-4 w-4" />
+            </Button>
+          )}
+          {search && searchOpen && searchBox('hidden sm:block w-44 md:w-64 animate-in fade-in slide-in-from-right-2 duration-200')}
           <button
             onClick={() => setLanguage(language === 'th' ? 'en' : 'th')}
             className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded transition-colors"
@@ -197,6 +259,13 @@ const PublicHeader = ({ overlay = false }: { overlay?: boolean } = {}) => {
           )}
         </div>
       </div>
+
+      {/* Mobile search row — the tight top bar has no room for an inline box */}
+      {search && searchOpen && (
+        <div className="sm:hidden px-4 pb-2 animate-in slide-in-from-top-2 fade-in duration-200">
+          {searchBox('w-full')}
+        </div>
+      )}
     </header>
   );
 };
