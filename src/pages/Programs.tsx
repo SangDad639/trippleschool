@@ -15,12 +15,40 @@ import {
   Infinity as InfinityIcon,
 } from 'lucide-react';
 
-// Download links land later — keep url: null until then and the buttons stay
-// in "เร็วๆ นี้" state without touching the layout.
-const DOWNLOADS: { key: string; label: string; icon: typeof Monitor; url: string | null }[] = [
-  { key: 'windows', label: 'ดาวน์โหลดสำหรับ Windows', icon: Monitor, url: null },
-  { key: 'macos', label: 'ดาวน์โหลดสำหรับ macOS', icon: Apple, url: null },
+// ── ลิงก์ดาวน์โหลดตัวติดตั้ง ──────────────────────────────────────────────
+// วางลิงก์ไฟล์ติดตั้งตรง `url` ด้านล่างได้เลย (หรือจะตั้งค่าเป็น env var
+// VITE_TRIPLE_VOICE_WIN_URL / VITE_TRIPLE_VOICE_MAC_URL ตอน build ก็ได้)
+// ถ้าเว้นว่างไว้ ปุ่มจะขึ้นสถานะ "เร็วๆ นี้" เหมือนเดิม
+type DownloadTarget = {
+  key: string;
+  label: string;
+  icon: typeof Monitor;
+  url: string;
+};
+
+const DOWNLOADS: DownloadTarget[] = [
+  {
+    key: 'windows',
+    label: 'ดาวน์โหลดสำหรับ Windows',
+    icon: Monitor,
+    url:
+      import.meta.env.VITE_TRIPLE_VOICE_WIN_URL ||
+      'https://www.mediafire.com/file/cgeolv2l9ves9xi/Triple_Voice.exe/file',
+  },
+  {
+    key: 'macos',
+    label: 'ดาวน์โหลดสำหรับ macOS',
+    icon: Apple,
+    url: import.meta.env.VITE_TRIPLE_VOICE_MAC_URL || '',
+  },
 ];
+
+// ลิงก์ที่ชี้ไป "ตัวไฟล์" ตรงๆ (ลงท้าย .exe/.msi/.dmg/.pkg/.zip) → กดแล้วโหลดทันที
+// ส่วนลิงก์หน้าเว็บฝากไฟล์ (MediaFire/Drive) ชี้ไปหน้า HTML ไม่ใช่ไฟล์ ถ้าเปิดในแท็บเดิม
+// ผู้ใช้จะหลุดออกจากเว็บเราไปเลย → ต้องเปิดแท็บใหม่แทน
+// หมายเหตุ: MediaFire อย่าง `.../Triple_Voice.exe/file` ลงท้ายด้วย /file ไม่ใช่ .exe
+// จึงถูกจัดเป็นลิงก์หน้าเว็บอย่างถูกต้อง
+const isDirectFileUrl = (url: string) => /\.(exe|msi|dmg|pkg|zip)(\?|$)/i.test(url);
 
 const FEATURES = [
   { icon: Languages, text: 'สร้างเสียงพูดจากข้อความ (Text-to-Speech) ทั้งภาษาไทยและอังกฤษ หลายเสียง ชาย-หญิง' },
@@ -94,18 +122,42 @@ const Programs = () => {
               {/* Download buttons */}
               <div className="mt-auto">
                 <div className="flex flex-col sm:flex-row gap-3">
-                  {DOWNLOADS.map((d) => (
-                    <Button
-                      key={d.key}
-                      disabled={!d.url}
-                      onClick={() => d.url && window.open(d.url, '_blank')}
-                      className="flex-1 h-11 bg-purple-600 hover:bg-purple-700 disabled:opacity-60"
-                    >
-                      <d.icon className="h-4 w-4 mr-2" />
-                      {d.label}
-                      <Download className="h-4 w-4 ml-2" />
-                    </Button>
-                  ))}
+                  {DOWNLOADS.map((d) =>
+                    d.url ? (
+                      <Button
+                        key={d.key}
+                        asChild
+                        className="flex-1 h-11 bg-purple-600 hover:bg-purple-700"
+                      >
+                        {isDirectFileUrl(d.url) ? (
+                          // ลิงก์ไฟล์ตรง: กดแล้วดาวน์โหลดทันที ไม่เด้งออกจากหน้าเว็บ
+                          <a href={d.url} download>
+                            <d.icon className="h-4 w-4 mr-2" />
+                            {d.label}
+                            <Download className="h-4 w-4 ml-2" />
+                          </a>
+                        ) : (
+                          // ลิงก์หน้าเว็บฝากไฟล์ (MediaFire): ต้องเปิดแท็บใหม่ ไม่งั้นผู้ใช้
+                          // จะถูกพาออกจากเว็บเราไปเลย — หน้าตาปุ่มเหมือนกันทุกอย่าง
+                          <a href={d.url} target="_blank" rel="noopener noreferrer">
+                            <d.icon className="h-4 w-4 mr-2" />
+                            {d.label}
+                            <Download className="h-4 w-4 ml-2" />
+                          </a>
+                        )}
+                      </Button>
+                    ) : (
+                      <Button
+                        key={d.key}
+                        disabled
+                        className="flex-1 h-11 bg-purple-600 disabled:opacity-60"
+                      >
+                        <d.icon className="h-4 w-4 mr-2" />
+                        {d.label}
+                        <Download className="h-4 w-4 ml-2" />
+                      </Button>
+                    ),
+                  )}
                 </div>
               </div>
             </div>
