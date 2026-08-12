@@ -281,7 +281,8 @@ const CourseDetail = () => {
         <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/40" />
 
-        <div className="absolute inset-x-0 bottom-0 px-4 md:px-12 pb-8">
+        <div className="absolute inset-x-0 bottom-0 pb-8">
+          <div className="max-w-6xl mx-auto px-4 md:px-12">
           <div className="max-w-2xl">
             <button onClick={() => navigate('/courses')} className="flex items-center gap-1 text-gray-300 hover:text-white text-sm mb-3 drop-shadow">
               <ArrowLeft className="h-4 w-4" />
@@ -416,6 +417,7 @@ const CourseDetail = () => {
                   </div>
                 )}
                 </div>
+          </div>
           </div>
         </div>
       </section>
