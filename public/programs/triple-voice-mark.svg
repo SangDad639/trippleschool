@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Triple Voice">
+  <!-- Triple Voice — in-app mark. Amber on the dark app ground (#141414).
+       Head in profile + exactly three arcs of sound: the "triple" is structural.
+       Arcs are struck from one centre (107,152) at r 41/75/109 — stroke 16,
+       gaps 18, which is what keeps all three readable down to 16px.
+       For the OS icon (amber tile, dark knockout) see triple-voice-icon.svg. -->
+  <defs>
+    <linearGradient id="tvAmber" gradientUnits="userSpaceOnUse" x1="40" y1="220" x2="216" y2="36">
+      <stop offset="0" stop-color="#f2740c"/>
+      <stop offset=".5" stop-color="#fb9514"/>
+      <stop offset="1" stop-color="#ffc53d"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(4 2)">
+    <path fill="url(#tvAmber)" transform="translate(-15.40 -21.00) scale(1.14)"
+          d="M75 48C95 48 106 61 107 80C108 87 105 92 103 98C109 106 116 114 120 122C122 127 117 130 108 131C112 135 114 139 113 144C111 147 111 149 113 153C115 157 110 158 104 163C101 169 107 170 110 177C111 183 100 189 88 189C74 190 60 187 52 178C44 170 36 156 34 138C32 122 33 100 44 78C52 62 62 52 75 48Z"/>
+    <g fill="none" stroke="url(#tvAmber)" stroke-width="16">
+      <path d="M142.5 131.5A41 41 0 0 1 142.5 172.5"/>
+      <path d="M172 114.5A75 75 0 0 1 172 189.5"/>
+      <path d="M201.4 97.5A109 109 0 0 1 201.4 206.5"/>
+    </g>
+  </g>
+</svg>

@@ -242,7 +242,7 @@ router.get('/admin/all', authenticate, async (req: AuthRequest, res) => {
 // ============ Public: list active courses ============
 router.get('/', async (req, res) => {
   try {
-    const { featured, difficulty, search, sort } = req.query;
+    const { featured, difficulty, search, sort, type } = req.query;
     let query = `
       SELECT c.*,
         COUNT(DISTINCT l.id) FILTER (WHERE l.is_active = true) as lesson_count,
@@ -258,6 +258,7 @@ router.get('/', async (req, res) => {
     const params: any[] = [];
     let paramIndex = 1;
     if (featured === 'true') query += ` AND c.is_featured = true`;
+    if (type === 'course' || type === 'tip') { query += ` AND c.content_type = $${paramIndex}`; params.push(type); paramIndex++; }
     if (difficulty) { query += ` AND c.difficulty = $${paramIndex}`; params.push(difficulty); paramIndex++; }
     if (search) { query += ` AND (c.name ILIKE $${paramIndex} OR c.description ILIKE $${paramIndex})`; params.push(`%${search}%`); paramIndex++; }
     query += ` GROUP BY c.id`;
@@ -283,15 +284,17 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, display_order, price, discount_price, learning_outcomes, requirements,
+      content_type,
     } = req.body;
     if (!name || !slug) return res.status(400).json({ error: 'Name and slug are required' });
     const result = await pool.query(`
       INSERT INTO courses (
         name, slug, description, short_description, thumbnail_url,
         instructor_name, instructor_avatar, difficulty, duration_hours,
-        is_featured, display_order, price, discount_price, learning_outcomes, requirements
+        is_featured, display_order, price, discount_price, learning_outcomes, requirements,
+        content_type
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
       RETURNING *
     `, [
       name, slug, description || null, short_description || null, thumbnail_url || null,
@@ -299,6 +302,7 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       is_featured || false, display_order || 0, price || 0, discount_price || null,
       JSON.stringify(Array.isArray(learning_outcomes) ? learning_outcomes : []),
       JSON.stringify(Array.isArray(requirements) ? requirements : []),
+      content_type === 'tip' ? 'tip' : 'course',
     ]);
     res.json(result.rows[0]);
   } catch (error) {
@@ -317,6 +321,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, is_active, display_order, price, discount_price, learning_outcomes, requirements,
+      content_type,
     } = req.body;
     const result = await pool.query(`
       UPDATE courses SET
@@ -336,8 +341,9 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
         discount_price = $14,
         learning_outcomes = COALESCE($15, learning_outcomes),
         requirements = COALESCE($16, requirements),
+        content_type = COALESCE($17, content_type),
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $17
+      WHERE id = $18
       RETURNING *
     `, [
       name, slug, description, short_description, thumbnail_url,
@@ -345,6 +351,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
       is_featured, is_active, display_order, price, discount_price,
       learning_outcomes !== undefined ? JSON.stringify(learning_outcomes) : null,
       requirements !== undefined ? JSON.stringify(requirements) : null,
+      content_type === 'tip' || content_type === 'course' ? content_type : null,
       id,
     ]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
