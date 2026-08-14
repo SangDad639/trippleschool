@@ -322,6 +322,11 @@ const AdminChats = () => {
                         : 'bg-card border border-border text-white'
                   }`}
                 >
+                  {m.image_url && (
+                    <a href={api.mediaUrl(m.image_url)} target="_blank" rel="noopener noreferrer">
+                      <img src={api.mediaUrl(m.image_url)} alt="รูปที่ลูกค้าแนบ" className="rounded-lg mb-1 max-h-40 w-auto max-w-full" />
+                    </a>
+                  )}
                   {m.body}
                   <p className="text-[10px] text-gray-500 mt-0.5">{new Date(m.created_at).toLocaleString('th-TH')}</p>
                 </div>

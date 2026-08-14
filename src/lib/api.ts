@@ -2952,8 +2952,25 @@ class ApiClient {
   // ---------- Agent Chat (FAB widget) ----------
   // Sends carry retries=0 + a long timeout: a timed-out LLM call must NOT be
   // silently re-posted (would duplicate the user message + double-bill the AI).
-  async agentChatSend(data: { conversation_id?: number; guest_id?: string; course_id: number; text: string }): Promise<AgentChatThreadDto> {
-    return this.request('/api/agent-chat/message', { method: 'POST', body: JSON.stringify(data) }, 0, 90000);
+  async agentChatSend(data: {
+    conversation_id?: number;
+    guest_id?: string;
+    course_id: number;
+    text: string;
+    image?: File;
+  }): Promise<AgentChatThreadDto> {
+    // With an image → multipart; text-only → JSON. Same endpoint either way.
+    if (data.image) {
+      const form = new FormData();
+      if (data.conversation_id) form.append('conversation_id', String(data.conversation_id));
+      if (data.guest_id) form.append('guest_id', data.guest_id);
+      form.append('course_id', String(data.course_id));
+      form.append('text', data.text);
+      form.append('image', data.image);
+      return this.request('/api/agent-chat/message', { method: 'POST', body: form }, 0, 120000);
+    }
+    const { image: _img, ...json } = data;
+    return this.request('/api/agent-chat/message', { method: 'POST', body: JSON.stringify(json) }, 0, 90000);
   }
   async agentChatGetConversation(courseId: number, guestId?: string): Promise<AgentChatThreadDto> {
     const qs = new URLSearchParams({ course_id: String(courseId) });
@@ -2982,6 +2999,38 @@ class ApiClient {
   }
   async agentChatAdminSetStatus(id: number, status: string) {
     return this.request(`/api/agent-chat/admin/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  }
+  async agentChatCourseSubtitles(courseId: number): Promise<{
+    lessons: Array<{
+      lesson_id: number;
+      title: string;
+      lesson_order: number;
+      has_youtube: boolean;
+      has_sub: boolean;
+      chars: number;
+      language: string | null;
+      fetched_at: string | null;
+    }>;
+  }> {
+    return this.request(`/api/agent-chat/admin/course/${courseId}/subtitles`);
+  }
+  async agentChatUploadSubtitle(
+    lessonId: number,
+    file: File,
+    language?: string
+  ): Promise<{ ok: boolean; lesson_id: number; format: string; chars: number }> {
+    const form = new FormData();
+    form.append('file', file);
+    if (language) form.append('language', language);
+    return this.request(`/api/agent-chat/admin/lessons/${lessonId}/subtitle`, { method: 'POST', body: form });
+  }
+  async agentChatSyncLessonSubtitle(
+    lessonId: number
+  ): Promise<{ ok: boolean; lesson_id: number; language: string; chars: number }> {
+    return this.request(`/api/agent-chat/admin/lessons/${lessonId}/sync-subtitle`, { method: 'POST' }, 0, 60000);
+  }
+  async agentChatDeleteSubtitle(lessonId: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/agent-chat/admin/lessons/${lessonId}/subtitle`, { method: 'DELETE' });
   }
   async agentChatSyncSubtitles(courseId: number): Promise<{
     total: number;
@@ -3020,6 +3069,7 @@ export interface AgentChatMessageDto {
   id: number;
   sender_type: 'user' | 'ai' | 'admin';
   body: string;
+  image_url?: string | null;
   created_at: string;
 }
 

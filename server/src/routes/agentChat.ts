@@ -7,15 +7,59 @@
  * ownership-checks the conversation against that identity.
  * Admin side: authenticate + requireAdmin.
  */
-import { Router, Response } from 'express';
+import { Router, Request, Response } from 'express';
+import multer from 'multer';
 import pool from '../db.js';
 import { optionalAuth, authenticate, requireAdmin, AuthRequest } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import { runAgentTurn } from '../services/agentChatService.js';
 import { hasActiveSubscription } from '../services/stripeService.js';
 import { fetchAutoCaptions } from '../utils/youtubeCaptions.js';
+import { parseSubtitleFile } from '../utils/subtitleParser.js';
+import { uploadFile, getFile } from '../utils/s3.js';
+import crypto from 'crypto';
 
 const router = Router();
+
+// Optional image attached to a chat question. Stored in S3 (same pattern as
+// enrollment slips) under a random key, served back via the proxy below.
+const CHAT_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const chatImageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: CHAT_IMAGE_MAX_BYTES },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('รองรับเฉพาะไฟล์รูปภาพ'));
+  },
+});
+
+function uploadChatImage(req: Request, res: Response, next: () => void) {
+  chatImageUpload.single('image')(req, res, (err: any) => {
+    if (err) {
+      const msg = err?.code === 'LIMIT_FILE_SIZE' ? 'รูปใหญ่เกิน 5MB' : (err?.message || 'อัปโหลดรูปไม่สำเร็จ');
+      return res.status(400).json({ error: msg });
+    }
+    next();
+  });
+}
+
+// Manual subtitle upload (.srt/.vtt/.sbv/.txt — YouTube Studio export formats).
+const subtitleUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024 },
+});
+
+// Same JSON-error wrapper pattern as courses.ts uploadSingle.
+function uploadSubtitleSingle(field: string) {
+  return (req: Request, res: Response, next: () => void) =>
+    subtitleUpload.single(field)(req, res, (err: any) => {
+      if (err) {
+        const msg = err?.code === 'LIMIT_FILE_SIZE' ? 'ไฟล์ใหญ่เกิน 2MB' : (err?.message || 'อัปโหลดไม่สำเร็จ');
+        return res.status(400).json({ error: msg });
+      }
+      next();
+    });
+}
 
 /** Course access = admin || active subscription || approved purchase (same gate as courses.ts). */
 async function hasCourseAccess(req: AuthRequest, courseId: number): Promise<boolean> {
@@ -47,6 +91,17 @@ const chatDailyLimit = rateLimit({
 
 const MAX_TEXT = 2000;
 
+// AI sessions expire 1 hour after the LAST message — the next message then
+// starts a fresh thread (fresh context). Applies to status='ai' only:
+// escalated/answered threads are waiting on a human and must survive long
+// gaps so the user still sees the admin's reply in the same thread.
+const SESSION_TTL_MINUTES = 60;
+
+function sessionExpired(conv: { status: string; last_message_at: string | Date }): boolean {
+  if (conv.status !== 'ai') return false;
+  return Date.now() - new Date(conv.last_message_at).getTime() > SESSION_TTL_MINUTES * 60 * 1000;
+}
+
 function cleanGuestId(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const g = raw.trim();
@@ -67,7 +122,7 @@ async function getThread(convId: number) {
   if (!conv) return null;
   const messages = (
     await pool.query(
-      `SELECT id, sender_type, body, created_at FROM chat_messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC`,
+      `SELECT id, sender_type, body, image_url, created_at FROM chat_messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC`,
       [convId]
     )
   ).rows;
@@ -80,13 +135,28 @@ function ownsConversation(conv: any, userId: number | undefined, guestId: string
   return false;
 }
 
-// ============ User: send a message ============
-router.post('/message', optionalAuth, chatRateLimit, chatDailyLimit, async (req: AuthRequest, res: Response) => {
+// ============ User: image proxy (random keys — same public-proxy pattern as slips) ============
+router.get('/images/*', async (req: Request, res: Response) => {
+  try {
+    const key = (req.params as any)[0] as string;
+    if (!key || !key.startsWith('chat-images/')) return res.status(404).end();
+    const obj = await getFile(key);
+    if (obj.ContentType) res.setHeader('Content-Type', obj.ContentType);
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    (obj.Body as any).pipe(res);
+  } catch {
+    res.status(404).end();
+  }
+});
+
+// ============ User: send a message (JSON, or multipart when an image is attached) ============
+router.post('/message', optionalAuth, chatRateLimit, chatDailyLimit, uploadChatImage, async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.userId;
     const guestId = cleanGuestId(req.body.guest_id);
     const text = typeof req.body.text === 'string' ? req.body.text.trim() : '';
-    if (!text) return res.status(400).json({ error: 'ข้อความว่างเปล่า' });
+    const image = req.file || null;
+    if (!text && !image) return res.status(400).json({ error: 'ข้อความว่างเปล่า' });
     if (text.length > MAX_TEXT) return res.status(400).json({ error: `ข้อความยาวเกิน ${MAX_TEXT} ตัวอักษร` });
     if (!userId && !guestId) return res.status(400).json({ error: 'Missing identity' });
 
@@ -100,6 +170,20 @@ router.post('/message', optionalAuth, chatRateLimit, chatDailyLimit, async (req:
     ).rows[0];
     if (!course) return res.status(404).json({ error: 'Course not found' });
 
+    // Expire stale AI sessions (1h after last message) for this identity+course
+    // before resolving — keeps the admin list tidy and makes the lookups below
+    // naturally skip them.
+    await pool.query(
+      userId
+        ? `UPDATE chat_conversations SET status = 'closed'
+           WHERE user_id = $1 AND course_id = $2 AND status = 'ai'
+             AND last_message_at < NOW() - INTERVAL '${SESSION_TTL_MINUTES} minutes'`
+        : `UPDATE chat_conversations SET status = 'closed'
+           WHERE user_id IS NULL AND guest_id = $1 AND course_id = $2 AND status = 'ai'
+             AND last_message_at < NOW() - INTERVAL '${SESSION_TTL_MINUTES} minutes'`,
+      [userId ?? guestId, courseId]
+    );
+
     // Resolve conversation: explicit id (ownership + course checked) → latest open for this course → create.
     let conv: any = null;
     if (req.body.conversation_id) {
@@ -107,7 +191,7 @@ router.post('/message', optionalAuth, chatRateLimit, chatDailyLimit, async (req:
       if (!conv || !ownsConversation(conv, userId, guestId) || conv.course_id !== courseId) {
         return res.status(404).json({ error: 'Conversation not found' });
       }
-      if (conv.status === 'closed') conv = null; // closed → start fresh
+      if (conv.status === 'closed' || sessionExpired(conv)) conv = null; // closed/expired → start fresh
     }
     if (!conv) {
       const existing = await pool.query(
@@ -117,6 +201,7 @@ router.post('/message', optionalAuth, chatRateLimit, chatDailyLimit, async (req:
         [userId ?? guestId, courseId]
       );
       conv = existing.rows[0] || null;
+      if (conv && sessionExpired(conv)) conv = null;
     }
     if (!conv) {
       conv = (
@@ -127,21 +212,36 @@ router.post('/message', optionalAuth, chatRateLimit, chatDailyLimit, async (req:
       ).rows[0];
     }
 
+    // Store the attached image (if any) in S3 under an unguessable key.
+    let imageUrl: string | null = null;
+    if (image) {
+      const ext = (image.originalname?.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      const key = `chat-images/${conv.id}/${crypto.randomUUID()}.${ext}`;
+      await uploadFile(image.buffer, key, image.mimetype, { contentDisposition: 'inline' });
+      imageUrl = `/api/agent-chat/images/${key}`;
+    }
+
     await pool.query(
-      `INSERT INTO chat_messages (conversation_id, sender_type, body) VALUES ($1, 'user', $2)`,
-      [conv.id, text]
+      `INSERT INTO chat_messages (conversation_id, sender_type, body, image_url) VALUES ($1, 'user', $2, $3)`,
+      [conv.id, text || '(ส่งรูปภาพ)', imageUrl]
     );
 
     if (conv.status === 'ai') {
       // Bot answers. Escalation may flip the status.
       const history = (
         await pool.query(
-          `SELECT sender_type, body FROM chat_messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC`,
+          `SELECT sender_type, body, image_url FROM chat_messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC`,
           [conv.id]
         )
       ).rows;
       const hasAccess = await hasCourseAccess(req, courseId);
-      const reply = await runAgentTurn(history, { courseId, hasAccess });
+      const reply = await runAgentTurn(history, {
+        courseId,
+        hasAccess,
+        // Only the current turn's image goes to the model (as base64) — old
+        // images stay as text markers so context stays small.
+        image: image ? { base64: image.buffer.toString('base64'), mimeType: image.mimetype } : undefined,
+      });
       await pool.query(
         `INSERT INTO chat_messages (conversation_id, sender_type, body) VALUES ($1, 'ai', $2)`,
         [conv.id, reply.text]
@@ -177,10 +277,18 @@ router.get('/conversation', optionalAuth, async (req: AuthRequest, res: Response
     const courseId = Number(req.query.course_id);
     if (!userId && !guestId) return res.json({ conversation: null, messages: [] });
     if (!Number.isInteger(courseId) || courseId <= 0) return res.json({ conversation: null, messages: [] });
+    // Same 1h-TTL rule as /message (read-only here: expired AI threads are
+    // simply not returned, so the widget greets fresh after a long gap).
     const existing = await pool.query(
       userId
-        ? `SELECT id FROM chat_conversations WHERE user_id = $1 AND course_id = $2 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`
-        : `SELECT id FROM chat_conversations WHERE user_id IS NULL AND guest_id = $1 AND course_id = $2 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`,
+        ? `SELECT id FROM chat_conversations
+           WHERE user_id = $1 AND course_id = $2 AND status <> 'closed'
+             AND (status <> 'ai' OR last_message_at > NOW() - INTERVAL '${SESSION_TTL_MINUTES} minutes')
+           ORDER BY last_message_at DESC LIMIT 1`
+        : `SELECT id FROM chat_conversations
+           WHERE user_id IS NULL AND guest_id = $1 AND course_id = $2 AND status <> 'closed'
+             AND (status <> 'ai' OR last_message_at > NOW() - INTERVAL '${SESSION_TTL_MINUTES} minutes')
+           ORDER BY last_message_at DESC LIMIT 1`,
       [userId ?? guestId, courseId]
     );
     if (!existing.rows[0]) return res.json({ conversation: null, messages: [] });
@@ -327,6 +435,136 @@ router.post(
     } catch (error) {
       console.error('[AgentChat] sync subtitles error:', error);
       res.status(500).json({ error: 'ดึงซับไตเติลไม่สำเร็จ' });
+    }
+  }
+);
+
+// ============ Admin: per-lesson subtitle status for a course ============
+router.get(
+  '/admin/course/:courseId/subtitles',
+  authenticate,
+  requireAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const courseId = Number(req.params.courseId);
+      if (!Number.isInteger(courseId) || courseId <= 0) return res.status(400).json({ error: 'Bad course id' });
+      const rows = (
+        await pool.query(
+          `SELECT l.id AS lesson_id, l.title, l.lesson_order,
+                  (l.youtube_id IS NOT NULL AND l.youtube_id <> '') AS has_youtube,
+                  (ls.id IS NOT NULL) AS has_sub,
+                  COALESCE(LENGTH(ls.content), 0) AS chars,
+                  ls.language, ls.fetched_at
+           FROM lessons l
+           LEFT JOIN lesson_subtitles ls ON ls.lesson_id = l.id
+           WHERE l.course_id = $1 AND l.is_active = true
+           ORDER BY l.lesson_order`,
+          [courseId]
+        )
+      ).rows;
+      res.json({ lessons: rows });
+    } catch (error) {
+      console.error('[AgentChat] subtitle status error:', error);
+      res.status(500).json({ error: 'โหลดสถานะซับไม่สำเร็จ' });
+    }
+  }
+);
+
+// ============ Admin: upload a subtitle file for one lesson ============
+// Accepts YouTube Studio export formats (.srt / .vtt / .sbv) or plain .txt —
+// timestamps and cue markup are stripped, only the text is stored.
+router.post(
+  '/admin/lessons/:lessonId/subtitle',
+  authenticate,
+  requireAdmin,
+  uploadSubtitleSingle('file'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const lessonId = Number(req.params.lessonId);
+      if (!Number.isInteger(lessonId) || lessonId <= 0) return res.status(400).json({ error: 'Bad lesson id' });
+      const lesson = (
+        await pool.query(`SELECT id, course_id, title FROM lessons WHERE id = $1`, [lessonId])
+      ).rows[0];
+      if (!lesson) return res.status(404).json({ error: 'ไม่พบบทเรียน' });
+      if (!req.file) return res.status(400).json({ error: 'กรุณาแนบไฟล์ซับไตเติล (.srt/.vtt/.sbv/.txt)' });
+
+      const raw = req.file.buffer.toString('utf8');
+      const parsed = parseSubtitleFile(req.file.originalname || 'subtitle.txt', raw);
+      if (!parsed) {
+        return res.status(400).json({ error: 'อ่านไฟล์ไม่ได้ — รองรับ .srt .vtt .sbv .txt (ข้อความ UTF-8)' });
+      }
+
+      const language = typeof req.body.language === 'string' && req.body.language.trim()
+        ? req.body.language.trim().slice(0, 10)
+        : 'th';
+      await pool.query(
+        `INSERT INTO lesson_subtitles (lesson_id, course_id, language, content, fetched_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (lesson_id) DO UPDATE
+           SET course_id = EXCLUDED.course_id, language = EXCLUDED.language,
+               content = EXCLUDED.content, fetched_at = NOW()`,
+        [lesson.id, lesson.course_id, language, parsed.text]
+      );
+      res.json({ ok: true, lesson_id: lesson.id, format: parsed.format, chars: parsed.text.length });
+    } catch (error) {
+      console.error('[AgentChat] subtitle upload error:', error);
+      res.status(500).json({ error: 'อัปโหลดซับไม่สำเร็จ' });
+    }
+  }
+);
+
+// ============ Admin: fetch auto-captions for ONE lesson ============
+router.post(
+  '/admin/lessons/:lessonId/sync-subtitle',
+  authenticate,
+  requireAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const lessonId = Number(req.params.lessonId);
+      if (!Number.isInteger(lessonId) || lessonId <= 0) return res.status(400).json({ error: 'Bad lesson id' });
+      const lesson = (
+        await pool.query(
+          `SELECT id, course_id, title, youtube_id FROM lessons WHERE id = $1`,
+          [lessonId]
+        )
+      ).rows[0];
+      if (!lesson) return res.status(404).json({ error: 'ไม่พบบทเรียน' });
+      if (!lesson.youtube_id) return res.status(400).json({ error: 'บทเรียนนี้ไม่มีวิดีโอ YouTube' });
+
+      const cap = await fetchAutoCaptions(lesson.youtube_id);
+      if (!cap) {
+        return res.status(404).json({ error: 'ไม่พบซับอัตโนมัติของวิดีโอนี้ — ลองอัปโหลดไฟล์ซับเองแทน' });
+      }
+      await pool.query(
+        `INSERT INTO lesson_subtitles (lesson_id, course_id, language, content, fetched_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (lesson_id) DO UPDATE
+           SET course_id = EXCLUDED.course_id, language = EXCLUDED.language,
+               content = EXCLUDED.content, fetched_at = NOW()`,
+        [lesson.id, lesson.course_id, cap.language, cap.text]
+      );
+      res.json({ ok: true, lesson_id: lesson.id, language: cap.language, chars: cap.text.length });
+    } catch (error) {
+      console.error('[AgentChat] single sync error:', error);
+      res.status(500).json({ error: 'ดึงซับไม่สำเร็จ' });
+    }
+  }
+);
+
+// ============ Admin: delete a lesson's subtitle ============
+router.delete(
+  '/admin/lessons/:lessonId/subtitle',
+  authenticate,
+  requireAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const lessonId = Number(req.params.lessonId);
+      if (!Number.isInteger(lessonId) || lessonId <= 0) return res.status(400).json({ error: 'Bad lesson id' });
+      await pool.query(`DELETE FROM lesson_subtitles WHERE lesson_id = $1`, [lessonId]);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error('[AgentChat] subtitle delete error:', error);
+      res.status(500).json({ error: 'ลบซับไม่สำเร็จ' });
     }
   }
 );

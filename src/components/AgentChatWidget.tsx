@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { MessageCircle, X, Send, Loader2, Bot, Headset } from 'lucide-react';
+import { MessageCircle, X, Send, Loader2, Bot, Headset, ImagePlus } from 'lucide-react';
 
 // Guest identity survives reloads; logged-in users are keyed by their token.
 function getGuestId(): string {
@@ -36,7 +36,10 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [unread, setUnread] = useState(false);
+  const [attachedImage, setAttachedImage] = useState<File | null>(null);
+  const [attachedPreview, setAttachedPreview] = useState<string>('');
   const listRef = useRef<HTMLDivElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const lastCountRef = useRef(0);
 
   const guestId = user ? undefined : getGuestId();
@@ -86,15 +89,47 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
     load();
   };
 
+  const handlePickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setThread((t) => ({
+        ...t,
+        messages: [
+          ...t.messages,
+          { id: -3, sender_type: 'ai', body: 'รูปใหญ่เกิน 5MB ค่ะ ลองย่อรูปแล้วส่งใหม่นะคะ', created_at: new Date().toISOString() },
+        ],
+      }));
+      return;
+    }
+    setAttachedImage(file);
+    setAttachedPreview(URL.createObjectURL(file));
+  };
+
+  const clearAttachment = () => {
+    if (attachedPreview) URL.revokeObjectURL(attachedPreview);
+    setAttachedImage(null);
+    setAttachedPreview('');
+  };
+
   const handleSend = async () => {
     const text = input.trim();
-    if (!text || sending) return;
+    if ((!text && !attachedImage) || sending) return;
+    const image = attachedImage;
+    const preview = attachedPreview;
     setInput('');
+    setAttachedImage(null);
+    setAttachedPreview('');
     setSending(true);
     // Optimistic bubble while the AI thinks.
     setThread((t) => ({
       ...t,
-      messages: [...t.messages, { id: -1, sender_type: 'user', body: text, created_at: new Date().toISOString() }],
+      messages: [
+        ...t.messages,
+        { id: -1, sender_type: 'user', body: text || '(ส่งรูปภาพ)', image_url: preview || null, created_at: new Date().toISOString() },
+      ],
     }));
     try {
       const data = await api.agentChatSend({
@@ -102,6 +137,7 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
         guest_id: guestId,
         course_id: courseId,
         text,
+        image: image ?? undefined,
       });
       setThread(data);
       lastCountRef.current = data.messages.length;
@@ -199,6 +235,13 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
                   {m.sender_type === 'admin' && (
                     <p className="text-[10px] font-semibold text-green-400 mb-0.5">ทีมงาน</p>
                   )}
+                  {m.image_url && (
+                    <img
+                      src={m.image_url.startsWith('blob:') ? m.image_url : api.mediaUrl(m.image_url)}
+                      alt="รูปที่แนบ"
+                      className="rounded-lg mb-1.5 max-h-44 w-auto max-w-full"
+                    />
+                  )}
                   {m.body}
                 </div>
               </div>
@@ -217,7 +260,26 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
 
           {/* Composer */}
           <div className="border-t border-border p-2.5 space-y-1.5">
+            {attachedPreview && (
+              <div className="flex items-center gap-2">
+                <img src={attachedPreview} alt="รูปที่จะส่ง" className="h-12 w-12 object-cover rounded-md border border-border" />
+                <span className="text-[11px] text-muted-foreground flex-1 truncate">แนบรูปแล้ว — พิมพ์คำถามได้เลย</span>
+                <button onClick={clearAttachment} aria-label="เอารูปออก" className="text-muted-foreground hover:text-foreground p-1">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
             <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={sending}
+                aria-label="แนบรูปภาพ"
+                className="h-9 px-2 text-muted-foreground hover:text-foreground"
+              >
+                <ImagePlus className="h-4 w-4" />
+              </Button>
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -231,10 +293,11 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
                 disabled={sending}
                 className="h-9 text-sm"
               />
-              <Button onClick={handleSend} disabled={sending || !input.trim()} size="sm" className="h-9 px-3">
+              <Button onClick={handleSend} disabled={sending || (!input.trim() && !attachedImage)} size="sm" className="h-9 px-3">
                 <Send className="h-4 w-4" />
               </Button>
             </div>
+            <input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={handlePickImage} />
             {conv && conv.status === 'ai' && (
               <button
                 onClick={handleEscalate}

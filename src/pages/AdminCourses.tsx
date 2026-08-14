@@ -220,7 +220,24 @@ const AdminCourses = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [syncingSubtitles, setSyncingSubtitles] = useState<number | null>(null);
+  // ซับไตเติลบอท dialog
+  const [subDialogCourse, setSubDialogCourse] = useState<Course | null>(null);
+  const [subLessons, setSubLessons] = useState<
+    Array<{
+      lesson_id: number;
+      title: string;
+      lesson_order: number;
+      has_youtube: boolean;
+      has_sub: boolean;
+      chars: number;
+      language: string | null;
+      fetched_at: string | null;
+    }>
+  >([]);
+  const [subLoading, setSubLoading] = useState(false);
+  const [subBusy, setSubBusy] = useState<number | 'bulk' | null>(null);
+  const subFileRef = useRef<HTMLInputElement>(null);
+  const subUploadTargetRef = useRef<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
 
@@ -376,24 +393,87 @@ const AdminCourses = () => {
     }
   };
 
-  // ดึงซับไตเติลอัตโนมัติจาก YouTube ของทุกบทเรียนในคอร์ส → เป็นความรู้ให้บอทผู้ช่วยคอร์ส
-  const handleSyncSubtitles = async (course: Course) => {
-    setSyncingSubtitles(course.id);
+  // ===== ซับไตเติลบอท (ความรู้ของผู้ช่วยประจำคอร์ส) =====
+  const openSubDialog = (course: Course) => {
+    setSubDialogCourse(course);
+    loadSubLessons(course.id);
+  };
+
+  const loadSubLessons = async (courseId: number) => {
+    setSubLoading(true);
     try {
-      const r = await api.agentChatSyncSubtitles(course.id);
-      if (r.total === 0) {
-        toast.info('คอร์สนี้ยังไม่มีบทเรียนที่มีวิดีโอ YouTube');
-      } else if (r.ok === 0) {
-        toast.warning(`ไม่พบซับไตเติลอัตโนมัติเลย (${r.total} บท) — วิดีโออาจยังไม่ถูกสร้างซับโดย YouTube`);
-      } else {
-        toast.success(
-          `ดึงซับให้บอทสำเร็จ ${r.ok}/${r.total} บท${r.no_captions > 0 ? ` (ไม่มีซับ ${r.no_captions} บท)` : ''}`
-        );
-      }
+      const r = await api.agentChatCourseSubtitles(courseId);
+      setSubLessons(r.lessons);
     } catch (error: any) {
-      toast.error(error?.message || 'ดึงซับไตเติลไม่สำเร็จ');
+      toast.error(error?.message || 'โหลดสถานะซับไม่สำเร็จ');
     } finally {
-      setSyncingSubtitles(null);
+      setSubLoading(false);
+    }
+  };
+
+  const handleBulkSyncSubtitles = async () => {
+    if (!subDialogCourse) return;
+    setSubBusy('bulk');
+    try {
+      const r = await api.agentChatSyncSubtitles(subDialogCourse.id);
+      if (r.total === 0) toast.info('คอร์สนี้ยังไม่มีบทเรียนที่มีวิดีโอ YouTube');
+      else if (r.ok === 0) toast.warning(`ไม่พบซับอัตโนมัติเลย (${r.total} บท) — ลองอัปโหลดไฟล์ซับเองรายบท`);
+      else toast.success(`ดึงซับสำเร็จ ${r.ok}/${r.total} บท${r.no_captions > 0 ? ` (ไม่มีซับ ${r.no_captions} บท)` : ''}`);
+      await loadSubLessons(subDialogCourse.id);
+    } catch (error: any) {
+      toast.error(error?.message || 'ดึงซับไม่สำเร็จ');
+    } finally {
+      setSubBusy(null);
+    }
+  };
+
+  const handleLessonSyncSubtitle = async (lessonId: number) => {
+    setSubBusy(lessonId);
+    try {
+      const r = await api.agentChatSyncLessonSubtitle(lessonId);
+      toast.success(`ดึงซับสำเร็จ (${r.chars.toLocaleString()} ตัวอักษร, ${r.language})`);
+      if (subDialogCourse) await loadSubLessons(subDialogCourse.id);
+    } catch (error: any) {
+      toast.error(error?.message || 'ดึงซับไม่สำเร็จ');
+    } finally {
+      setSubBusy(null);
+    }
+  };
+
+  const pickSubtitleFile = (lessonId: number) => {
+    subUploadTargetRef.current = lessonId;
+    subFileRef.current?.click();
+  };
+
+  const handleSubtitleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    const lessonId = subUploadTargetRef.current;
+    if (!file || !lessonId) return;
+    setSubBusy(lessonId);
+    try {
+      const r = await api.agentChatUploadSubtitle(lessonId, file);
+      toast.success(`อัปโหลดซับแล้ว (${r.chars.toLocaleString()} ตัวอักษร, ไฟล์ ${r.format})`);
+      if (subDialogCourse) await loadSubLessons(subDialogCourse.id);
+    } catch (error: any) {
+      toast.error(error?.message || 'อัปโหลดซับไม่สำเร็จ');
+    } finally {
+      setSubBusy(null);
+      subUploadTargetRef.current = null;
+    }
+  };
+
+  const handleDeleteSubtitle = async (lessonId: number, title: string) => {
+    if (!confirm(`ลบซับของ "${title}"?`)) return;
+    setSubBusy(lessonId);
+    try {
+      await api.agentChatDeleteSubtitle(lessonId);
+      toast.success('ลบซับแล้ว');
+      if (subDialogCourse) await loadSubLessons(subDialogCourse.id);
+    } catch (error: any) {
+      toast.error(error?.message || 'ลบซับไม่สำเร็จ');
+    } finally {
+      setSubBusy(null);
     }
   };
 
@@ -920,16 +1000,10 @@ const AdminCourses = () => {
                           <Button
                             size="sm"
                             variant="outline"
-                            disabled={syncingSubtitles === course.id}
-                            onClick={() => handleSyncSubtitles(course)}
-                            title="ดึงซับไตเติลอัตโนมัติจาก YouTube มาเป็นความรู้ให้บอทผู้ช่วยคอร์สนี้"
+                            onClick={() => openSubDialog(course)}
+                            title="จัดการซับไตเติล (ความรู้ของบอทผู้ช่วยคอร์สนี้) — ดึงจาก YouTube หรืออัปโหลดไฟล์"
                           >
-                            {syncingSubtitles === course.id ? (
-                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-                            ) : (
-                              '🎬 '
-                            )}
-                            ดึงซับให้บอท
+                            🎬 ซับบอท
                           </Button>
                           <Button
                             size="sm"
@@ -1706,6 +1780,99 @@ const AdminCourses = () => {
                 </>
               )}
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* ซับไตเติลบอท Dialog — ความรู้ของผู้ช่วยประจำคอร์ส */}
+        <Dialog open={!!subDialogCourse} onOpenChange={(o) => !o && setSubDialogCourse(null)}>
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="truncate">🎬 ซับไตเติลบอท — {subDialogCourse?.name}</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs text-gray-400 -mt-1">
+              ซับไตเติล = ความรู้ที่บอทผู้ช่วยคอร์สใช้ตอบคำถามเชิงลึก · ดึงอัตโนมัติจาก YouTube หรืออัปโหลดไฟล์ที่
+              export มา (<b>.sbv .srt .vtt .txt</b> — ไฟล์แบบ "ข้อความ+เวลา" ใช้ได้เลย ระบบตัด timestamp ให้เอง)
+            </p>
+            <div className="flex items-center gap-3 mb-1">
+              <Button
+                size="sm"
+                onClick={handleBulkSyncSubtitles}
+                disabled={subBusy !== null}
+                className="bg-purple-600 hover:bg-purple-700"
+              >
+                {subBusy === 'bulk' ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <>📥 </>}
+                ดึงทั้งหมดจาก YouTube
+              </Button>
+              <span className="text-xs text-gray-400">
+                {subLessons.filter((l) => l.has_sub).length}/{subLessons.length} บทมีซับแล้ว
+              </span>
+            </div>
+            {subLoading ? (
+              <div className="flex justify-center py-10">
+                <Loader2 className="h-6 w-6 animate-spin text-purple-500" />
+              </div>
+            ) : subLessons.length === 0 ? (
+              <p className="text-center text-gray-400 py-8 text-sm">คอร์สนี้ยังไม่มีบทเรียน</p>
+            ) : (
+              <div className="space-y-1.5">
+                {subLessons.map((l) => (
+                  <div
+                    key={l.lesson_id}
+                    className="flex items-center gap-2 rounded-md border border-gray-800 bg-gray-900/40 px-3 py-2"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-white truncate">{l.title}</p>
+                      <p className="text-[11px] text-gray-500">
+                        {l.has_sub
+                          ? `✅ ${l.chars.toLocaleString()} ตัวอักษร (${l.language || '?'}) · ${
+                              l.fetched_at ? new Date(l.fetched_at).toLocaleString('th-TH') : ''
+                            }`
+                          : '❌ ยังไม่มีซับ'}
+                      </p>
+                    </div>
+                    {l.has_youtube && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={subBusy !== null}
+                        onClick={() => handleLessonSyncSubtitle(l.lesson_id)}
+                        title="ดึงซับอัตโนมัติจาก YouTube เฉพาะบทนี้"
+                      >
+                        {subBusy === l.lesson_id ? <Loader2 className="h-4 w-4 animate-spin" /> : '📥'}
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={subBusy !== null}
+                      onClick={() => pickSubtitleFile(l.lesson_id)}
+                      title="อัปโหลดไฟล์ซับ (.sbv .srt .vtt .txt)"
+                    >
+                      📄
+                    </Button>
+                    {l.has_sub && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={subBusy !== null}
+                        onClick={() => handleDeleteSubtitle(l.lesson_id, l.title)}
+                        className="text-red-400 hover:text-red-300"
+                        title="ลบซับของบทนี้"
+                      >
+                        🗑
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            <input
+              ref={subFileRef}
+              type="file"
+              accept=".srt,.vtt,.sbv,.txt"
+              className="hidden"
+              onChange={handleSubtitleFileChange}
+            />
           </DialogContent>
         </Dialog>
 
