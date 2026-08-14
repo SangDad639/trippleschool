@@ -553,7 +553,11 @@ const AdminCourses = () => {
     }
   };
 
-  const handleSaveLesson = async () => {
+  // `andAddAnother`: skip closing the dialog and reset the form for the next
+  // lesson instead — added so admins uploading several lessons in a row
+  // don't have to close the dialog, re-open "เพิ่มบทเรียน", and re-pick the
+  // section every time.
+  const handleSaveLesson = async (andAddAnother = false) => {
     if (!lessonForm.title || !lessonForm.youtube_url) {
       toast.error('Error: Title and YouTube URL are required');
       return;
@@ -579,7 +583,12 @@ const AdminCourses = () => {
         });
         toast.success('Success: Lesson created successfully');
       }
-      setLessonDialogOpen(false);
+      if (andAddAnother && !editingLesson) {
+        setLessonForm({ ...initialLessonForm, section_id: lessonForm.section_id });
+        setShowMaterialPreview(false);
+      } else {
+        setLessonDialogOpen(false);
+      }
       loadCourseData(selectedCourseForLesson!.id);
       loadCourses();
     } catch (error: any) {
@@ -1633,7 +1642,13 @@ const AdminCourses = () => {
               <Button variant="outline" onClick={() => setLessonDialogOpen(false)}>
                 ยกเลิก
               </Button>
-              <Button onClick={handleSaveLesson} disabled={saving} className="bg-purple-600">
+              {!editingLesson && (
+                <Button variant="outline" onClick={() => handleSaveLesson(true)} disabled={saving}>
+                  {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  บันทึกแล้วเพิ่มบทใหม่
+                </Button>
+              )}
+              <Button onClick={() => handleSaveLesson(false)} disabled={saving} className="bg-purple-600">
                 {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 บันทึก
               </Button>
