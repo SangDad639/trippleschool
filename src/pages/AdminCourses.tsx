@@ -80,6 +80,7 @@ interface Course {
   is_featured: boolean;
   is_active: boolean;
   display_order: number;
+  created_at?: string;
   lesson_count: number;
   enrollment_count: number;
   price: number;
@@ -773,8 +774,8 @@ const AdminCourses = () => {
         ) : (
           <>
           <p className="text-gray-500 text-xs mb-3 flex items-center gap-1.5 flex-wrap">
-            <Star className="h-3.5 w-3.5 text-yellow-400" /> = ปักเป็น "คอร์สแนะนำ" (ขึ้นแถวแนะนำหน้าเว็บ · ตัวแรกสุดขึ้น Billboard หน้าแรก) ·
-            ใช้ลูกศร ▲▼ จัดลำดับการแสดงทั้งเว็บ
+            <Star className="h-3.5 w-3.5 text-yellow-400" /> = ปักเป็น "คอร์สแนะนำ" (ขึ้นแถวแนะนำหน้าเว็บ) ·
+            Billboard หน้าแรก = คอร์สที่สร้างล่าสุดเสมอ · ใช้ลูกศร ▲▼ จัดลำดับการแสดงทั้งเว็บ
           </p>
           <Accordion type="multiple" className="space-y-4">
             {courses.map((course) => (
@@ -809,9 +810,13 @@ const AdminCourses = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {/* Billboard indicator: คอร์สแนะนำตัวแรกตามลำดับ = ขึ้น Billboard หน้าแรก */}
-                        {course.is_active && course.is_featured &&
-                          courses.find((c) => c.is_active && c.is_featured)?.id === course.id && (
+                        {/* Billboard indicator: คอร์สที่สร้างล่าสุด (ไม่นับ Tip) = ขึ้น Billboard หน้าแรกเสมอ */}
+                        {course.is_active &&
+                          [...courses]
+                            .filter((c) => c.is_active && c.content_type !== 'tip')
+                            .sort(
+                              (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+                            )[0]?.id === course.id && (
                             <Badge className="bg-purple-500/15 text-purple-400 border border-purple-500/30 flex items-center gap-1">
                               <Clapperboard className="h-3 w-3" /> Billboard หน้าแรก
                             </Badge>
