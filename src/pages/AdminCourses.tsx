@@ -236,6 +236,7 @@ const AdminCourses = () => {
   const [courseLessons, setCourseLessons] = useState<Record<number, Lesson[]>>({});
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
   const materialInputRef = useRef<HTMLInputElement>(null);
+  const lessonTitleRef = useRef<HTMLInputElement>(null);
   const [uploadingHtmlIdx, setUploadingHtmlIdx] = useState<number | null>(null);
   const htmlTargetIdxRef = useRef<number | null>(null);
   const htmlInputRef = useRef<HTMLInputElement>(null);
@@ -587,6 +588,8 @@ const AdminCourses = () => {
       if (andAddAnother && !editingLesson) {
         setLessonForm({ ...initialLessonForm, section_id: lessonForm.section_id });
         setShowMaterialPreview(false);
+        // Straight back to typing the next lesson title.
+        setTimeout(() => lessonTitleRef.current?.focus(), 50);
       } else {
         setLessonDialogOpen(false);
       }
@@ -1374,6 +1377,7 @@ const AdminCourses = () => {
               <div>
                 <Label>ชื่อบทเรียน *</Label>
                 <Input
+                  ref={lessonTitleRef}
                   value={lessonForm.title}
                   onChange={(e) => setLessonForm({ ...lessonForm, title: e.target.value })}
                   placeholder="เช่น บทที่ 1: Introduction"
@@ -1647,16 +1651,24 @@ const AdminCourses = () => {
               <Button variant="outline" onClick={() => setLessonDialogOpen(false)}>
                 ยกเลิก
               </Button>
-              {!editingLesson && (
-                <Button variant="outline" onClick={() => handleSaveLesson(true)} disabled={saving}>
+              {editingLesson ? (
+                <Button onClick={() => handleSaveLesson(false)} disabled={saving} className="bg-purple-600">
                   {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  บันทึกแล้วเพิ่มบทใหม่
+                  บันทึก
                 </Button>
+              ) : (
+                <>
+                  {/* Bulk entry is the common flow — save-and-continue is the primary action */}
+                  <Button variant="outline" onClick={() => handleSaveLesson(false)} disabled={saving}>
+                    {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    บันทึกและปิด
+                  </Button>
+                  <Button onClick={() => handleSaveLesson(true)} disabled={saving} className="bg-purple-600">
+                    {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    บันทึก + เพิ่มบทต่อ ▸
+                  </Button>
+                </>
               )}
-              <Button onClick={() => handleSaveLesson(false)} disabled={saving} className="bg-purple-600">
-                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                บันทึก
-              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
