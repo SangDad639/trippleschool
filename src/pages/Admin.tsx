@@ -949,6 +949,12 @@ const Admin = () => {
               >
                 อนุมัติสมัครเรียน
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/admin/chats')}
+              >
+                แชทลูกค้า
+              </Button>
             </div>
           </div>
 

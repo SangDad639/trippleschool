@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import PublicHeader from '@/components/PublicHeader';
+import AgentChatWidget from '@/components/AgentChatWidget';
 import CoursePrice from '@/components/CoursePrice';
 import StarRating from '@/components/StarRating';
 import ReviewList, { type Review } from '@/components/ReviewList';
@@ -699,6 +700,9 @@ const CourseDetail = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Per-course AI assistant — separate chat session for each course */}
+      <AgentChatWidget courseId={course.id} courseName={course.name} />
     </div>
   );
 };

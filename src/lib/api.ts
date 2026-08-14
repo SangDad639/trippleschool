@@ -2948,6 +2948,150 @@ class ApiClient {
   async bulkApproveEnrollments(enrollment_ids: number[]) {
     return this.request('/api/enrollments/admin/bulk-approve', { method: 'POST', body: JSON.stringify({ enrollment_ids }) });
   }
+
+  // ---------- Agent Chat (FAB widget) ----------
+  // Sends carry retries=0 + a long timeout: a timed-out LLM call must NOT be
+  // silently re-posted (would duplicate the user message + double-bill the AI).
+  async agentChatSend(data: {
+    conversation_id?: number;
+    guest_id?: string;
+    course_id: number;
+    text: string;
+    image?: File;
+  }): Promise<AgentChatThreadDto> {
+    // With an image → multipart; text-only → JSON. Same endpoint either way.
+    if (data.image) {
+      const form = new FormData();
+      if (data.conversation_id) form.append('conversation_id', String(data.conversation_id));
+      if (data.guest_id) form.append('guest_id', data.guest_id);
+      form.append('course_id', String(data.course_id));
+      form.append('text', data.text);
+      form.append('image', data.image);
+      return this.request('/api/agent-chat/message', { method: 'POST', body: form }, 0, 120000);
+    }
+    const { image: _img, ...json } = data;
+    return this.request('/api/agent-chat/message', { method: 'POST', body: JSON.stringify(json) }, 0, 90000);
+  }
+  async agentChatGetConversation(courseId: number, guestId?: string): Promise<AgentChatThreadDto> {
+    const qs = new URLSearchParams({ course_id: String(courseId) });
+    if (guestId) qs.set('guest_id', guestId);
+    return this.request(`/api/agent-chat/conversation?${qs}`);
+  }
+  async agentChatEscalate(data: { conversation_id: number; guest_id?: string; contact_info?: string }): Promise<AgentChatThreadDto> {
+    return this.request('/api/agent-chat/escalate', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async agentChatBackToAi(data: { conversation_id: number; guest_id?: string }): Promise<AgentChatThreadDto> {
+    return this.request('/api/agent-chat/back-to-ai', { method: 'POST', body: JSON.stringify(data) });
+  }
+  // Admin
+  async agentChatAdminCounts(): Promise<{ escalated: number; answered: number }> {
+    return this.request('/api/agent-chat/admin/counts');
+  }
+  async agentChatAdminList(params?: { status?: string; search?: string }): Promise<{ conversations: any[]; counts: any }> {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.search) qs.set('search', params.search);
+    const suffix = qs.toString();
+    return this.request(`/api/agent-chat/admin/list${suffix ? `?${suffix}` : ''}`);
+  }
+  async agentChatAdminGet(id: number): Promise<AgentChatThreadDto & { user_email: string | null }> {
+    return this.request(`/api/agent-chat/admin/${id}`);
+  }
+  async agentChatAdminReply(id: number, text: string): Promise<AgentChatThreadDto> {
+    return this.request(`/api/agent-chat/admin/${id}/reply`, { method: 'POST', body: JSON.stringify({ text }) });
+  }
+  async agentChatAdminSetStatus(id: number, status: string) {
+    return this.request(`/api/agent-chat/admin/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  }
+  async agentChatCourseSubtitles(courseId: number): Promise<{
+    lessons: Array<{
+      lesson_id: number;
+      title: string;
+      lesson_order: number;
+      has_youtube: boolean;
+      has_sub: boolean;
+      chars: number;
+      language: string | null;
+      fetched_at: string | null;
+    }>;
+  }> {
+    return this.request(`/api/agent-chat/admin/course/${courseId}/subtitles`);
+  }
+  async agentChatUploadSubtitle(
+    lessonId: number,
+    file: File,
+    language?: string
+  ): Promise<{ ok: boolean; lesson_id: number; format: string; chars: number }> {
+    const form = new FormData();
+    form.append('file', file);
+    if (language) form.append('language', language);
+    return this.request(`/api/agent-chat/admin/lessons/${lessonId}/subtitle`, { method: 'POST', body: form });
+  }
+  async agentChatSyncLessonSubtitle(
+    lessonId: number
+  ): Promise<{ ok: boolean; lesson_id: number; language: string; chars: number }> {
+    return this.request(`/api/agent-chat/admin/lessons/${lessonId}/sync-subtitle`, { method: 'POST' }, 0, 60000);
+  }
+  async agentChatDeleteSubtitle(lessonId: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/agent-chat/admin/lessons/${lessonId}/subtitle`, { method: 'DELETE' });
+  }
+  async agentChatSyncSubtitles(courseId: number): Promise<{
+    total: number;
+    ok: number;
+    no_captions: number;
+    results: Array<{ lesson_id: number; title: string; status: 'ok' | 'no_captions'; chars?: number }>;
+  }> {
+    // Fetching captions for a whole course can take a while — long timeout, no retry.
+    return this.request(`/api/agent-chat/admin/course/${courseId}/sync-subtitles`, { method: 'POST' }, 0, 300000);
+  }
+  // Knowledge base (คลังความรู้บอท)
+  async agentChatKnowledgeList(): Promise<{ knowledge: AgentKnowledgeDto[] }> {
+    return this.request('/api/agent-chat/admin/knowledge');
+  }
+  async agentChatKnowledgeCreate(data: { title: string; content: string }): Promise<{ knowledge: AgentKnowledgeDto }> {
+    return this.request('/api/agent-chat/admin/knowledge', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async agentChatKnowledgeUpdate(id: number, data: Partial<Pick<AgentKnowledgeDto, 'title' | 'content' | 'is_active' | 'display_order'>>): Promise<{ knowledge: AgentKnowledgeDto }> {
+    return this.request(`/api/agent-chat/admin/knowledge/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async agentChatKnowledgeDelete(id: number) {
+    return this.request(`/api/agent-chat/admin/knowledge/${id}`, { method: 'DELETE' });
+  }
+}
+
+export interface AgentKnowledgeDto {
+  id: number;
+  title: string;
+  content: string;
+  is_active: boolean;
+  display_order: number;
+  updated_at: string;
+}
+
+export interface AgentChatMessageDto {
+  id: number;
+  sender_type: 'user' | 'ai' | 'admin';
+  body: string;
+  image_url?: string | null;
+  created_at: string;
+}
+
+export interface AgentChatConversationDto {
+  id: number;
+  user_id: number | null;
+  guest_id: string | null;
+  course_id: number | null;
+  course_name?: string | null;
+  status: 'ai' | 'escalated' | 'answered' | 'closed';
+  escalate_reason: string | null;
+  contact_info: string | null;
+  last_message_at: string;
+  created_at: string;
+}
+
+export interface AgentChatThreadDto {
+  conversation: AgentChatConversationDto | null;
+  messages: AgentChatMessageDto[];
 }
 
 // ---------- DTOs (re-exported for components) ----------

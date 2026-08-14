@@ -53,6 +53,7 @@ import CourseLearn from "@/pages/CourseLearn";
 import MyCourses from "@/pages/MyCourses";
 import AdminCourses from "@/pages/AdminCourses";
 import AdminEnrollments from "@/pages/AdminEnrollments";
+import AdminChats from "@/pages/AdminChats";
 
 // Login/Register page
 const AuthPage = () => {
@@ -354,6 +355,7 @@ function AppRoutes() {
       <Route path="/admin/banners/:id/edit" element={<ProtectedRoute><AdminBannerEditor /></ProtectedRoute>} />
       <Route path="/admin/courses" element={<ProtectedRoute><AdminCourses /></ProtectedRoute>} />
       <Route path="/admin/enrollments" element={<ProtectedRoute><AdminEnrollments /></ProtectedRoute>} />
+      <Route path="/admin/chats" element={<ProtectedRoute><AdminChats /></ProtectedRoute>} />
 
       {/* ---------- User ---------- */}
       <Route path="/affiliate" element={<ProtectedRoute><Affiliate /></ProtectedRoute>} />
