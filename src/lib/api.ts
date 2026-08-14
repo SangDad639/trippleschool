@@ -2980,6 +2980,9 @@ class ApiClient {
   async agentChatEscalate(data: { conversation_id: number; guest_id?: string; contact_info?: string }): Promise<AgentChatThreadDto> {
     return this.request('/api/agent-chat/escalate', { method: 'POST', body: JSON.stringify(data) });
   }
+  async agentChatBackToAi(data: { conversation_id: number; guest_id?: string }): Promise<AgentChatThreadDto> {
+    return this.request('/api/agent-chat/back-to-ai', { method: 'POST', body: JSON.stringify(data) });
+  }
   // Admin
   async agentChatAdminCounts(): Promise<{ escalated: number; answered: number }> {
     return this.request('/api/agent-chat/admin/counts');

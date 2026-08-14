@@ -170,6 +170,17 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
     }
   };
 
+  const handleBackToAi = async () => {
+    if (!conv || sending) return;
+    try {
+      const data = await api.agentChatBackToAi({ conversation_id: conv.id, guest_id: guestId });
+      setThread(data);
+      lastCountRef.current = data.messages.length;
+    } catch {
+      /* ignore */
+    }
+  };
+
   return (
     <>
       {/* FAB */}
@@ -304,6 +315,14 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
                 className="text-[11px] text-muted-foreground hover:text-primary transition-colors"
               >
                 🙋 คุยกับแอดมิน
+              </button>
+            )}
+            {conv && (conv.status === 'escalated' || conv.status === 'answered') && (
+              <button
+                onClick={handleBackToAi}
+                className="text-[11px] text-muted-foreground hover:text-primary transition-colors"
+              >
+                🤖 กลับไปคุยกับน้องทริปเปิ้ล
               </button>
             )}
           </div>

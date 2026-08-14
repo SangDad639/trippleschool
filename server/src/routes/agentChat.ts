@@ -328,6 +328,36 @@ router.post('/escalate', optionalAuth, async (req: AuthRequest, res: Response) =
   }
 });
 
+// ============ User: back to the bot ("กลับไปคุยกับน้องทริปเปิ้ล") ============
+// Escalated/answered threads wait on a human — this hands the thread back to
+// the AI so the user can keep asking without waiting for the admin.
+router.post('/back-to-ai', optionalAuth, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.userId;
+    const guestId = cleanGuestId(req.body.guest_id);
+    const convId = Number(req.body.conversation_id);
+    if (!convId) return res.status(400).json({ error: 'Missing conversation_id' });
+    const conv = (await pool.query(`SELECT * FROM chat_conversations WHERE id = $1`, [convId])).rows[0];
+    if (!conv || !ownsConversation(conv, userId, guestId)) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    if (conv.status === 'escalated' || conv.status === 'answered') {
+      await pool.query(
+        `UPDATE chat_conversations SET status = 'ai', last_message_at = NOW() WHERE id = $1`,
+        [convId]
+      );
+      await pool.query(
+        `INSERT INTO chat_messages (conversation_id, sender_type, body) VALUES ($1, 'ai', $2)`,
+        [convId, 'น้องทริปเปิ้ลกลับมาแล้วค่ะ 🤖 ถามต่อได้เลยนะคะ (ถ้าต้องการทีมงานอีกครั้ง กด "คุยกับแอดมิน" ได้เสมอค่ะ)']
+      );
+    }
+    res.json(await getThread(convId));
+  } catch (error) {
+    console.error('[AgentChat] back-to-ai error:', error);
+    res.status(500).json({ error: 'สลับกลับไม่สำเร็จ' });
+  }
+});
+
 /* =====================  ADMIN  ===================== */
 
 // Badge polling — cheap count of chats waiting on a human.
