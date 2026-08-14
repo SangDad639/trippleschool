@@ -66,8 +66,14 @@ const Storefront = () => {
       .catch(() => setContinueItems([]));
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const featured = courses.filter((c) => c.is_featured);
-  const billboard = featured[0] || courses[0] || null;
+  // Billboard default: always the newest course (created_at DESC). Tips are
+  // single-episode extras — they never take the billboard.
+  const billboard =
+    [...courses]
+      .filter((c) => c.content_type !== 'tip')
+      .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0] ||
+    courses[0] ||
+    null;
   const rows = buildRows(courses);
 
   const query = searchQuery.trim().toLowerCase();

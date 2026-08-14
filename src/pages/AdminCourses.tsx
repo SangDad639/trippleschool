@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import DOMPurify from 'dompurify';
+import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
+import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -79,6 +80,7 @@ interface Course {
   is_featured: boolean;
   is_active: boolean;
   display_order: number;
+  created_at?: string;
   lesson_count: number;
   enrollment_count: number;
   price: number;
@@ -235,6 +237,7 @@ const AdminCourses = () => {
   const [courseLessons, setCourseLessons] = useState<Record<number, Lesson[]>>({});
   const [uploadingMaterial, setUploadingMaterial] = useState(false);
   const materialInputRef = useRef<HTMLInputElement>(null);
+  const lessonTitleRef = useRef<HTMLInputElement>(null);
   const [uploadingHtmlIdx, setUploadingHtmlIdx] = useState<number | null>(null);
   const htmlTargetIdxRef = useRef<number | null>(null);
   const htmlInputRef = useRef<HTMLInputElement>(null);
@@ -574,7 +577,11 @@ const AdminCourses = () => {
     }
   };
 
-  const handleSaveLesson = async () => {
+  // `andAddAnother`: skip closing the dialog and reset the form for the next
+  // lesson instead — added so admins uploading several lessons in a row
+  // don't have to close the dialog, re-open "เพิ่มบทเรียน", and re-pick the
+  // section every time.
+  const handleSaveLesson = async (andAddAnother = false) => {
     if (!lessonForm.title || !lessonForm.youtube_url) {
       toast.error('Error: Title and YouTube URL are required');
       return;
@@ -600,7 +607,14 @@ const AdminCourses = () => {
         });
         toast.success('Success: Lesson created successfully');
       }
-      setLessonDialogOpen(false);
+      if (andAddAnother && !editingLesson) {
+        setLessonForm({ ...initialLessonForm, section_id: lessonForm.section_id });
+        setShowMaterialPreview(false);
+        // Straight back to typing the next lesson title.
+        setTimeout(() => lessonTitleRef.current?.focus(), 50);
+      } else {
+        setLessonDialogOpen(false);
+      }
       loadCourseData(selectedCourseForLesson!.id);
       loadCourses();
     } catch (error: any) {
@@ -785,8 +799,8 @@ const AdminCourses = () => {
         ) : (
           <>
           <p className="text-gray-500 text-xs mb-3 flex items-center gap-1.5 flex-wrap">
-            <Star className="h-3.5 w-3.5 text-yellow-400" /> = ปักเป็น "คอร์สแนะนำ" (ขึ้นแถวแนะนำหน้าเว็บ · ตัวแรกสุดขึ้น Billboard หน้าแรก) ·
-            ใช้ลูกศร ▲▼ จัดลำดับการแสดงทั้งเว็บ
+            <Star className="h-3.5 w-3.5 text-yellow-400" /> = ปักเป็น "คอร์สแนะนำ" (ขึ้นแถวแนะนำหน้าเว็บ) ·
+            Billboard หน้าแรก = คอร์สที่สร้างล่าสุดเสมอ · ใช้ลูกศร ▲▼ จัดลำดับการแสดงทั้งเว็บ
           </p>
           <Accordion type="multiple" className="space-y-4">
             {courses.map((course) => (
@@ -821,9 +835,13 @@ const AdminCourses = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {/* Billboard indicator: คอร์สแนะนำตัวแรกตามลำดับ = ขึ้น Billboard หน้าแรก */}
-                        {course.is_active && course.is_featured &&
-                          courses.find((c) => c.is_active && c.is_featured)?.id === course.id && (
+                        {/* Billboard indicator: คอร์สที่สร้างล่าสุด (ไม่นับ Tip) = ขึ้น Billboard หน้าแรกเสมอ */}
+                        {course.is_active &&
+                          [...courses]
+                            .filter((c) => c.is_active && c.content_type !== 'tip')
+                            .sort(
+                              (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+                            )[0]?.id === course.id && (
                             <Badge className="bg-purple-500/15 text-purple-400 border border-purple-500/30 flex items-center gap-1">
                               <Clapperboard className="h-3 w-3" /> Billboard หน้าแรก
                             </Badge>
@@ -1395,6 +1413,7 @@ const AdminCourses = () => {
               <div>
                 <Label>ชื่อบทเรียน *</Label>
                 <Input
+                  ref={lessonTitleRef}
                   value={lessonForm.title}
                   onChange={(e) => setLessonForm({ ...lessonForm, title: e.target.value })}
                   placeholder="เช่น บทที่ 1: Introduction"
@@ -1639,20 +1658,18 @@ const AdminCourses = () => {
                             </div>
                           )}
                           {htmlDocs.map((m, idx) => {
-                            const clean = DOMPurify.sanitize(m.content || '');
+                            const clean = sanitizeMaterialHtml(m.content || '');
                             const hasVisibleText = clean.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
                             return (
                               <div key={idx} className="mt-3 rounded-lg border border-gray-800 overflow-hidden">
                                 {m.title && <p className="text-sm font-semibold text-white bg-gray-900/60 px-4 py-2">{m.title}</p>}
-                                <div className="bg-white text-gray-900 p-4 max-h-[400px] overflow-auto">
-                                  {hasVisibleText ? (
-                                    <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: clean }} />
-                                  ) : (
-                                    <pre className="whitespace-pre-wrap break-words text-sm text-gray-800 font-sans">
-                                      {(m.content || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() || 'ไม่มีเนื้อหา'}
-                                    </pre>
-                                  )}
-                                </div>
+                                {hasVisibleText ? (
+                                  <MaterialHtmlFrame html={clean} maxHeight={400} />
+                                ) : (
+                                  <pre className="bg-white text-gray-900 p-4 max-h-[400px] overflow-auto whitespace-pre-wrap break-words text-sm font-sans">
+                                    {(m.content || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() || 'ไม่มีเนื้อหา'}
+                                  </pre>
+                                )}
                               </div>
                             );
                           })}
@@ -1670,10 +1687,24 @@ const AdminCourses = () => {
               <Button variant="outline" onClick={() => setLessonDialogOpen(false)}>
                 ยกเลิก
               </Button>
-              <Button onClick={handleSaveLesson} disabled={saving} className="bg-purple-600">
-                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                บันทึก
-              </Button>
+              {editingLesson ? (
+                <Button onClick={() => handleSaveLesson(false)} disabled={saving} className="bg-purple-600">
+                  {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  บันทึก
+                </Button>
+              ) : (
+                <>
+                  {/* Bulk entry is the common flow — save-and-continue is the primary action */}
+                  <Button variant="outline" onClick={() => handleSaveLesson(false)} disabled={saving}>
+                    {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    บันทึกและปิด
+                  </Button>
+                  <Button onClick={() => handleSaveLesson(true)} disabled={saving} className="bg-purple-600">
+                    {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    บันทึก + เพิ่มบทต่อ ▸
+                  </Button>
+                </>
+              )}
             </DialogFooter>
           </DialogContent>
         </Dialog>
