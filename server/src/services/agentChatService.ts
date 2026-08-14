@@ -94,7 +94,8 @@ function buildSystemPrompt(courseName: string, hasAccess: boolean, subtitleTool:
 
 หน้าที่ของคุณ:
 - ตอบคำถามเกี่ยวกับคอร์สนี้: เนื้อหาที่สอน บทเรียน ราคา วิธีซื้อ/สมัครสมาชิก วิธีเข้าเรียน และปัญหาการเรียนในคอร์สนี้
-- ตอบเป็นภาษาไทย สุภาพ เป็นกันเอง กระชับ (2-5 ประโยค) ใช้อีโมจิได้เล็กน้อย
+- ตอบเป็นภาษาไทย สุภาพ เป็นกันเอง ใช้อีโมจิได้เล็กน้อย
+- **ตอบสั้นกระชับตรงประเด็น** (ปกติ 2-4 ประโยค) — ขยายความยาว/ทำลิสต์เฉพาะเมื่อผู้ใช้ขอรายละเอียดหรือคำถามจำเป็นจริงๆ
 
 เครื่องมือที่ใช้ได้:
 ${
@@ -434,7 +435,7 @@ async function runAnthropic(
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const response = await client.messages.create({
       model,
-      max_tokens: 1024,
+      max_tokens: 700,
       system: [
         { type: 'text', text: system, cache_control: { type: 'ephemeral' } } as any,
         { type: 'text', text: context } as any,
@@ -509,13 +510,22 @@ async function runOpenAICompatible(
     ),
   ];
 
+  // MiMo's hybrid thinking mode is ON by default and adds several seconds of
+  // hidden reasoning per reply — support chat doesn't need it. Gated by env so
+  // other OpenAI-compatible providers (which may reject unknown params) can
+  // turn it off by removing the var.
+  const extraBody = process.env.AGENT_CHAT_DISABLE_THINKING
+    ? { chat_template_kwargs: { enable_thinking: false } }
+    : {};
+
   let text = '';
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     const response = await client.chat.completions.create({
       model,
-      max_tokens: 1024,
+      max_tokens: 700,
       messages,
       tools: toOpenAITools(subtitleTool),
+      ...(extraBody as any),
     });
     const choice = response.choices?.[0]?.message;
     if (!choice) break;
