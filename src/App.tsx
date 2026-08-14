@@ -28,7 +28,6 @@ import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { LanguageProvider, useLanguage } from "@/contexts/LanguageContext";
 import SubscriptionWarningBanner from "@/components/SubscriptionWarningBanner";
 import AdminNotificationBanner from "@/components/AdminNotificationBanner";
-import AgentChatWidget from "@/components/AgentChatWidget";
 import PublicHeader from "@/components/PublicHeader";
 import Storefront from "@/pages/Storefront";
 import PublicCatalog from "@/pages/PublicCatalog";
@@ -396,7 +395,6 @@ function App() {
               <SubscriptionWarningBanner />
               <AdminNotificationBanner />
               <AppRoutes />
-              <AgentChatWidget />
               <Toaster />
             </LanguageProvider>
           </SubscriptionProvider>

@@ -12,8 +12,22 @@ import pool from '../db.js';
 import { optionalAuth, authenticate, requireAdmin, AuthRequest } from '../middleware/auth.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 import { runAgentTurn } from '../services/agentChatService.js';
+import { hasActiveSubscription } from '../services/stripeService.js';
+import { fetchAutoCaptions } from '../utils/youtubeCaptions.js';
 
 const router = Router();
+
+/** Course access = admin || active subscription || approved purchase (same gate as courses.ts). */
+async function hasCourseAccess(req: AuthRequest, courseId: number): Promise<boolean> {
+  if (req.isAdmin) return true;
+  if (!req.userId) return false;
+  if (await hasActiveSubscription(req.userId)) return true;
+  const r = await pool.query(
+    `SELECT 1 FROM course_enrollments WHERE user_id = $1 AND course_id = $2 AND status = 'approved' LIMIT 1`,
+    [req.userId, courseId]
+  );
+  return r.rows.length > 0;
+}
 
 // Two-layer cost cap: burst (15 / 10 min) + daily ceiling (60 / 24 h) per
 // user (guests fall back to per-IP). In-memory — resets on restart, which is
@@ -40,7 +54,16 @@ function cleanGuestId(raw: unknown): string | null {
 }
 
 async function getThread(convId: number) {
-  const conv = (await pool.query(`SELECT * FROM chat_conversations WHERE id = $1`, [convId])).rows[0] || null;
+  const conv =
+    (
+      await pool.query(
+        `SELECT c.*, co.name AS course_name
+         FROM chat_conversations c
+         LEFT JOIN courses co ON co.id = c.course_id
+         WHERE c.id = $1`,
+        [convId]
+      )
+    ).rows[0] || null;
   if (!conv) return null;
   const messages = (
     await pool.query(
@@ -67,11 +90,21 @@ router.post('/message', optionalAuth, chatRateLimit, chatDailyLimit, async (req:
     if (text.length > MAX_TEXT) return res.status(400).json({ error: `ข้อความยาวเกิน ${MAX_TEXT} ตัวอักษร` });
     if (!userId && !guestId) return res.status(400).json({ error: 'Missing identity' });
 
-    // Resolve conversation: explicit id (ownership-checked) → latest open → create.
+    // Per-course sessions: every message belongs to exactly one course.
+    const courseId = Number(req.body.course_id);
+    if (!Number.isInteger(courseId) || courseId <= 0) {
+      return res.status(400).json({ error: 'Missing course_id' });
+    }
+    const course = (
+      await pool.query(`SELECT id FROM courses WHERE id = $1 AND is_active = true`, [courseId])
+    ).rows[0];
+    if (!course) return res.status(404).json({ error: 'Course not found' });
+
+    // Resolve conversation: explicit id (ownership + course checked) → latest open for this course → create.
     let conv: any = null;
     if (req.body.conversation_id) {
       conv = (await pool.query(`SELECT * FROM chat_conversations WHERE id = $1`, [req.body.conversation_id])).rows[0];
-      if (!conv || !ownsConversation(conv, userId, guestId)) {
+      if (!conv || !ownsConversation(conv, userId, guestId) || conv.course_id !== courseId) {
         return res.status(404).json({ error: 'Conversation not found' });
       }
       if (conv.status === 'closed') conv = null; // closed → start fresh
@@ -79,17 +112,17 @@ router.post('/message', optionalAuth, chatRateLimit, chatDailyLimit, async (req:
     if (!conv) {
       const existing = await pool.query(
         userId
-          ? `SELECT * FROM chat_conversations WHERE user_id = $1 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`
-          : `SELECT * FROM chat_conversations WHERE user_id IS NULL AND guest_id = $1 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`,
-        [userId ?? guestId]
+          ? `SELECT * FROM chat_conversations WHERE user_id = $1 AND course_id = $2 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`
+          : `SELECT * FROM chat_conversations WHERE user_id IS NULL AND guest_id = $1 AND course_id = $2 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`,
+        [userId ?? guestId, courseId]
       );
       conv = existing.rows[0] || null;
     }
     if (!conv) {
       conv = (
         await pool.query(
-          `INSERT INTO chat_conversations (user_id, guest_id) VALUES ($1, $2) RETURNING *`,
-          [userId ?? null, userId ? null : guestId]
+          `INSERT INTO chat_conversations (user_id, guest_id, course_id) VALUES ($1, $2, $3) RETURNING *`,
+          [userId ?? null, userId ? null : guestId, courseId]
         )
       ).rows[0];
     }
@@ -107,7 +140,8 @@ router.post('/message', optionalAuth, chatRateLimit, chatDailyLimit, async (req:
           [conv.id]
         )
       ).rows;
-      const reply = await runAgentTurn(history);
+      const hasAccess = await hasCourseAccess(req, courseId);
+      const reply = await runAgentTurn(history, { courseId, hasAccess });
       await pool.query(
         `INSERT INTO chat_messages (conversation_id, sender_type, body) VALUES ($1, 'ai', $2)`,
         [conv.id, reply.text]
@@ -140,12 +174,14 @@ router.get('/conversation', optionalAuth, async (req: AuthRequest, res: Response
   try {
     const userId = req.userId;
     const guestId = cleanGuestId(req.query.guest_id);
+    const courseId = Number(req.query.course_id);
     if (!userId && !guestId) return res.json({ conversation: null, messages: [] });
+    if (!Number.isInteger(courseId) || courseId <= 0) return res.json({ conversation: null, messages: [] });
     const existing = await pool.query(
       userId
-        ? `SELECT id FROM chat_conversations WHERE user_id = $1 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`
-        : `SELECT id FROM chat_conversations WHERE user_id IS NULL AND guest_id = $1 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`,
-      [userId ?? guestId]
+        ? `SELECT id FROM chat_conversations WHERE user_id = $1 AND course_id = $2 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`
+        : `SELECT id FROM chat_conversations WHERE user_id IS NULL AND guest_id = $1 AND course_id = $2 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`,
+      [userId ?? guestId, courseId]
     );
     if (!existing.rows[0]) return res.json({ conversation: null, messages: [] });
     res.json(await getThread(existing.rows[0].id));
@@ -214,12 +250,13 @@ router.get('/admin/list', authenticate, requireAdmin, async (req: AuthRequest, r
     }
     const rows = (
       await pool.query(
-        `SELECT c.*, u.email AS user_email,
+        `SELECT c.*, u.email AS user_email, co.name AS course_name,
                 (SELECT body FROM chat_messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_message,
                 (SELECT sender_type FROM chat_messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_sender,
                 (SELECT COUNT(*)::int FROM chat_messages m WHERE m.conversation_id = c.id) AS message_count
          FROM chat_conversations c
          LEFT JOIN users u ON c.user_id = u.id
+         LEFT JOIN courses co ON co.id = c.course_id
          ${where}
          ORDER BY (c.status = 'escalated') DESC, c.last_message_at DESC
          LIMIT 200`,
@@ -242,6 +279,57 @@ router.get('/admin/list', authenticate, requireAdmin, async (req: AuthRequest, r
     res.status(500).json({ error: 'Failed to list conversations' });
   }
 });
+
+// ============ Admin: sync YouTube auto-subtitles for a course ============
+// Reads youtube_id straight from the DB (public APIs strip it for paid
+// lessons). Per-lesson failures don't abort the batch.
+// NOTE: must be registered BEFORE /admin/:id like the other named admin routes.
+router.post(
+  '/admin/course/:courseId/sync-subtitles',
+  authenticate,
+  requireAdmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const courseId = Number(req.params.courseId);
+      if (!Number.isInteger(courseId) || courseId <= 0) return res.status(400).json({ error: 'Bad course id' });
+      const lessons = (
+        await pool.query(
+          `SELECT id, title, youtube_id FROM lessons
+           WHERE course_id = $1 AND is_active = true AND youtube_id IS NOT NULL AND youtube_id <> ''
+           ORDER BY lesson_order`,
+          [courseId]
+        )
+      ).rows as Array<{ id: number; title: string; youtube_id: string }>;
+
+      const results: Array<{ lesson_id: number; title: string; status: 'ok' | 'no_captions'; chars?: number }> = [];
+      for (const l of lessons) {
+        const cap = await fetchAutoCaptions(l.youtube_id);
+        if (cap) {
+          await pool.query(
+            `INSERT INTO lesson_subtitles (lesson_id, course_id, language, content, fetched_at)
+             VALUES ($1, $2, $3, $4, NOW())
+             ON CONFLICT (lesson_id) DO UPDATE
+               SET course_id = EXCLUDED.course_id, language = EXCLUDED.language,
+                   content = EXCLUDED.content, fetched_at = NOW()`,
+            [l.id, courseId, cap.language, cap.text]
+          );
+          results.push({ lesson_id: l.id, title: l.title, status: 'ok', chars: cap.text.length });
+        } else {
+          results.push({ lesson_id: l.id, title: l.title, status: 'no_captions' });
+        }
+      }
+      res.json({
+        total: lessons.length,
+        ok: results.filter((r) => r.status === 'ok').length,
+        no_captions: results.filter((r) => r.status === 'no_captions').length,
+        results,
+      });
+    } catch (error) {
+      console.error('[AgentChat] sync subtitles error:', error);
+      res.status(500).json({ error: 'ดึงซับไตเติลไม่สำเร็จ' });
+    }
+  }
+);
 
 // NOTE: must be registered BEFORE GET /admin/:id or ':id' would capture "knowledge".
 router.get('/admin/knowledge', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {

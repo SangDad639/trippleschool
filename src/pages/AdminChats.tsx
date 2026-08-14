@@ -246,6 +246,9 @@ const AdminChats = () => {
                       <Badge className={`text-[10px] px-1.5 py-0 border ${STATUS_LABEL[row.status]?.cls || ''}`}>
                         {STATUS_LABEL[row.status]?.label || row.status}
                       </Badge>
+                      <Badge className="text-[10px] px-1.5 py-0 border bg-sky-500/15 text-sky-400 border-sky-500/30 truncate max-w-[180px]">
+                        📚 {row.course_name || 'แชททั่วไป'}
+                      </Badge>
                     </div>
                     <p className="text-xs text-gray-400 truncate">
                       {row.last_sender === 'admin' ? '↩ ทีมงาน: ' : row.last_sender === 'ai' ? '🤖 ' : ''}
@@ -275,6 +278,11 @@ const AdminChats = () => {
               <span className="truncate">
                 {threadEmail || openConv?.contact_info || `Guest ${String(openConv?.guest_id || '').slice(0, 8)}`}
               </span>
+              {openConv?.course_name && (
+                <Badge className="text-[10px] px-1.5 py-0 border bg-sky-500/15 text-sky-400 border-sky-500/30 truncate max-w-[140px]">
+                  📚 {openConv.course_name}
+                </Badge>
+              )}
               {openConv && (
                 <Select value={openConv.status} onValueChange={setStatus}>
                   <SelectTrigger className="h-7 w-32 text-xs ml-auto">

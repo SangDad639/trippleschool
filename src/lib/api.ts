@@ -2952,12 +2952,13 @@ class ApiClient {
   // ---------- Agent Chat (FAB widget) ----------
   // Sends carry retries=0 + a long timeout: a timed-out LLM call must NOT be
   // silently re-posted (would duplicate the user message + double-bill the AI).
-  async agentChatSend(data: { conversation_id?: number; guest_id?: string; text: string }): Promise<AgentChatThreadDto> {
+  async agentChatSend(data: { conversation_id?: number; guest_id?: string; course_id: number; text: string }): Promise<AgentChatThreadDto> {
     return this.request('/api/agent-chat/message', { method: 'POST', body: JSON.stringify(data) }, 0, 90000);
   }
-  async agentChatGetConversation(guestId?: string): Promise<AgentChatThreadDto> {
-    const qs = guestId ? `?guest_id=${encodeURIComponent(guestId)}` : '';
-    return this.request(`/api/agent-chat/conversation${qs}`);
+  async agentChatGetConversation(courseId: number, guestId?: string): Promise<AgentChatThreadDto> {
+    const qs = new URLSearchParams({ course_id: String(courseId) });
+    if (guestId) qs.set('guest_id', guestId);
+    return this.request(`/api/agent-chat/conversation?${qs}`);
   }
   async agentChatEscalate(data: { conversation_id: number; guest_id?: string; contact_info?: string }): Promise<AgentChatThreadDto> {
     return this.request('/api/agent-chat/escalate', { method: 'POST', body: JSON.stringify(data) });
@@ -2981,6 +2982,15 @@ class ApiClient {
   }
   async agentChatAdminSetStatus(id: number, status: string) {
     return this.request(`/api/agent-chat/admin/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
+  }
+  async agentChatSyncSubtitles(courseId: number): Promise<{
+    total: number;
+    ok: number;
+    no_captions: number;
+    results: Array<{ lesson_id: number; title: string; status: 'ok' | 'no_captions'; chars?: number }>;
+  }> {
+    // Fetching captions for a whole course can take a while — long timeout, no retry.
+    return this.request(`/api/agent-chat/admin/course/${courseId}/sync-subtitles`, { method: 'POST' }, 0, 300000);
   }
   // Knowledge base (คลังความรู้บอท)
   async agentChatKnowledgeList(): Promise<{ knowledge: AgentKnowledgeDto[] }> {
@@ -3017,6 +3027,8 @@ export interface AgentChatConversationDto {
   id: number;
   user_id: number | null;
   guest_id: string | null;
+  course_id: number | null;
+  course_name?: string | null;
   status: 'ai' | 'escalated' | 'answered' | 'closed';
   escalate_reason: string | null;
   contact_info: string | null;

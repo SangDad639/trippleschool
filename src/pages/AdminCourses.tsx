@@ -218,6 +218,7 @@ const AdminCourses = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [syncingSubtitles, setSyncingSubtitles] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
 
@@ -369,6 +370,27 @@ const AdminCourses = () => {
       loadCourses();
     } catch (error: any) {
       toast.error(`Error: ${error.message}`);
+    }
+  };
+
+  // ดึงซับไตเติลอัตโนมัติจาก YouTube ของทุกบทเรียนในคอร์ส → เป็นความรู้ให้บอทผู้ช่วยคอร์ส
+  const handleSyncSubtitles = async (course: Course) => {
+    setSyncingSubtitles(course.id);
+    try {
+      const r = await api.agentChatSyncSubtitles(course.id);
+      if (r.total === 0) {
+        toast.info('คอร์สนี้ยังไม่มีบทเรียนที่มีวิดีโอ YouTube');
+      } else if (r.ok === 0) {
+        toast.warning(`ไม่พบซับไตเติลอัตโนมัติเลย (${r.total} บท) — วิดีโออาจยังไม่ถูกสร้างซับโดย YouTube`);
+      } else {
+        toast.success(
+          `ดึงซับให้บอทสำเร็จ ${r.ok}/${r.total} บท${r.no_captions > 0 ? ` (ไม่มีซับ ${r.no_captions} บท)` : ''}`
+        );
+      }
+    } catch (error: any) {
+      toast.error(error?.message || 'ดึงซับไตเติลไม่สำเร็จ');
+    } finally {
+      setSyncingSubtitles(null);
     }
   };
 
@@ -876,6 +898,20 @@ const AdminCourses = () => {
                           <Button size="sm" variant="outline" onClick={() => handleOpenLessonDialog(course)}>
                             <Plus className="h-4 w-4 mr-1" />
                             เพิ่มบทเรียน
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={syncingSubtitles === course.id}
+                            onClick={() => handleSyncSubtitles(course)}
+                            title="ดึงซับไตเติลอัตโนมัติจาก YouTube มาเป็นความรู้ให้บอทผู้ช่วยคอร์สนี้"
+                          >
+                            {syncingSubtitles === course.id ? (
+                              <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                            ) : (
+                              '🎬 '
+                            )}
+                            ดึงซับให้บอท
                           </Button>
                           <Button
                             size="sm"

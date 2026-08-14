@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { useLocation } from 'react-router-dom';
 import { api, type AgentChatThreadDto } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -24,8 +23,13 @@ const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
   closed: { label: 'ปิดแล้ว', cls: 'bg-gray-500/15 text-gray-400 border border-gray-500/30' },
 };
 
-const AgentChatWidget = () => {
-  const location = useLocation();
+interface AgentChatWidgetProps {
+  /** The course this chat session is scoped to — one thread per course. */
+  courseId: number;
+  courseName: string;
+}
+
+const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [thread, setThread] = useState<AgentChatThreadDto>({ conversation: null, messages: [] });
@@ -35,15 +39,12 @@ const AgentChatWidget = () => {
   const listRef = useRef<HTMLDivElement>(null);
   const lastCountRef = useRef(0);
 
-  // The lesson player has its own bottom-right FAB — stay out of its way.
-  const hidden = /^\/app\/courses\/.+\/learn\//.test(location.pathname);
-
   const guestId = user ? undefined : getGuestId();
   const conv = thread.conversation;
 
   const load = async () => {
     try {
-      const data = await api.agentChatGetConversation(guestId);
+      const data = await api.agentChatGetConversation(courseId, guestId);
       setThread(data);
       return data;
     } catch {
@@ -51,13 +52,14 @@ const AgentChatWidget = () => {
     }
   };
 
-  // Initial load once (badge state even before first open).
+  // Initial load once per identity/course (badge state even before first open).
   useEffect(() => {
+    setThread({ conversation: null, messages: [] });
     load().then((data) => {
       if (data) lastCountRef.current = data.messages.length;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [user?.id, courseId]);
 
   // Poll while waiting on a human: 10s when the panel is open, 30s when closed.
   useEffect(() => {
@@ -98,6 +100,7 @@ const AgentChatWidget = () => {
       const data = await api.agentChatSend({
         conversation_id: conv?.id,
         guest_id: guestId,
+        course_id: courseId,
         text,
       });
       setThread(data);
@@ -131,8 +134,6 @@ const AgentChatWidget = () => {
     }
   };
 
-  if (hidden) return null;
-
   return (
     <>
       {/* FAB */}
@@ -149,7 +150,7 @@ const AgentChatWidget = () => {
 
       {/* Panel */}
       {open && (
-        <div className="fixed bottom-4 right-4 inset-x-2 sm:inset-x-auto sm:w-[380px] z-[60] h-[560px] max-h-[calc(100dvh-2rem)] bg-card border border-border rounded-2xl shadow-2xl flex flex-col animate-scale-in overflow-hidden">
+        <div className="fixed bottom-4 left-2 right-2 sm:left-auto sm:right-4 sm:w-[380px] z-[60] h-[560px] max-h-[calc(100dvh-2rem)] bg-card border border-border rounded-2xl shadow-2xl flex flex-col animate-scale-in overflow-hidden">
           {/* Header */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-primary/5">
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
@@ -157,7 +158,7 @@ const AgentChatWidget = () => {
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-foreground leading-tight">น้องทริปเปิ้ล</p>
-              <p className="text-[11px] text-muted-foreground">ผู้ช่วย Triple School</p>
+              <p className="text-[11px] text-muted-foreground truncate">ผู้ช่วยคอร์ส: {courseName}</p>
             </div>
             {conv && (
               <Badge className={`text-[10px] px-2 py-0.5 ${STATUS_BADGE[conv.status]?.cls || ''}`}>
@@ -177,7 +178,7 @@ const AgentChatWidget = () => {
                   <Bot className="h-4 w-4 text-primary" />
                 </div>
                 <div className="bg-muted rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-foreground max-w-[80%]">
-                  สวัสดีค่ะ 👋 น้องทริปเปิ้ลยินดีช่วยเหลือ ถามได้เลยเรื่องคอร์สเรียน ราคาสมาชิก หรือวิธีสมัครค่ะ
+                  สวัสดีค่ะ 👋 ถามได้เลยเกี่ยวกับคอร์ส "{courseName}" — เนื้อหาที่สอน ราคา หรือวิธีสมัครค่ะ
                 </div>
               </div>
             )}
