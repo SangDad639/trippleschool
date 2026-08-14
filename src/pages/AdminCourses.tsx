@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
+import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -1608,15 +1609,13 @@ const AdminCourses = () => {
                             return (
                               <div key={idx} className="mt-3 rounded-lg border border-gray-800 overflow-hidden">
                                 {m.title && <p className="text-sm font-semibold text-white bg-gray-900/60 px-4 py-2">{m.title}</p>}
-                                <div className="bg-white text-gray-900 p-4 max-h-[400px] overflow-auto">
-                                  {hasVisibleText ? (
-                                    <div className="prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: clean }} />
-                                  ) : (
-                                    <pre className="whitespace-pre-wrap break-words text-sm text-gray-800 font-sans">
-                                      {(m.content || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() || 'ไม่มีเนื้อหา'}
-                                    </pre>
-                                  )}
-                                </div>
+                                {hasVisibleText ? (
+                                  <MaterialHtmlFrame html={clean} maxHeight={400} />
+                                ) : (
+                                  <pre className="bg-white text-gray-900 p-4 max-h-[400px] overflow-auto whitespace-pre-wrap break-words text-sm font-sans">
+                                    {(m.content || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() || 'ไม่มีเนื้อหา'}
+                                  </pre>
+                                )}
                               </div>
                             );
                           })}

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
+import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -355,8 +356,6 @@ const CourseLearn = () => {
                       )}
                       {htmlDocs.map((m, idx) => {
                         const clean = sanitizeMaterialHtml(m.content || '');
-                        // Uploaded docs (Word/Docs exports) carry their own dark text colors,
-                        // so render on a white "paper" surface to stay readable regardless.
                         const hasVisibleText = clean.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
                         return (
                           <div key={idx} className="mt-3 rounded-lg border border-gray-800 overflow-hidden">
@@ -371,18 +370,13 @@ const CourseLearn = () => {
                                 ดาวน์โหลด
                               </button>
                             </div>
-                            <div className="bg-white text-gray-900 p-4 max-h-[600px] overflow-auto">
-                              {hasVisibleText ? (
-                                <div
-                                  className="prose prose-sm max-w-none select-text"
-                                  dangerouslySetInnerHTML={{ __html: clean }}
-                                />
-                              ) : (
-                                <pre className="whitespace-pre-wrap break-words text-sm text-gray-800 select-text font-sans">
-                                  {(m.content || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() || 'ไม่มีเนื้อหา'}
-                                </pre>
-                              )}
-                            </div>
+                            {hasVisibleText ? (
+                              <MaterialHtmlFrame html={clean} maxHeight={600} />
+                            ) : (
+                              <pre className="bg-white text-gray-800 p-4 max-h-[600px] overflow-auto whitespace-pre-wrap break-words text-sm select-text font-sans">
+                                {(m.content || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() || 'ไม่มีเนื้อหา'}
+                              </pre>
+                            )}
                           </div>
                         );
                       })}

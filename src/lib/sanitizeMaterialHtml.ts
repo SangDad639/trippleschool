@@ -1,28 +1,16 @@
 import DOMPurify from 'dompurify';
 
 // Uploaded lesson materials are raw HTML exports (Word/Google Docs, or a
-// syntax-highlighted "export as HTML" from a code editor). Two separate
-// things in that markup can break the readable "white paper" surface the
-// material is meant to render on:
-//
-// 1. Inline `style="..."` attributes hard-coding font-family/color/
-//    background-color on "code-like" runs (e.g. a dark console block).
-//    DOMPurify keeps the style attribute by default, so we strip those
-//    declarations here.
-// 2. An embedded `<style>` block (common in code-editor HTML exports —
-//    e.g. a dark syntax-highlighting theme). DOMPurify allows <style> tags
-//    by default, and a <style> injected via dangerouslySetInnerHTML is
-//    parsed and applied by the browser just like any other stylesheet —
-//    it is NOT scoped to the container, so it can repaint the entire
-//    material box (or page) with whatever theme the export baked in,
-//    completely bypassing the inline-attribute stripping above. Forbidding
-//    the tag outright keeps all material styling under our own control.
-DOMPurify.addHook('uponSanitizeAttribute', (_node, data) => {
-  if (data.attrName === 'style') {
-    data.attrValue = data.attrValue.replace(/(?:^|;)\s*(?:font(?:-family)?|color|background|background-color)\s*:[^;]+;?/gi, '');
-  }
-});
-
+// syntax-highlighted "export as HTML" from a code editor) and are rendered
+// inside a sandboxed <iframe> (see MaterialHtmlFrame), not injected into the
+// page DOM via dangerouslySetInnerHTML. The iframe gives the export its own
+// isolated document, so its <style>/inline colors/fonts can render exactly
+// as they do when the file is opened directly in a browser, without ever
+// repainting the surrounding app. WHOLE_DOCUMENT keeps <head>/<style> intact
+// for that. <script> stays stripped by DOMPurify's default profile, and the
+// iframe sandbox (no `allow-scripts`) is a second line of defense against
+// it. <link> is forbidden to stop the export from pulling in an external
+// stylesheet (or tracking pixel) at render time.
 export function sanitizeMaterialHtml(html: string): string {
-  return DOMPurify.sanitize(html, { FORBID_TAGS: ['style', 'link'] });
+  return DOMPurify.sanitize(html, { WHOLE_DOCUMENT: true, FORBID_TAGS: ['link'] });
 }
