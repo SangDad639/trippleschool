@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import DOMPurify from 'dompurify';
+import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -1603,7 +1603,7 @@ const AdminCourses = () => {
                             </div>
                           )}
                           {htmlDocs.map((m, idx) => {
-                            const clean = DOMPurify.sanitize(m.content || '');
+                            const clean = sanitizeMaterialHtml(m.content || '');
                             const hasVisibleText = clean.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
                             return (
                               <div key={idx} className="mt-3 rounded-lg border border-gray-800 overflow-hidden">

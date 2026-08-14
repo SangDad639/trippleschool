@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
-import DOMPurify from 'dompurify';
+import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -354,7 +354,7 @@ const CourseLearn = () => {
                         </div>
                       )}
                       {htmlDocs.map((m, idx) => {
-                        const clean = DOMPurify.sanitize(m.content || '');
+                        const clean = sanitizeMaterialHtml(m.content || '');
                         // Uploaded docs (Word/Docs exports) carry their own dark text colors,
                         // so render on a white "paper" surface to stay readable regardless.
                         const hasVisibleText = clean.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
