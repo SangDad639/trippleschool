@@ -33,6 +33,8 @@ interface LessonMaterial {
   enabled?: boolean;
   content?: string;
   fileName?: string;
+  /** List payloads strip html `content` and set this flag; full content is fetched per lesson. */
+  has_content?: boolean;
 }
 
 interface Lesson {
@@ -87,6 +89,34 @@ const CourseLearn = () => {
   const [expandedSections, setExpandedSections] = useState<Record<number, boolean>>({});
   // Purchased (or admin) → full access. Non-buyers may still watch preview lessons.
   const [hasAccess, setHasAccess] = useState(false);
+  // Full materials per lesson (html content is stripped from list payloads and
+  // fetched here on demand — a course can carry tens of MB of inline docs).
+  const [fullMaterials, setFullMaterials] = useState<Record<number, LessonMaterial[]>>({});
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+
+  useEffect(() => {
+    const lesson = currentLesson;
+    if (!lesson) return;
+    const needsFetch = (lesson.materials || []).some(
+      (m) => m.type === 'html' && !(m.content || '').trim() && m.has_content
+    );
+    if (!needsFetch || fullMaterials[lesson.id]) return;
+    let cancelled = false;
+    setMaterialsLoading(true);
+    api
+      .getLessonMaterials(lesson.id)
+      .then((r) => {
+        if (!cancelled) setFullMaterials((prev) => ({ ...prev, [lesson.id]: r.materials }));
+      })
+      .catch((e) => console.error('Failed to load materials:', e))
+      .finally(() => {
+        if (!cancelled) setMaterialsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentLesson?.id]);
 
   useEffect(() => {
     if (slug) loadCourse();
@@ -313,13 +343,19 @@ const CourseLearn = () => {
                 {currentLesson.description && <p className="text-gray-300 text-sm whitespace-pre-wrap">{currentLesson.description}</p>}
 
                 {(() => {
-                  const visible = (currentLesson.materials || []).filter((m) => m.enabled !== false);
+                  const source = fullMaterials[currentLesson.id] ?? currentLesson.materials ?? [];
+                  const visible = source.filter((m) => m.enabled !== false);
                   const downloads = visible.filter((m) => m.type !== 'html' && (m.url || '').trim());
                   const htmlDocs = visible.filter((m) => m.type === 'html' && (m.content || '').trim());
-                  if (downloads.length === 0 && htmlDocs.length === 0) return null;
+                  if (downloads.length === 0 && htmlDocs.length === 0 && !materialsLoading) return null;
                   return (
                     <div className="mt-4 pt-4 border-t border-gray-800">
                       <p className="text-sm font-medium text-white mb-2">เอกสารประกอบ</p>
+                      {materialsLoading && htmlDocs.length === 0 && (
+                        <p className="text-gray-400 text-sm flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" /> กำลังโหลดเอกสาร...
+                        </p>
+                      )}
                       {downloads.length > 0 && (
                         <div className="flex flex-wrap gap-2">
                           {downloads.map((m, idx) => {

@@ -58,7 +58,7 @@ const materialUpload = multer({
 // 25MB — Word/Docs exports embed base64 images and get large.
 const htmlUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const isHtml = /text\/html|htm/i.test(file.mimetype) || /\.(html?|htm)$/i.test(file.originalname);
     if (isHtml) cb(null, true);
@@ -89,6 +89,66 @@ interface LessonMaterial {
   enabled: boolean; // false = hidden from students (admin keeps the row)
   content?: string;
   fileName?: string; // original name of an uploaded HTML file (for the admin "attached" badge)
+}
+
+/**
+ * List payloads must NOT carry inline html `content` — a single course can hold
+ * tens of MB of embedded HTML (base64 images), which made the course page take
+ * forever to load. Lists get metadata + `has_content`; the full material is
+ * fetched per-lesson via GET /lessons/:lessonId/materials only when needed
+ * (learn page, admin edit dialog).
+ */
+function stripMaterialContent(materials: unknown): any[] {
+  if (!Array.isArray(materials)) return [];
+  return materials.map((m: any) =>
+    m?.type === 'html'
+      ? {
+          ...m,
+          content: '',
+          // Idempotent: rows already stripped in SQL carry has_content — keep it.
+          has_content: m.has_content ?? !!(m.content && String(m.content).trim()),
+        }
+      : m
+  );
+}
+
+/**
+ * SQL fragment doing the same strip INSIDE Postgres — the DB is remote, so the
+ * heavy content must never cross the wire for list queries at all (that was
+ * the actual 5s: pulling 66MB from the DB per request, even though the API
+ * response was already small).
+ */
+const MATERIALS_META_SQL = `(
+  SELECT COALESCE(jsonb_agg(
+    CASE WHEN elem->>'type' = 'html'
+         THEN (elem - 'content') || jsonb_build_object('content', '', 'has_content', COALESCE(LENGTH(elem->>'content'), 0) > 0)
+         ELSE elem END), '[]'::jsonb)
+  FROM jsonb_array_elements(%COL%) elem
+)`;
+
+function materialsMetaSql(column: string): string {
+  return MATERIALS_META_SQL.replace('%COL%', column);
+}
+
+// Guard rails for future courses: inline html docs ballooned one course to
+// 66MB of JSONB (base64 images inside exported HTML). Pages are now safe via
+// SQL-side stripping, but the per-lesson fetch still pulls the real thing —
+// so cap what admins can save and point them at PDF/Drive links instead.
+const HTML_MATERIAL_MAX = 10 * 1024 * 1024; // per doc
+const MATERIALS_TOTAL_MAX = 20 * 1024 * 1024; // per lesson
+function validateMaterialsSize(materials: LessonMaterial[]): string | null {
+  let total = 0;
+  for (const m of materials) {
+    const size = (m.content || '').length;
+    total += size;
+    if (size > HTML_MATERIAL_MAX) {
+      return `เอกสาร "${m.title || 'ไม่มีชื่อ'}" ใหญ่เกิน ${Math.round(HTML_MATERIAL_MAX / 1024 / 1024)}MB — แนะนำแนบเป็นไฟล์ PDF หรือลิงก์ Google Drive แทน (ไฟล์ HTML ที่ฝังรูปจะใหญ่มากและทำให้หน้าเรียนช้า)`;
+    }
+  }
+  if (total > MATERIALS_TOTAL_MAX) {
+    return `เอกสารรวมของบทเรียนนี้ใหญ่เกิน ${Math.round(MATERIALS_TOTAL_MAX / 1024 / 1024)}MB — แนะนำย้ายบางส่วนเป็นไฟล์ PDF หรือลิงก์ Google Drive`;
+  }
+  return null;
 }
 
 // Convert a Google Drive "share/view" link into a direct-download link so the
@@ -528,7 +588,10 @@ router.get('/:courseId/lessons', optionalAuth, async (req: AuthRequest, res) => 
     // Reveal paid-lesson youtube_id/youtube_url only to admins / enrolled owners.
     const hasAccess = !!req.isAdmin || (await hasSubscriptionOrEnrollment(req.userId, Number(courseId)));
     const result = await pool.query(`
-      SELECT * FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
+      SELECT id, course_id, section_id, title, description, youtube_url, youtube_id,
+             duration_minutes, lesson_order, is_preview, is_active, created_at, updated_at,
+             ${materialsMetaSql('materials')} AS materials
+      FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [courseId]);
     const lessons = result.rows.map((l) =>
       hasAccess || l.is_preview ? l : { ...l, youtube_id: null, youtube_url: null }
@@ -540,6 +603,30 @@ router.get('/:courseId/lessons', optionalAuth, async (req: AuthRequest, res) => 
   }
 });
 
+// Full materials for ONE lesson (learn page + admin edit dialog fetch this on
+// demand — inline html content can be MBs, so it never rides in list payloads).
+// Same access gate as the video endpoint: preview OR admin OR sub/enrollment.
+router.get('/lessons/:lessonId/materials', optionalAuth, async (req: AuthRequest, res) => {
+  try {
+    const lessonId = Number(req.params.lessonId);
+    if (!Number.isInteger(lessonId) || lessonId <= 0) return res.status(400).json({ error: 'Bad lesson id' });
+    const lesson = (
+      await pool.query(`SELECT id, course_id, is_preview, materials FROM lessons WHERE id = $1`, [lessonId])
+    ).rows[0];
+    if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
+    const hasAccess =
+      lesson.is_preview || !!req.isAdmin || (await hasSubscriptionOrEnrollment(req.userId, lesson.course_id));
+    if (!hasAccess) return res.status(403).json({ error: 'ต้องซื้อคอร์สหรือเป็นสมาชิกก่อน' });
+    const all = Array.isArray(lesson.materials) ? lesson.materials : [];
+    // Students only see enabled rows; admins get everything (edit dialog).
+    const materials = req.isAdmin ? all : all.filter((m: any) => m?.enabled !== false);
+    res.json({ lesson_id: lesson.id, materials });
+  } catch (error) {
+    console.error('Error fetching lesson materials:', error);
+    res.status(500).json({ error: 'Failed to fetch materials' });
+  }
+});
+
 router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) => {
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
@@ -548,6 +635,8 @@ router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) =>
     if (!title || !youtube_url) return res.status(400).json({ error: 'Title and YouTube URL are required' });
     const youtube_id = extractYoutubeId(youtube_url);
     const cleanMaterials = sanitizeMaterials(materials);
+    const sizeError = validateMaterialsSize(cleanMaterials);
+    if (sizeError) return res.status(400).json({ error: sizeError });
     let order = lesson_order;
     if (order === undefined || order === null) {
       if (section_id) {
@@ -578,6 +667,10 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
     const { id } = req.params;
     const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, is_active, section_id, materials } = req.body;
     const youtube_id = youtube_url ? extractYoutubeId(youtube_url) : undefined;
+    if (materials !== undefined) {
+      const sizeError = validateMaterialsSize(sanitizeMaterials(materials));
+      if (sizeError) return res.status(400).json({ error: sizeError });
+    }
     let query = `
       UPDATE lessons SET
         title = COALESCE($1, title),
@@ -771,14 +864,16 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
       SELECT id, title, description, section_order, mode FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
-      SELECT id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, section_id, materials
+      SELECT id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, section_id,
+             ${materialsMetaSql('materials')} AS materials
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
     const lessons = lessonsResult.rows.map((lesson) => {
       if (!hasAccess && !lesson.is_preview) return { ...lesson, youtube_url: null, youtube_id: null, materials: [] };
       // Students only see materials flagged enabled (admin can hide without deleting).
+      // Metadata only — inline html content is fetched per-lesson on demand.
       const materials = Array.isArray(lesson.materials) ? lesson.materials.filter((m: any) => m?.enabled !== false) : [];
-      return { ...lesson, materials };
+      return { ...lesson, materials: stripMaterialContent(materials) };
     });
     const sections = sectionsResult.rows.map((section) => ({ ...section, lessons: lessons.filter(l => l.section_id === section.id) }));
     const unassignedLessons = lessons.filter(l => l.section_id === null);
@@ -803,7 +898,8 @@ router.get('/:slug', async (req, res) => {
       SELECT id, title, description, section_order, mode FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
-      SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id, materials
+      SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id,
+             ${materialsMetaSql('materials')} AS materials
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
     // Public payload: only preview lessons expose youtube + materials; paid lessons
@@ -811,7 +907,7 @@ router.get('/:slug', async (req, res) => {
     const lessons = lessonsResult.rows.map((l) => {
       if (!l.is_preview) return { ...l, youtube_id: null, youtube_url: null, materials: [] };
       const materials = Array.isArray(l.materials) ? l.materials.filter((m: any) => m?.enabled !== false) : [];
-      return { ...l, materials };
+      return { ...l, materials: stripMaterialContent(materials) };
     });
     const sections = sectionsResult.rows.map((section) => ({ ...section, lessons: lessons.filter(l => l.section_id === section.id) }));
     const unassignedLessons = lessons.filter(l => l.section_id === null);

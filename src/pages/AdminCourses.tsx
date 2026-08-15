@@ -108,6 +108,8 @@ interface LessonMaterial {
   enabled?: boolean;
   content?: string;
   fileName?: string;
+  /** Set by list payloads whose html content was stripped (fetch full before editing). */
+  has_content?: boolean;
 }
 
 interface Lesson {
@@ -550,6 +552,17 @@ const AdminCourses = () => {
     }
     if (lesson) {
       setEditingLesson(lesson);
+      // List payloads strip inline html content — MUST fetch the full
+      // materials before filling the form, or saving would wipe the docs.
+      let materials = lesson.materials ?? [];
+      const stripped = materials.some((m: any) => m?.type === 'html' && !(m.content || '').trim() && m.has_content);
+      if (stripped) {
+        try {
+          materials = (await api.getLessonMaterials(lesson.id)).materials;
+        } catch (error: any) {
+          toast.error('โหลดเอกสารของบทเรียนไม่สำเร็จ — ปิดแล้วลองใหม่ (อย่าเพิ่งกดบันทึก เนื้อเอกสารอาจหาย)');
+        }
+      }
       setLessonForm({
         title: lesson.title,
         description: lesson.description || '',
@@ -557,7 +570,7 @@ const AdminCourses = () => {
         duration_minutes: lesson.duration_minutes || 0,
         is_preview: lesson.is_preview,
         section_id: lesson.section_id,
-        materials: lesson.materials ?? [],
+        materials,
       });
     } else {
       setEditingLesson(null);

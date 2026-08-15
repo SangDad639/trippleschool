@@ -2821,6 +2821,10 @@ class ApiClient {
   async getLessonVideo(slug: string, lessonId: number) {
     return this.request(`/api/courses/${encodeURIComponent(slug)}/lessons/${lessonId}/video`);
   }
+  /** Full materials (incl. inline html content) for one lesson — list payloads carry metadata only. */
+  async getLessonMaterials(lessonId: number): Promise<{ lesson_id: number; materials: any[] }> {
+    return this.request(`/api/courses/lessons/${lessonId}/materials`);
+  }
   async getAdminCourses() {
     return this.request('/api/courses/admin/all');
   }
