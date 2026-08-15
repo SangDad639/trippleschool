@@ -3,7 +3,6 @@ import PublicHeader from '@/components/PublicHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import ProgramCard from '@/components/programs/ProgramCard';
-import ComingSoonCard from '@/components/programs/ComingSoonCard';
 import { PROGRAMS } from '@/components/programs/programsData';
 import { Crown, ArrowRight } from 'lucide-react';
 
@@ -40,7 +39,6 @@ const Programs = () => {
           {PROGRAMS.map((program) => (
             <ProgramCard key={program.slug} program={program} />
           ))}
-          <ComingSoonCard />
         </div>
 
         {/* Member gate strip */}
