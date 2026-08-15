@@ -33,6 +33,7 @@ import Storefront from "@/pages/Storefront";
 import PublicCatalog from "@/pages/PublicCatalog";
 import TipsCatalog from "@/pages/TipsCatalog";
 import Programs from "@/pages/Programs";
+import ProgramDetail from "@/pages/ProgramDetail";
 import Pricing from "@/pages/Pricing";
 import Subscription from "@/pages/Subscription";
 import SubscriptionSuccess from "@/pages/SubscriptionSuccess";
@@ -328,6 +329,7 @@ function AppRoutes() {
       <Route path="/courses" element={<PublicCatalog />} />
       <Route path="/tips" element={<TipsCatalog />} />
       <Route path="/programs" element={<Programs />} />
+      <Route path="/programs/:slug" element={<ProgramDetail />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/courses/:slug" element={<CourseDetail />} />
       <Route path="/tutorials" element={<Tutorials />} />
