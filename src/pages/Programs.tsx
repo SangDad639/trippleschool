@@ -39,7 +39,9 @@ const DOWNLOADS: DownloadTarget[] = [
     key: 'macos',
     label: 'ดาวน์โหลดสำหรับ macOS',
     icon: Apple,
-    url: import.meta.env.VITE_TRIPLE_VOICE_MAC_URL || '',
+    url:
+      import.meta.env.VITE_TRIPLE_VOICE_MAC_URL ||
+      'https://www.mediafire.com/file/wb7z1kyeoxujl2n/Triple_Voice.dmg/file',
   },
 ];
 
