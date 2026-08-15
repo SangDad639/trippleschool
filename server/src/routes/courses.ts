@@ -8,6 +8,7 @@ import multer from 'multer';
 import pool from '../db.js';
 import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth.js';
 import { uploadFile, getFile } from '../utils/s3.js';
+import { makeThumbnailVariant, variantKey } from '../utils/imageResize.js';
 import { hasActiveSubscription } from '../services/stripeService.js';
 
 const router = Router();
@@ -198,9 +199,24 @@ function extractYoutubeId(url: string): string | null {
 }
 
 // ============ Public thumbnail proxy (no auth so <img> can load) ============
+// ?v=card|hero serves the pre-generated webp variant (a fraction of the
+// original size); missing variants fall back to the original transparently,
+// so old thumbnails keep working until the backfill script has run.
 router.get('/thumbnails/*', async (req: Request, res: Response) => {
   try {
     const key = (req.params as any)[0];
+    const v = req.query.v;
+    if (v === 'card' || v === 'hero') {
+      try {
+        const varObj = await getFile(variantKey(key, v));
+        res.setHeader('Content-Type', 'image/webp');
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        (varObj.Body as any).pipe(res);
+        return;
+      } catch {
+        /* variant not generated yet — fall back to original below */
+      }
+    }
     const obj = await getFile(key);
     if (obj.ContentType) res.setHeader('Content-Type', obj.ContentType);
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
@@ -219,6 +235,16 @@ router.post('/upload-thumbnail', authenticate, thumbUpload.single('thumbnail'), 
     const rand = Math.random().toString(36).slice(2, 10);
     const key = `course-thumb/${Date.now()}-${rand}.${ext}`;
     await uploadFile(req.file.buffer, key, req.file.mimetype, { contentDisposition: 'inline' });
+    // Pre-generate small webp variants (2MB PNG → ~40-150KB). Failures are
+    // non-fatal: the proxy falls back to the original.
+    for (const v of ['card', 'hero'] as const) {
+      try {
+        const out = await makeThumbnailVariant(req.file.buffer, v);
+        if (out) await uploadFile(out, variantKey(key, v), 'image/webp', { contentDisposition: 'inline' });
+      } catch (e) {
+        console.error(`[thumb] ${v} variant failed:`, e);
+      }
+    }
     res.json({ url: `/api/courses/thumbnails/${key}` });
   } catch (error) {
     console.error('Error uploading thumbnail:', error);

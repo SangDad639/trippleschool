@@ -911,7 +911,7 @@ const AdminCourses = () => {
                       <div className="flex items-center gap-4">
                         {course.thumbnail_url ? (
                           <img
-                            src={api.mediaUrl(course.thumbnail_url)}
+                            src={api.mediaUrl(course.thumbnail_url, 'card')}
                             alt={course.name}
                             className="w-16 h-10 rounded object-cover"
                           />

@@ -484,7 +484,8 @@ async function runOpenAICompatible(
   system: string,
   context: string,
   opts: AgentTurnOptions,
-  subtitleTool: boolean
+  subtitleTool: boolean,
+  onDelta?: (text: string) => void
 ): Promise<AgentReply> {
   const client = new OpenAI({
     baseURL: process.env.AGENT_CHAT_BASE_URL,
@@ -520,14 +521,49 @@ async function runOpenAICompatible(
 
   let text = '';
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const response = await client.chat.completions.create({
-      model,
-      max_tokens: 700,
-      messages,
-      tools: toOpenAITools(subtitleTool),
-      ...(extraBody as any),
-    });
-    const choice = response.choices?.[0]?.message;
+    let choice: any;
+    if (onDelta) {
+      // Streaming: emit content deltas live; tool_call deltas are accumulated
+      // silently and handled exactly like the non-streaming path below.
+      const stream: any = await client.chat.completions.create({
+        model,
+        max_tokens: 700,
+        messages,
+        tools: toOpenAITools(subtitleTool),
+        stream: true,
+        ...(extraBody as any),
+      });
+      let content = '';
+      const acc: any[] = [];
+      for await (const chunk of stream) {
+        const delta = chunk.choices?.[0]?.delta;
+        if (!delta) continue;
+        if (delta.content) {
+          content += delta.content;
+          onDelta(delta.content);
+        }
+        if (delta.tool_calls) {
+          for (const tc of delta.tool_calls) {
+            const i = tc.index ?? 0;
+            acc[i] = acc[i] || { id: tc.id, type: 'function', function: { name: '', arguments: '' } };
+            if (tc.id) acc[i].id = tc.id;
+            if (tc.function?.name) acc[i].function.name += tc.function.name;
+            if (tc.function?.arguments) acc[i].function.arguments += tc.function.arguments;
+          }
+        }
+      }
+      const toolCallsAcc = acc.filter(Boolean);
+      choice = { role: 'assistant', content, tool_calls: toolCallsAcc.length ? toolCallsAcc : undefined };
+    } else {
+      const response = await client.chat.completions.create({
+        model,
+        max_tokens: 700,
+        messages,
+        tools: toOpenAITools(subtitleTool),
+        ...(extraBody as any),
+      });
+      choice = response.choices?.[0]?.message;
+    }
     if (!choice) break;
 
     const toolCalls: any[] = choice.tool_calls || [];
@@ -589,7 +625,9 @@ async function runOpenAICompatible(
  */
 export async function runAgentTurn(
   history: Array<{ sender_type: string; body: string }>,
-  opts: AgentTurnOptions
+  opts: AgentTurnOptions,
+  /** Streaming: called with each text chunk as the model generates (openai path only). */
+  onDelta?: (text: string) => void
 ): Promise<AgentReply> {
   if (!aiAvailable()) {
     return { text: FALLBACK_UNAVAILABLE, escalated: false, escalateReason: null };
@@ -599,7 +637,8 @@ export async function runAgentTurn(
     // Offer the subtitle tool only when it can return something real.
     const subtitleTool = opts.hasAccess && subbedLessons > 0;
     const system = buildSystemPrompt(courseName, opts.hasAccess, subtitleTool);
-    if (getProvider() === 'openai') return await runOpenAICompatible(history, system, context, opts, subtitleTool);
+    if (getProvider() === 'openai')
+      return await runOpenAICompatible(history, system, context, opts, subtitleTool, onDelta);
     return await runAnthropic(history, system, context, opts, subtitleTool);
   } catch (err) {
     console.error('[AgentChat] provider call failed:', err);

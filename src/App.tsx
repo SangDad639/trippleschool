@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation, useSearchParams } from "react-router-dom";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 
 declare global {
   interface Window {
@@ -29,31 +29,35 @@ import { LanguageProvider, useLanguage } from "@/contexts/LanguageContext";
 import SubscriptionWarningBanner from "@/components/SubscriptionWarningBanner";
 import AdminNotificationBanner from "@/components/AdminNotificationBanner";
 import PublicHeader from "@/components/PublicHeader";
+// Eager: public surfaces every visitor hits (fast first paint, no extra roundtrip).
 import Storefront from "@/pages/Storefront";
 import PublicCatalog from "@/pages/PublicCatalog";
 import TipsCatalog from "@/pages/TipsCatalog";
 import Programs from "@/pages/Programs";
 import Pricing from "@/pages/Pricing";
-import Subscription from "@/pages/Subscription";
-import SubscriptionSuccess from "@/pages/SubscriptionSuccess";
-import Admin from "@/pages/Admin";
-import AdminAffiliate from "@/pages/AdminAffiliate";
-import AdminBanners from "@/pages/AdminBanners";
-import AdminBannerEditor from "@/pages/AdminBannerEditor";
-import Profile from "@/pages/Profile";
-import Affiliate from "@/pages/Affiliate";
-import Tutorials from "@/pages/Tutorials";
-import AffiliateInfo from "@/pages/AffiliateInfo";
-import Update, { UpdateDetail } from "@/pages/Update";
-import SubscriptionTransferV2 from "@/pages/SubscriptionTransferV2";
-import CheckoutComplete from "@/pages/CheckoutComplete";
-import PendingApproval from "@/pages/PendingApproval";
 import CourseDetail from "@/pages/CourseDetail";
-import CourseLearn from "@/pages/CourseLearn";
-import MyCourses from "@/pages/MyCourses";
-import AdminCourses from "@/pages/AdminCourses";
-import AdminEnrollments from "@/pages/AdminEnrollments";
-import AdminChats from "@/pages/AdminChats";
+// Lazy: heavy / logged-in / admin pages — split out of the initial bundle so
+// casual visitors never download them.
+const Subscription = lazy(() => import("@/pages/Subscription"));
+const SubscriptionSuccess = lazy(() => import("@/pages/SubscriptionSuccess"));
+const Admin = lazy(() => import("@/pages/Admin"));
+const AdminAffiliate = lazy(() => import("@/pages/AdminAffiliate"));
+const AdminBanners = lazy(() => import("@/pages/AdminBanners"));
+const AdminBannerEditor = lazy(() => import("@/pages/AdminBannerEditor"));
+const Profile = lazy(() => import("@/pages/Profile"));
+const Affiliate = lazy(() => import("@/pages/Affiliate"));
+const Tutorials = lazy(() => import("@/pages/Tutorials"));
+const AffiliateInfo = lazy(() => import("@/pages/AffiliateInfo"));
+const Update = lazy(() => import("@/pages/Update"));
+const UpdateDetail = lazy(() => import("@/pages/Update").then((m) => ({ default: m.UpdateDetail })));
+const SubscriptionTransferV2 = lazy(() => import("@/pages/SubscriptionTransferV2"));
+const CheckoutComplete = lazy(() => import("@/pages/CheckoutComplete"));
+const PendingApproval = lazy(() => import("@/pages/PendingApproval"));
+const CourseLearn = lazy(() => import("@/pages/CourseLearn"));
+const MyCourses = lazy(() => import("@/pages/MyCourses"));
+const AdminCourses = lazy(() => import("@/pages/AdminCourses"));
+const AdminEnrollments = lazy(() => import("@/pages/AdminEnrollments"));
+const AdminChats = lazy(() => import("@/pages/AdminChats"));
 
 // Login/Register page
 const AuthPage = () => {
@@ -394,7 +398,15 @@ function App() {
               <SubscriptionRedirectHandler />
               <SubscriptionWarningBanner />
               <AdminNotificationBanner />
-              <AppRoutes />
+              <Suspense
+                fallback={
+                  <div className="min-h-screen bg-background flex items-center justify-center">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+                  </div>
+                }
+              >
+                <AppRoutes />
+              </Suspense>
               <Toaster />
             </LanguageProvider>
           </SubscriptionProvider>

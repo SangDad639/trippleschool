@@ -35,6 +35,7 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
   const [thread, setThread] = useState<AgentChatThreadDto>({ conversation: null, messages: [] });
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
   const [unread, setUnread] = useState(false);
   const [attachedImage, setAttachedImage] = useState<File | null>(null);
   const [attachedPreview, setAttachedPreview] = useState<string>('');
@@ -81,7 +82,7 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
   // Autoscroll on new messages.
   useEffect(() => {
     if (open && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
-  }, [open, thread.messages.length, sending]);
+  }, [open, thread.messages.length, sending, streamingText]);
 
   const handleOpen = () => {
     setOpen(true);
@@ -132,13 +133,24 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
       ],
     }));
     try {
-      const data = await api.agentChatSend({
+      const payload = {
         conversation_id: conv?.id,
         guest_id: guestId,
         course_id: courseId,
         text,
         image: image ?? undefined,
-      });
+      };
+      let data: AgentChatThreadDto;
+      try {
+        // Streaming first — the reply types itself out live.
+        setStreamingText('');
+        data = await api.agentChatSendStream(payload, (chunk) => setStreamingText((s) => s + chunk));
+      } catch {
+        // Any stream failure → plain request (identical behavior, just slower).
+        setStreamingText('');
+        data = await api.agentChatSend(payload);
+      }
+      setStreamingText('');
       setThread(data);
       lastCountRef.current = data.messages.length;
     } catch (e: any) {
@@ -262,9 +274,16 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
                 <div className="w-7 h-7 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
                   <Bot className="h-4 w-4 text-primary" />
                 </div>
-                <div className="bg-muted rounded-2xl rounded-tl-sm px-3 py-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                </div>
+                {streamingText ? (
+                  <div className="bg-muted rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-foreground max-w-[80%] whitespace-pre-wrap break-words">
+                    {streamingText}
+                    <span className="inline-block w-1.5 h-4 ml-0.5 align-text-bottom bg-primary/70 animate-pulse" />
+                  </div>
+                ) : (
+                  <div className="bg-muted rounded-2xl rounded-tl-sm px-3 py-2">
+                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -2,6 +2,7 @@
 import './config.js';
 
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -56,6 +57,17 @@ console.log('✅ Environment validation passed');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// gzip JSON/HTML responses (course payloads shrink ~5x). SSE (text/event-stream)
+// is skipped via the no-transform Cache-Control header set by that endpoint.
+app.use(
+  compression({
+    filter: (req, res) => {
+      if (res.getHeader('Content-Type')?.toString().includes('text/event-stream')) return false;
+      return compression.filter(req, res);
+    },
+  })
+);
 
 // CORS configuration
 const allowedOrigins = [
