@@ -49,10 +49,19 @@ class ApiClient {
    * raw relative path would hit the FE origin and 404. Prepend the API base for
    * relative "/..." paths; pass through values that are already absolute.
    */
-  mediaUrl(path?: string | null): string {
+  mediaUrl(path?: string | null, variant?: 'card' | 'hero'): string {
     if (!path) return '';
-    if (/^https?:\/\//i.test(path)) return path;
-    return path.startsWith('/') ? `${this.apiUrl}${path}` : path;
+    let out = /^https?:\/\//i.test(path) ? path : path.startsWith('/') ? `${this.apiUrl}${path}` : path;
+    // Course thumbnails have pre-generated webp variants (?v=card ~40KB,
+    // ?v=hero ~150KB vs 2MB originals). The proxy falls back to the original
+    // when a variant is missing, so this is always safe to request.
+    if (variant && out.includes('/api/courses/thumbnails/')) {
+      // r= is a cache revision: variants are cached immutable for a year, so
+      // bump it whenever regenerated files must replace stale browser caches
+      // (r=2: first batch had corrupt RIFF headers).
+      out += (out.includes('?') ? '&' : '?') + `v=${variant}&r=2`;
+    }
+    return out;
   }
 
   /**
@@ -2821,6 +2830,10 @@ class ApiClient {
   async getLessonVideo(slug: string, lessonId: number) {
     return this.request(`/api/courses/${encodeURIComponent(slug)}/lessons/${lessonId}/video`);
   }
+  /** Full materials (incl. inline html content) for one lesson — list payloads carry metadata only. */
+  async getLessonMaterials(lessonId: number): Promise<{ lesson_id: number; materials: any[] }> {
+    return this.request(`/api/courses/lessons/${lessonId}/materials`);
+  }
   async getAdminCourses() {
     return this.request('/api/courses/admin/all');
   }
@@ -2971,6 +2984,66 @@ class ApiClient {
     }
     const { image: _img, ...json } = data;
     return this.request('/api/agent-chat/message', { method: 'POST', body: JSON.stringify(json) }, 0, 90000);
+  }
+  /**
+   * Streamed send (SSE): onDelta fires per text chunk while the bot writes;
+   * resolves with the final thread. Throws on transport failure — caller
+   * should fall back to agentChatSend().
+   */
+  async agentChatSendStream(
+    data: { conversation_id?: number; guest_id?: string; course_id: number; text: string; image?: File },
+    onDelta: (text: string) => void
+  ): Promise<AgentChatThreadDto> {
+    let body: BodyInit;
+    const headers: Record<string, string> = {};
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    if (data.image) {
+      const form = new FormData();
+      if (data.conversation_id) form.append('conversation_id', String(data.conversation_id));
+      if (data.guest_id) form.append('guest_id', data.guest_id);
+      form.append('course_id', String(data.course_id));
+      form.append('text', data.text);
+      form.append('image', data.image);
+      body = form;
+    } else {
+      headers['Content-Type'] = 'application/json';
+      const { image: _i, ...json } = data;
+      body = JSON.stringify(json);
+    }
+    const resp = await fetch(`${this.apiUrl}/api/agent-chat/message/stream`, { method: 'POST', headers, body });
+    if (!resp.ok || !resp.body) {
+      const err = await resp.json().catch(() => ({ error: 'stream failed' }));
+      throw new Error((err as any).error || 'stream failed');
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let done: AgentChatThreadDto | null = null;
+    let streamError: string | null = null;
+    for (;;) {
+      const { value, done: eof } = await reader.read();
+      if (eof) break;
+      buffer += decoder.decode(value, { stream: true });
+      // SSE frames are separated by a blank line.
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop() || '';
+      for (const frame of frames) {
+        const eventMatch = frame.match(/^event: (.+)$/m);
+        const dataMatch = frame.match(/^data: (.+)$/m);
+        if (!eventMatch || !dataMatch) continue;
+        try {
+          const payload = JSON.parse(dataMatch[1]);
+          if (eventMatch[1] === 'delta' && payload.text) onDelta(payload.text);
+          else if (eventMatch[1] === 'done') done = payload;
+          else if (eventMatch[1] === 'error') streamError = payload.error || 'stream error';
+        } catch {
+          /* ignore malformed frame */
+        }
+      }
+    }
+    if (streamError) throw new Error(streamError);
+    if (!done) throw new Error('stream ended without done event');
+    return done;
   }
   async agentChatGetConversation(courseId: number, guestId?: string): Promise<AgentChatThreadDto> {
     const qs = new URLSearchParams({ course_id: String(courseId) });

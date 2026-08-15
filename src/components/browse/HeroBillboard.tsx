@@ -16,7 +16,7 @@ const HeroBillboard = ({ course }: { course: BrowseCourse }) => {
     <section className="relative h-[65vh] min-h-[440px] w-full overflow-hidden">
       {course.thumbnail_url ? (
         <img
-          src={api.mediaUrl(course.thumbnail_url)}
+          src={api.mediaUrl(course.thumbnail_url, 'hero')}
           alt={course.name}
           className="absolute inset-0 w-full h-full object-cover"
         />

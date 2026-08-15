@@ -39,7 +39,7 @@ const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statu
     >
       {course.thumbnail_url ? (
         <img
-          src={api.mediaUrl(course.thumbnail_url)}
+          src={api.mediaUrl(course.thumbnail_url, 'card')}
           alt={course.name}
           loading="lazy"
           className="absolute inset-0 w-full h-full object-cover"

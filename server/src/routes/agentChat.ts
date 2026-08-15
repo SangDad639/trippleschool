@@ -149,125 +149,191 @@ router.get('/images/*', async (req: Request, res: Response) => {
   }
 });
 
+/* ============ Shared message pipeline (used by /message and /message/stream) ============ */
+
+type PreparedMessage =
+  | { error: { status: number; msg: string } }
+  | { conv: any; courseId: number; image: Express.Multer.File | null };
+
+/** Validate → expire stale sessions → resolve conversation → store image + user message. */
+async function prepareIncomingMessage(req: AuthRequest): Promise<PreparedMessage> {
+  const userId = req.userId;
+  const guestId = cleanGuestId(req.body.guest_id);
+  const text = typeof req.body.text === 'string' ? req.body.text.trim() : '';
+  const image = req.file || null;
+  if (!text && !image) return { error: { status: 400, msg: 'ข้อความว่างเปล่า' } };
+  if (text.length > MAX_TEXT) return { error: { status: 400, msg: `ข้อความยาวเกิน ${MAX_TEXT} ตัวอักษร` } };
+  if (!userId && !guestId) return { error: { status: 400, msg: 'Missing identity' } };
+
+  // Per-course sessions: every message belongs to exactly one course.
+  const courseId = Number(req.body.course_id);
+  if (!Number.isInteger(courseId) || courseId <= 0) return { error: { status: 400, msg: 'Missing course_id' } };
+  const course = (
+    await pool.query(`SELECT id FROM courses WHERE id = $1 AND is_active = true`, [courseId])
+  ).rows[0];
+  if (!course) return { error: { status: 404, msg: 'Course not found' } };
+
+  // Expire stale AI sessions (1h after last message) for this identity+course.
+  await pool.query(
+    userId
+      ? `UPDATE chat_conversations SET status = 'closed'
+         WHERE user_id = $1 AND course_id = $2 AND status = 'ai'
+           AND last_message_at < NOW() - INTERVAL '${SESSION_TTL_MINUTES} minutes'`
+      : `UPDATE chat_conversations SET status = 'closed'
+         WHERE user_id IS NULL AND guest_id = $1 AND course_id = $2 AND status = 'ai'
+           AND last_message_at < NOW() - INTERVAL '${SESSION_TTL_MINUTES} minutes'`,
+    [userId ?? guestId, courseId]
+  );
+
+  // Resolve conversation: explicit id (ownership + course checked) → latest open for this course → create.
+  let conv: any = null;
+  if (req.body.conversation_id) {
+    conv = (await pool.query(`SELECT * FROM chat_conversations WHERE id = $1`, [req.body.conversation_id])).rows[0];
+    if (!conv || !ownsConversation(conv, userId, guestId) || conv.course_id !== courseId) {
+      return { error: { status: 404, msg: 'Conversation not found' } };
+    }
+    if (conv.status === 'closed' || sessionExpired(conv)) conv = null; // closed/expired → start fresh
+  }
+  if (!conv) {
+    const existing = await pool.query(
+      userId
+        ? `SELECT * FROM chat_conversations WHERE user_id = $1 AND course_id = $2 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`
+        : `SELECT * FROM chat_conversations WHERE user_id IS NULL AND guest_id = $1 AND course_id = $2 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`,
+      [userId ?? guestId, courseId]
+    );
+    conv = existing.rows[0] || null;
+    if (conv && sessionExpired(conv)) conv = null;
+  }
+  if (!conv) {
+    conv = (
+      await pool.query(
+        `INSERT INTO chat_conversations (user_id, guest_id, course_id) VALUES ($1, $2, $3) RETURNING *`,
+        [userId ?? null, userId ? null : guestId, courseId]
+      )
+    ).rows[0];
+  }
+
+  // Store the attached image (if any) in S3 under an unguessable key.
+  let imageUrl: string | null = null;
+  if (image) {
+    const ext = (image.originalname?.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+    const key = `chat-images/${conv.id}/${crypto.randomUUID()}.${ext}`;
+    await uploadFile(image.buffer, key, image.mimetype, { contentDisposition: 'inline' });
+    imageUrl = `/api/agent-chat/images/${key}`;
+  }
+
+  await pool.query(
+    `INSERT INTO chat_messages (conversation_id, sender_type, body, image_url) VALUES ($1, 'user', $2, $3)`,
+    [conv.id, text || '(ส่งรูปภาพ)', imageUrl]
+  );
+
+  return { conv, courseId, image };
+}
+
+/** Run the bot (or the waiting-on-human branch) and persist the outcome. */
+async function processBotTurn(
+  req: AuthRequest,
+  conv: any,
+  courseId: number,
+  image: Express.Multer.File | null,
+  onDelta?: (text: string) => void
+): Promise<void> {
+  if (conv.status === 'ai') {
+    const history = (
+      await pool.query(
+        `SELECT sender_type, body, image_url FROM chat_messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC`,
+        [conv.id]
+      )
+    ).rows;
+    const hasAccess = await hasCourseAccess(req, courseId);
+    const reply = await runAgentTurn(
+      history,
+      {
+        courseId,
+        hasAccess,
+        // Only the current turn's image goes to the model (as base64).
+        image: image ? { base64: image.buffer.toString('base64'), mimeType: image.mimetype } : undefined,
+      },
+      onDelta
+    );
+    await pool.query(
+      `INSERT INTO chat_messages (conversation_id, sender_type, body) VALUES ($1, 'ai', $2)`,
+      [conv.id, reply.text]
+    );
+    if (reply.escalated) {
+      await pool.query(
+        `UPDATE chat_conversations SET status = 'escalated', escalate_reason = COALESCE($2, escalate_reason), last_message_at = NOW() WHERE id = $1`,
+        [conv.id, reply.escalateReason]
+      );
+    } else {
+      await pool.query(`UPDATE chat_conversations SET last_message_at = NOW() WHERE id = $1`, [conv.id]);
+    }
+  } else {
+    // Waiting on a human — store the message; an 'answered' thread reopens.
+    await pool.query(
+      `UPDATE chat_conversations SET status = CASE WHEN status = 'answered' THEN 'escalated' ELSE status END, last_message_at = NOW() WHERE id = $1`,
+      [conv.id]
+    );
+  }
+}
+
 // ============ User: send a message (JSON, or multipart when an image is attached) ============
 router.post('/message', optionalAuth, chatRateLimit, chatDailyLimit, uploadChatImage, async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.userId;
-    const guestId = cleanGuestId(req.body.guest_id);
-    const text = typeof req.body.text === 'string' ? req.body.text.trim() : '';
-    const image = req.file || null;
-    if (!text && !image) return res.status(400).json({ error: 'ข้อความว่างเปล่า' });
-    if (text.length > MAX_TEXT) return res.status(400).json({ error: `ข้อความยาวเกิน ${MAX_TEXT} ตัวอักษร` });
-    if (!userId && !guestId) return res.status(400).json({ error: 'Missing identity' });
-
-    // Per-course sessions: every message belongs to exactly one course.
-    const courseId = Number(req.body.course_id);
-    if (!Number.isInteger(courseId) || courseId <= 0) {
-      return res.status(400).json({ error: 'Missing course_id' });
-    }
-    const course = (
-      await pool.query(`SELECT id FROM courses WHERE id = $1 AND is_active = true`, [courseId])
-    ).rows[0];
-    if (!course) return res.status(404).json({ error: 'Course not found' });
-
-    // Expire stale AI sessions (1h after last message) for this identity+course
-    // before resolving — keeps the admin list tidy and makes the lookups below
-    // naturally skip them.
-    await pool.query(
-      userId
-        ? `UPDATE chat_conversations SET status = 'closed'
-           WHERE user_id = $1 AND course_id = $2 AND status = 'ai'
-             AND last_message_at < NOW() - INTERVAL '${SESSION_TTL_MINUTES} minutes'`
-        : `UPDATE chat_conversations SET status = 'closed'
-           WHERE user_id IS NULL AND guest_id = $1 AND course_id = $2 AND status = 'ai'
-             AND last_message_at < NOW() - INTERVAL '${SESSION_TTL_MINUTES} minutes'`,
-      [userId ?? guestId, courseId]
-    );
-
-    // Resolve conversation: explicit id (ownership + course checked) → latest open for this course → create.
-    let conv: any = null;
-    if (req.body.conversation_id) {
-      conv = (await pool.query(`SELECT * FROM chat_conversations WHERE id = $1`, [req.body.conversation_id])).rows[0];
-      if (!conv || !ownsConversation(conv, userId, guestId) || conv.course_id !== courseId) {
-        return res.status(404).json({ error: 'Conversation not found' });
-      }
-      if (conv.status === 'closed' || sessionExpired(conv)) conv = null; // closed/expired → start fresh
-    }
-    if (!conv) {
-      const existing = await pool.query(
-        userId
-          ? `SELECT * FROM chat_conversations WHERE user_id = $1 AND course_id = $2 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`
-          : `SELECT * FROM chat_conversations WHERE user_id IS NULL AND guest_id = $1 AND course_id = $2 AND status <> 'closed' ORDER BY last_message_at DESC LIMIT 1`,
-        [userId ?? guestId, courseId]
-      );
-      conv = existing.rows[0] || null;
-      if (conv && sessionExpired(conv)) conv = null;
-    }
-    if (!conv) {
-      conv = (
-        await pool.query(
-          `INSERT INTO chat_conversations (user_id, guest_id, course_id) VALUES ($1, $2, $3) RETURNING *`,
-          [userId ?? null, userId ? null : guestId, courseId]
-        )
-      ).rows[0];
-    }
-
-    // Store the attached image (if any) in S3 under an unguessable key.
-    let imageUrl: string | null = null;
-    if (image) {
-      const ext = (image.originalname?.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
-      const key = `chat-images/${conv.id}/${crypto.randomUUID()}.${ext}`;
-      await uploadFile(image.buffer, key, image.mimetype, { contentDisposition: 'inline' });
-      imageUrl = `/api/agent-chat/images/${key}`;
-    }
-
-    await pool.query(
-      `INSERT INTO chat_messages (conversation_id, sender_type, body, image_url) VALUES ($1, 'user', $2, $3)`,
-      [conv.id, text || '(ส่งรูปภาพ)', imageUrl]
-    );
-
-    if (conv.status === 'ai') {
-      // Bot answers. Escalation may flip the status.
-      const history = (
-        await pool.query(
-          `SELECT sender_type, body, image_url FROM chat_messages WHERE conversation_id = $1 ORDER BY created_at ASC, id ASC`,
-          [conv.id]
-        )
-      ).rows;
-      const hasAccess = await hasCourseAccess(req, courseId);
-      const reply = await runAgentTurn(history, {
-        courseId,
-        hasAccess,
-        // Only the current turn's image goes to the model (as base64) — old
-        // images stay as text markers so context stays small.
-        image: image ? { base64: image.buffer.toString('base64'), mimeType: image.mimetype } : undefined,
-      });
-      await pool.query(
-        `INSERT INTO chat_messages (conversation_id, sender_type, body) VALUES ($1, 'ai', $2)`,
-        [conv.id, reply.text]
-      );
-      if (reply.escalated) {
-        await pool.query(
-          `UPDATE chat_conversations SET status = 'escalated', escalate_reason = COALESCE($2, escalate_reason), last_message_at = NOW() WHERE id = $1`,
-          [conv.id, reply.escalateReason]
-        );
-      } else {
-        await pool.query(`UPDATE chat_conversations SET last_message_at = NOW() WHERE id = $1`, [conv.id]);
-      }
-    } else {
-      // Waiting on a human — store the message; an 'answered' thread reopens.
-      await pool.query(
-        `UPDATE chat_conversations SET status = CASE WHEN status = 'answered' THEN 'escalated' ELSE status END, last_message_at = NOW() WHERE id = $1`,
-        [conv.id]
-      );
-    }
-
-    res.json(await getThread(conv.id));
+    const prepared = await prepareIncomingMessage(req);
+    if ('error' in prepared) return res.status(prepared.error.status).json({ error: prepared.error.msg });
+    await processBotTurn(req, prepared.conv, prepared.courseId, prepared.image);
+    res.json(await getThread(prepared.conv.id));
   } catch (error) {
     console.error('[AgentChat] send error:', error);
     res.status(500).json({ error: 'ส่งข้อความไม่สำเร็จ กรุณาลองใหม่' });
   }
 });
+
+// ============ User: send a message with a STREAMED reply (SSE) ============
+// Same pipeline as /message but the bot's text arrives token-by-token:
+//   event: delta {"text": "..."}   — appended chunks while the model writes
+//   event: done  {thread}          — final authoritative thread (after DB writes)
+//   event: error {"error": "..."}  — client should fall back to POST /message
+router.post(
+  '/message/stream',
+  optionalAuth,
+  chatRateLimit,
+  chatDailyLimit,
+  uploadChatImage,
+  async (req: AuthRequest, res: Response) => {
+    const send = (event: string, data: unknown) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      (res as any).flush?.();
+    };
+    try {
+      const prepared = await prepareIncomingMessage(req);
+      if ('error' in prepared) {
+        return res.status(prepared.error.status).json({ error: prepared.error.msg });
+      }
+      // Switch to SSE only after validation passed (errors above stay plain JSON).
+      res.status(200);
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache, no-transform');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders?.();
+
+      await processBotTurn(req, prepared.conv, prepared.courseId, prepared.image, (text) =>
+        send('delta', { text })
+      );
+      send('done', await getThread(prepared.conv.id));
+      res.end();
+    } catch (error) {
+      console.error('[AgentChat] stream error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'ส่งข้อความไม่สำเร็จ กรุณาลองใหม่' });
+      } else {
+        send('error', { error: 'ส่งข้อความไม่สำเร็จ กรุณาลองใหม่' });
+        res.end();
+      }
+    }
+  }
+);
 
 // ============ User: load latest conversation (open widget / polling) ============
 router.get('/conversation', optionalAuth, async (req: AuthRequest, res: Response) => {

@@ -273,7 +273,7 @@ const CourseDetail = () => {
       {/* Netflix-style backdrop hero */}
       <section className="relative h-[56vh] min-h-[440px] w-full overflow-hidden">
         {course.thumbnail_url ? (
-          <img src={api.mediaUrl(course.thumbnail_url)} alt={course.name} className="absolute inset-0 w-full h-full object-cover" />
+          <img src={api.mediaUrl(course.thumbnail_url, 'hero')} alt={course.name} className="absolute inset-0 w-full h-full object-cover" />
         ) : (
           <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
             <BookOpen className="h-20 w-20 text-gray-600" />
