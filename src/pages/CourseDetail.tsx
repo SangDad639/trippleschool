@@ -482,32 +482,68 @@ const CourseDetail = () => {
               const allLessons = course.lessons || [];
               const hasSections = sections.length > 0;
 
+              // Netflix-style episode row: video cover left (YouTube thumb via
+              // our proxy — the video id never reaches the client), info right.
               const renderLessonRow = (lesson: Lesson, index: number) => {
                 const isCompleted = enrollment?.completed_lessons?.includes(lesson.id);
+                const locked = !lesson.is_preview && !hasAccess;
                 return (
                   <div
                     key={lesson.id}
-                    className="flex items-center justify-between p-2.5 rounded-md transition-colors bg-gray-800/50 hover:bg-gray-800 cursor-pointer"
+                    className="group flex gap-3 p-2 rounded-lg transition-colors bg-gray-800/40 hover:bg-gray-800 cursor-pointer"
                     onClick={() => navigate(`/app/courses/${course.slug}/learn/${lesson.id}`)}
                   >
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-700 text-white text-xs font-medium">
-                        {isCompleted ? <CheckCircle className="h-4 w-4 text-green-400" /> : index + 1}
+                    {/* Cover */}
+                    <div className="relative w-28 sm:w-36 md:w-44 aspect-video flex-none rounded-md overflow-hidden bg-gradient-to-br from-gray-700 to-gray-800">
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <BookOpen className="h-6 w-6 text-gray-600" />
                       </div>
-                      <div>
-                        <h4 className="text-white text-sm font-medium">{lesson.title}</h4>
-                        {lesson.description && <p className="text-gray-400 text-xs line-clamp-1">{lesson.description}</p>}
-                      </div>
+                      <img
+                        src={api.mediaUrl(`/api/courses/lessons/${lesson.id}/thumb`)}
+                        alt=""
+                        loading="lazy"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        className={`absolute inset-0 w-full h-full object-cover ${locked ? 'opacity-50' : ''}`}
+                      />
+                      {locked ? (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                          <Lock className="h-5 w-5 text-white/90 drop-shadow" />
+                        </div>
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="w-9 h-9 rounded-full bg-black/60 flex items-center justify-center">
+                            <Play className="h-4 w-4 text-white ml-0.5" />
+                          </div>
+                        </div>
+                      )}
+                      {isCompleted && (
+                        <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-green-500 flex items-center justify-center">
+                          <CheckCircle className="h-3.5 w-3.5 text-white" />
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      {lesson.duration_minutes > 0 && <span className="text-gray-400 text-xs">{formatDuration(lesson.duration_minutes)}</span>}
-                      {lesson.is_preview ? (
-                        <Badge className="bg-purple-500/10 text-purple-400 border border-purple-500/20 text-xs px-1.5 py-0.5">
-                          <Unlock className="h-3 w-3 mr-1" />Preview
-                        </Badge>
-                      ) : !hasAccess ? (
-                        <Lock className="h-3.5 w-3.5 text-gray-500" />
-                      ) : null}
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0 py-0.5 flex flex-col">
+                      <h4 className="text-white text-sm font-medium leading-snug line-clamp-2">
+                        <span className="text-purple-400 font-semibold mr-1.5">EP.{index + 1}</span>
+                        {lesson.title}
+                      </h4>
+                      {lesson.description && (
+                        <p className="text-gray-400 text-xs mt-0.5 line-clamp-1 sm:line-clamp-2">{lesson.description}</p>
+                      )}
+                      <div className="mt-auto pt-1 flex items-center gap-2 text-xs">
+                        {lesson.duration_minutes > 0 && (
+                          <span className="text-gray-400 flex items-center gap-1">
+                            <Play className="h-3 w-3" />{formatDuration(lesson.duration_minutes)}
+                          </span>
+                        )}
+                        {lesson.is_preview && (
+                          <Badge className="bg-purple-500/10 text-purple-400 border border-purple-500/20 text-[10px] px-1.5 py-0">
+                            <Unlock className="h-2.5 w-2.5 mr-1" />ดูฟรี
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

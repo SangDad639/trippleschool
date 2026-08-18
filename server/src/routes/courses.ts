@@ -4,6 +4,7 @@
 //   - thumbnails stored as a backend-proxy URL (/api/courses/thumbnails/<key>);
 //     served via a public GET proxy (S3/OBS has no public ACL).
 import { Router, Request, Response } from 'express';
+import crypto from 'crypto';
 import multer from 'multer';
 import pool from '../db.js';
 import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth.js';
@@ -223,6 +224,117 @@ router.get('/thumbnails/*', async (req: Request, res: Response) => {
     (obj.Body as any).pipe(res);
   } catch (error) {
     res.status(404).json({ error: 'Not found' });
+  }
+});
+
+// ============ Public: per-lesson cover image ============
+// Serves the lesson's cover WITHOUT ever exposing youtube_id to the client:
+//   1. custom cover uploaded by admin (lessons.cover_url → S3)
+//   2. else the YouTube thumbnail, fetched server-side and cached in S3
+//      (cache key embeds a hash of youtube_id → changing the video busts it)
+//   3. else 404 — the FE renders a placeholder.
+router.get('/lessons/:lessonId/thumb', async (req: Request, res: Response) => {
+  try {
+    const lessonId = Number(req.params.lessonId);
+    if (!Number.isInteger(lessonId) || lessonId <= 0) return res.status(404).end();
+    const lesson = (
+      await pool.query(`SELECT id, youtube_id, cover_url FROM lessons WHERE id = $1`, [lessonId])
+    ).rows[0];
+    if (!lesson) return res.status(404).end();
+
+    const serve = (body: any, contentType: string) => {
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      body.pipe(res);
+    };
+
+    // 1) custom cover
+    if (lesson.cover_url && typeof lesson.cover_url === 'string') {
+      const key = lesson.cover_url.replace('/api/courses/thumbnails/', '');
+      try {
+        const obj = await getFile(key);
+        return serve(obj.Body, obj.ContentType || 'image/webp');
+      } catch {
+        /* stale pointer — fall through to YouTube */
+      }
+    }
+
+    // 2) YouTube thumbnail via server-side fetch + S3 cache
+    if (lesson.youtube_id) {
+      const hash = crypto.createHash('md5').update(String(lesson.youtube_id)).digest('hex').slice(0, 8);
+      const cacheKey = `lesson-thumb-cache/${lesson.id}-${hash}.jpg`;
+      try {
+        const cached = await getFile(cacheKey);
+        return serve(cached.Body, 'image/jpeg');
+      } catch {
+        /* not cached yet */
+      }
+      const yt = await fetch(`https://i.ytimg.com/vi/${encodeURIComponent(lesson.youtube_id)}/mqdefault.jpg`, {
+        signal: AbortSignal.timeout(10000),
+      }).catch(() => null);
+      if (yt?.ok) {
+        const buf = Buffer.from(await yt.arrayBuffer());
+        // Cache best-effort; still serve even if the S3 write fails.
+        uploadFile(buf, cacheKey, 'image/jpeg', { contentDisposition: 'inline' }).catch(() => {});
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        return res.end(buf);
+      }
+    }
+
+    res.status(404).end();
+  } catch (error) {
+    res.status(404).end();
+  }
+});
+
+// ============ Admin: upload custom lesson cover ============
+router.post(
+  '/lessons/:lessonId/cover',
+  authenticate,
+  uploadSingle(thumbUpload, 'cover'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+      const lessonId = Number(req.params.lessonId);
+      if (!Number.isInteger(lessonId) || lessonId <= 0) return res.status(400).json({ error: 'Bad lesson id' });
+      const lesson = (await pool.query(`SELECT id FROM lessons WHERE id = $1`, [lessonId])).rows[0];
+      if (!lesson) return res.status(404).json({ error: 'ไม่พบบทเรียน' });
+      if (!req.file) return res.status(400).json({ error: 'กรุณาแนบไฟล์รูป' });
+
+      // Resize to card size (covers render at ~176px wide — 640px webp is plenty).
+      const resized = await makeThumbnailVariant(req.file.buffer, 'card');
+      const rand = Math.random().toString(36).slice(2, 10);
+      const key = resized
+        ? `lesson-cover/${lessonId}-${rand}.webp`
+        : `lesson-cover/${lessonId}-${rand}.${(req.file.originalname.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'}`;
+      await uploadFile(resized ?? req.file.buffer, key, resized ? 'image/webp' : req.file.mimetype, {
+        contentDisposition: 'inline',
+      });
+      const url = `/api/courses/thumbnails/${key}`;
+      await pool.query(`UPDATE lessons SET cover_url = $2, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [
+        lessonId,
+        url,
+      ]);
+      res.json({ ok: true, cover_url: url });
+    } catch (error) {
+      console.error('Error uploading lesson cover:', error);
+      res.status(500).json({ error: 'อัปโหลดปกไม่สำเร็จ' });
+    }
+  }
+);
+
+// ============ Admin: remove custom cover (revert to YouTube auto) ============
+router.delete('/lessons/:lessonId/cover', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    const lessonId = Number(req.params.lessonId);
+    if (!Number.isInteger(lessonId) || lessonId <= 0) return res.status(400).json({ error: 'Bad lesson id' });
+    await pool.query(`UPDATE lessons SET cover_url = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [lessonId]);
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error removing lesson cover:', error);
+    res.status(500).json({ error: 'ลบปกไม่สำเร็จ' });
   }
 });
 
@@ -615,7 +727,7 @@ router.get('/:courseId/lessons', optionalAuth, async (req: AuthRequest, res) => 
     const hasAccess = !!req.isAdmin || (await hasSubscriptionOrEnrollment(req.userId, Number(courseId)));
     const result = await pool.query(`
       SELECT id, course_id, section_id, title, description, youtube_url, youtube_id,
-             duration_minutes, lesson_order, is_preview, is_active, created_at, updated_at,
+             duration_minutes, lesson_order, is_preview, is_active, created_at, updated_at, cover_url,
              ${materialsMetaSql('materials')} AS materials
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [courseId]);
@@ -890,7 +1002,7 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
       SELECT id, title, description, section_order, mode FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
-      SELECT id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, section_id,
+      SELECT id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, section_id, cover_url,
              ${materialsMetaSql('materials')} AS materials
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
@@ -924,7 +1036,7 @@ router.get('/:slug', async (req, res) => {
       SELECT id, title, description, section_order, mode FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
-      SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id,
+      SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id, cover_url,
              ${materialsMetaSql('materials')} AS materials
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
