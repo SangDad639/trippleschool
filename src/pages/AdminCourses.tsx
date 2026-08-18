@@ -124,6 +124,7 @@ interface Lesson {
   lesson_order: number;
   is_preview: boolean;
   is_active: boolean;
+  cover_url?: string | null;
   materials?: LessonMaterial[];
 }
 
@@ -240,6 +241,11 @@ const AdminCourses = () => {
   const [subBusy, setSubBusy] = useState<number | 'bulk' | null>(null);
   const subFileRef = useRef<HTMLInputElement>(null);
   const subUploadTargetRef = useRef<number | null>(null);
+
+  // ปกคลิป (episode cover)
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [coverRev, setCoverRev] = useState(0); // bump = force-refresh preview img
+  const coverInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
 
@@ -392,6 +398,42 @@ const AdminCourses = () => {
       loadCourses();
     } catch (error: any) {
       toast.error(`Error: ${error.message}`);
+    }
+  };
+
+  // ===== ปกคลิป (episode cover) =====
+  const handleCoverFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !editingLesson) return;
+    if (!file.type.startsWith('image/')) { toast.error('รองรับเฉพาะไฟล์รูปภาพ'); return; }
+    setCoverBusy(true);
+    try {
+      const r = await api.uploadLessonCover(editingLesson.id, file);
+      setEditingLesson({ ...editingLesson, cover_url: r.cover_url });
+      setCoverRev((n) => n + 1);
+      toast.success('อัปโหลดปกคลิปแล้ว');
+      if (selectedCourseForLesson) loadCourseData(selectedCourseForLesson.id);
+    } catch (error: any) {
+      toast.error(error?.message || 'อัปโหลดปกไม่สำเร็จ');
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
+  const handleDeleteCover = async () => {
+    if (!editingLesson) return;
+    setCoverBusy(true);
+    try {
+      await api.deleteLessonCover(editingLesson.id);
+      setEditingLesson({ ...editingLesson, cover_url: null });
+      setCoverRev((n) => n + 1);
+      toast.success('กลับไปใช้ปกจาก YouTube แล้ว');
+      if (selectedCourseForLesson) loadCourseData(selectedCourseForLesson.id);
+    } catch (error: any) {
+      toast.error(error?.message || 'ลบปกไม่สำเร็จ');
+    } finally {
+      setCoverBusy(false);
     }
   };
 
@@ -1513,6 +1555,60 @@ const AdminCourses = () => {
                   onChange={(e) => setLessonForm({ ...lessonForm, youtube_url: e.target.value })}
                   placeholder="https://www.youtube.com/watch?v=... หรือ youtu.be/..."
                 />
+              </div>
+
+              {/* ปกคลิป (Episode cover) — default ใช้ปกจาก YouTube อัตโนมัติ */}
+              <div>
+                <Label>ปกคลิป</Label>
+                {editingLesson ? (
+                  <div className="flex items-center gap-3 mt-1">
+                    <img
+                      key={coverRev}
+                      src={`${api.mediaUrl(`/api/courses/lessons/${editingLesson.id}/thumb`)}?cr=${coverRev}`}
+                      alt="ปกคลิป"
+                      onError={(e) => { (e.target as HTMLImageElement).style.opacity = '0.2'; }}
+                      className="w-32 aspect-video object-cover rounded-md border border-gray-700 bg-gray-800"
+                    />
+                    <div className="flex flex-col gap-1.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={coverBusy}
+                        onClick={() => coverInputRef.current?.click()}
+                      >
+                        {coverBusy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : '📤 '}
+                        อัปโหลดปกเอง
+                      </Button>
+                      {editingLesson.cover_url && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={coverBusy}
+                          onClick={handleDeleteCover}
+                          className="text-gray-400"
+                        >
+                          ↩ ใช้ปกจาก YouTube
+                        </Button>
+                      )}
+                      <p className="text-[11px] text-gray-500">
+                        {editingLesson.cover_url ? 'ใช้ปกที่อัปโหลดเอง' : 'ใช้ปกจาก YouTube อัตโนมัติ'}
+                      </p>
+                    </div>
+                    <input
+                      ref={coverInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleCoverFileChange}
+                    />
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-xs mt-1">
+                    ปกจะดึงจาก YouTube อัตโนมัติ — บันทึกบทเรียนก่อน แล้วกลับมาแก้ไขถ้าต้องการอัปโหลดปกเอง
+                  </p>
+                )}
               </div>
               <div>
                 <Label>รายละเอียด</Label>

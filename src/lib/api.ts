@@ -2834,6 +2834,15 @@ class ApiClient {
   async getLessonMaterials(lessonId: number): Promise<{ lesson_id: number; materials: any[] }> {
     return this.request(`/api/courses/lessons/${lessonId}/materials`);
   }
+  /** Custom episode cover (admin). Delete reverts to the auto YouTube thumbnail. */
+  async uploadLessonCover(lessonId: number, file: File): Promise<{ ok: boolean; cover_url: string }> {
+    const form = new FormData();
+    form.append('cover', file);
+    return this.request(`/api/courses/lessons/${lessonId}/cover`, { method: 'POST', body: form });
+  }
+  async deleteLessonCover(lessonId: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/courses/lessons/${lessonId}/cover`, { method: 'DELETE' });
+  }
   async getAdminCourses() {
     return this.request('/api/courses/admin/all');
   }
