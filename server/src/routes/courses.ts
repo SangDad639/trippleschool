@@ -185,15 +185,19 @@ function sanitizeMaterials(input: unknown): LessonMaterial[] {
     .filter((m) => (m.type === 'html' ? (m.content || '').trim().length > 0 : m.url.length > 0));
 }
 
-// Extract YouTube ID from common URL formats (or a bare 11-char id)
+// Extract YouTube ID from common URL formats (or a bare 11-char id).
+// Covers watch?v= (with any leading query params), youtu.be, /embed/, /shorts/,
+// /live/ and /v/. An unmatched form returns null so callers reject the URL
+// instead of silently keeping a stale id.
 function extractYoutubeId(url: string): string | null {
   if (!url) return null;
+  const trimmed = url.trim();
   const patterns = [
-    /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+    /(?:youtube\.com\/(?:watch\?(?:[^#]*&)?v=|embed\/|shorts\/|live\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/,
     /^([a-zA-Z0-9_-]{11})$/,
   ];
   for (const pattern of patterns) {
-    const match = url.match(pattern);
+    const match = trimmed.match(pattern);
     if (match) return match[1];
   }
   return null;
@@ -772,6 +776,7 @@ router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) =>
     const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, section_id, materials } = req.body;
     if (!title || !youtube_url) return res.status(400).json({ error: 'Title and YouTube URL are required' });
     const youtube_id = extractYoutubeId(youtube_url);
+    if (!youtube_id) return res.status(400).json({ error: 'ลิงก์ YouTube ไม่ถูกต้อง (รองรับ watch?v=, youtu.be, /embed/, /shorts/, /live/)' });
     const cleanMaterials = sanitizeMaterials(materials);
     const sizeError = validateMaterialsSize(cleanMaterials);
     if (sizeError) return res.status(400).json({ error: sizeError });
@@ -805,6 +810,10 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
     const { id } = req.params;
     const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, is_active, section_id, materials } = req.body;
     const youtube_id = youtube_url ? extractYoutubeId(youtube_url) : undefined;
+    // Reject an unparseable URL: the COALESCE below would otherwise store the
+    // new youtube_url while keeping the old youtube_id, leaving the player on
+    // the previous (or dead) video.
+    if (youtube_url && !youtube_id) return res.status(400).json({ error: 'ลิงก์ YouTube ไม่ถูกต้อง (รองรับ watch?v=, youtu.be, /embed/, /shorts/, /live/)' });
     if (materials !== undefined) {
       const sizeError = validateMaterialsSize(sanitizeMaterials(materials));
       if (sizeError) return res.status(400).json({ error: sizeError });
