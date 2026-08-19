@@ -56,11 +56,11 @@ const materialUpload = multer({
   },
 });
 
-// HTML document: read as inline content (shown in the lesson, not downloaded).
-// 25MB — Word/Docs exports embed base64 images and get large.
+// HTML document: stored on S3 (only a pointer goes into lessons.materials).
+// 50MB — Word/Docs exports embed base64 images and get large.
 const htmlUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const isHtml = /text\/html|htm/i.test(file.mimetype) || /\.(html?|htm)$/i.test(file.originalname);
     if (isHtml) cb(null, true);
@@ -181,8 +181,9 @@ function sanitizeMaterials(input: unknown): LessonMaterial[] {
         fileName: typeof m.fileName === 'string' ? m.fileName : undefined,
       };
     })
-    // html rows are kept by their content; link/pdf rows by their url.
-    .filter((m) => (m.type === 'html' ? (m.content || '').trim().length > 0 : m.url.length > 0));
+    // html rows are kept by inline content (legacy) or an uploaded S3 file (url);
+    // link/pdf rows by their url.
+    .filter((m) => (m.type === 'html' ? (m.content || '').trim().length > 0 || m.url.length > 0 : m.url.length > 0));
 }
 
 // Extract YouTube ID from common URL formats (or a bare 11-char id).
@@ -389,6 +390,14 @@ router.get('/materials/*', async (req: Request, res: Response) => {
   }
 });
 
+// Multer decodes multipart filenames as latin1, mangling Thai names — undo it.
+// ASCII names pass through unchanged; if the round-trip produces replacement
+// chars the original was already UTF-8, so keep it.
+function decodeUploadName(name: string): string {
+  const utf8 = Buffer.from(name, 'latin1').toString('utf8');
+  return utf8.includes('�') ? name : utf8;
+}
+
 // ============ Admin: upload lesson document (PDF) ============
 router.post('/upload-material', authenticate, uploadSingle(materialUpload, 'file'), async (req: AuthRequest, res: Response) => {
   try {
@@ -398,22 +407,26 @@ router.post('/upload-material', authenticate, uploadSingle(materialUpload, 'file
     const ext = (req.file.originalname.split('.').pop() || 'bin').toLowerCase().replace(/[^a-z0-9]/g, '') || 'bin';
     const key = `course-materials/${Date.now()}-${rand}.${ext}`;
     await uploadFile(req.file.buffer, key, req.file.mimetype, { contentDisposition: 'attachment' });
-    res.json({ url: `/api/courses/materials/${key}`, name: req.file.originalname });
+    res.json({ url: `/api/courses/materials/${key}`, name: decodeUploadName(req.file.originalname) });
   } catch (error) {
     console.error('Error uploading material:', error);
     res.status(500).json({ error: 'Failed to upload material' });
   }
 });
 
-// ============ Admin: upload HTML doc → return its text as inline content ============
-// The file itself isn't stored; its content goes into lessons.materials and is
-// sanitized (DOMPurify) on the client before rendering.
+// ============ Admin: upload HTML doc → store on S3, return a pointer ============
+// Only { url } goes into lessons.materials (keeps the DB small); the client
+// fetches the text through /materials/* and sanitizes it (DOMPurify) before
+// rendering. Disposition stays "attachment" so opening the URL directly
+// downloads instead of rendering unsanitized HTML.
 router.post('/upload-html', authenticate, uploadSingle(htmlUpload, 'file'), async (req: AuthRequest, res: Response) => {
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-    const content = req.file.buffer.toString('utf-8');
-    res.json({ content, name: req.file.originalname });
+    const rand = Math.random().toString(36).slice(2, 10);
+    const key = `course-materials/html/${Date.now()}-${rand}.html`;
+    await uploadFile(req.file.buffer, key, 'text/html; charset=utf-8', { contentDisposition: 'attachment' });
+    res.json({ url: `/api/courses/materials/${key}`, name: decodeUploadName(req.file.originalname) });
   } catch (error) {
     console.error('Error uploading HTML:', error);
     res.status(500).json({ error: 'Failed to upload HTML' });

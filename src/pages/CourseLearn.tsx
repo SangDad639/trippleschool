@@ -97,21 +97,40 @@ const CourseLearn = () => {
   useEffect(() => {
     const lesson = currentLesson;
     if (!lesson) return;
-    const needsFetch = (lesson.materials || []).some(
-      (m) => m.type === 'html' && !(m.content || '').trim() && m.has_content
-    );
-    if (!needsFetch || fullMaterials[lesson.id]) return;
+    const base = lesson.materials || [];
+    const missingHtml = (m: LessonMaterial) => m.type === 'html' && !(m.content || '').trim();
+    // Legacy rows embed content in the DB (list payload strips it, flags has_content);
+    // newer rows store the file on S3 and only carry a url.
+    const needsDb = base.some((m) => missingHtml(m) && m.has_content);
+    const needsS3 = base.some((m) => missingHtml(m) && (m.url || '').trim());
+    if ((!needsDb && !needsS3) || fullMaterials[lesson.id]) return;
     let cancelled = false;
     setMaterialsLoading(true);
-    api
-      .getLessonMaterials(lesson.id)
-      .then((r) => {
-        if (!cancelled) setFullMaterials((prev) => ({ ...prev, [lesson.id]: r.materials }));
-      })
-      .catch((e) => console.error('Failed to load materials:', e))
-      .finally(() => {
+    (async () => {
+      try {
+        let materials = base;
+        if (needsDb) {
+          const r = await api.getLessonMaterials(lesson.id);
+          materials = r.materials;
+        }
+        materials = await Promise.all(
+          materials.map(async (m) => {
+            if (!missingHtml(m) || !(m.url || '').trim()) return m;
+            try {
+              const res = await fetch(api.mediaUrl(m.url));
+              return res.ok ? { ...m, content: await res.text() } : m;
+            } catch {
+              return m;
+            }
+          })
+        );
+        if (!cancelled) setFullMaterials((prev) => ({ ...prev, [lesson.id]: materials }));
+      } catch (e) {
+        console.error('Failed to load materials:', e);
+      } finally {
         if (!cancelled) setMaterialsLoading(false);
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };

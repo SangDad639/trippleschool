@@ -2865,7 +2865,7 @@ class ApiClient {
     formData.append('file', file);
     return this.request('/api/courses/upload-material', { method: 'POST', body: formData });
   }
-  async uploadCourseHtml(file: File): Promise<{ content: string; name: string }> {
+  async uploadCourseHtml(file: File): Promise<{ url: string; name: string }> {
     const formData = new FormData();
     formData.append('file', file);
     return this.request('/api/courses/upload-html', { method: 'POST', body: formData });

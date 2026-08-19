@@ -267,6 +267,8 @@ const AdminCourses = () => {
   const htmlTargetIdxRef = useRef<number | null>(null);
   const htmlInputRef = useRef<HTMLInputElement>(null);
   const [showMaterialPreview, setShowMaterialPreview] = useState(false);
+  // Fetched text of S3-stored html materials, keyed by url — preview only.
+  const [previewHtmlCache, setPreviewHtmlCache] = useState<Record<string, string>>({});
 
   // Section dialog
   const [sectionDialogOpen, setSectionDialogOpen] = useState(false);
@@ -279,6 +281,39 @@ const AdminCourses = () => {
     if (!user?.isAdmin) return;
     loadCourses();
   }, [user]);
+
+  // Preview of S3-stored html materials needs their text fetched first
+  // (inline-content rows render directly and skip this).
+  useEffect(() => {
+    if (!showMaterialPreview) return;
+    const urls = lessonForm.materials
+      .filter(
+        (m) =>
+          m.type === 'html' &&
+          m.enabled !== false &&
+          !(m.content || '').trim() &&
+          (m.url || '').trim() &&
+          previewHtmlCache[m.url] === undefined
+      )
+      .map((m) => m.url);
+    if (urls.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      urls.map(async (u) => {
+        try {
+          const r = await fetch(api.mediaUrl(u));
+          return [u, r.ok ? await r.text() : ''] as const;
+        } catch {
+          return [u, ''] as const;
+        }
+      })
+    ).then((pairs) => {
+      if (!cancelled) setPreviewHtmlCache((prev) => ({ ...prev, ...Object.fromEntries(pairs) }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [showMaterialPreview, lessonForm.materials]);
 
   const loadCourses = async () => {
     try {
@@ -656,11 +691,11 @@ const AdminCourses = () => {
       // Upload all selected files; the first fills the clicked row, the rest
       // become new HTML documents so several files can be attached at once.
       const uploaded = await Promise.all(files.map((f) => api.uploadCourseHtml(f)));
-      const toMaterial = (u: { content: string; name: string }): LessonMaterial => ({
+      const toMaterial = (u: { url: string; name: string }): LessonMaterial => ({
         title: (u.name || '').replace(/\.html?$/i, ''),
-        url: '',
+        url: u.url,
         type: 'html',
-        content: u.content,
+        content: '',
         fileName: u.name,
         enabled: true,
       });
@@ -670,7 +705,10 @@ const AdminCourses = () => {
         if (materials[idx]) {
           materials[idx] = {
             ...materials[idx],
-            content: first.content,
+            url: first.url,
+            // The uploaded file replaces any inline (legacy) content — students
+            // see inline content first when both exist.
+            content: '',
             fileName: first.name,
             title: materials[idx].title?.trim() ? materials[idx].title : (first.name || '').replace(/\.html?$/i, ''),
           };
@@ -725,7 +763,8 @@ const AdminCourses = () => {
     try {
       setSaving(true);
       const materials = lessonForm.materials.filter((m) =>
-        m.type === 'html' ? (m.content || '').trim() : m.url.trim()
+        // html rows are valid with inline content (legacy) OR an uploaded S3 file (url)
+        m.type === 'html' ? Boolean((m.content || '').trim() || (m.url || '').trim()) : m.url.trim()
       );
       if (editingLesson) {
         await api.updateLesson(editingLesson.id, {
@@ -1707,11 +1746,11 @@ const AdminCourses = () => {
                           </Button>
                           <span className="text-xs text-gray-500 ml-2">เลือกได้หลายไฟล์ หรือพิมพ์/วางเนื้อหาด้านล่าง</span>
                         </div>
-                        {(m.content || '').trim() && (
+                        {((m.content || '').trim() || (m.url || '').trim()) && (
                           <div className="mt-2 flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
                             <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
                             <span className="truncate">
-                              แนบไฟล์แล้ว: <span className="font-semibold">{m.fileName || `เนื้อหา ${(m.content || '').length} ตัวอักษร`}</span>
+                              แนบไฟล์แล้ว: <span className="font-semibold">{m.fileName || ((m.content || '').trim() ? `เนื้อหา ${(m.content || '').length} ตัวอักษร` : 'ไฟล์ HTML')}</span>
                             </span>
                           </div>
                         )}
@@ -1823,7 +1862,9 @@ const AdminCourses = () => {
                     {showMaterialPreview && (() => {
                       const visible = lessonForm.materials.filter((m) => m.enabled !== false);
                       const downloads = visible.filter((m) => m.type !== 'html' && m.url.trim());
-                      const htmlDocs = visible.filter((m) => m.type === 'html' && (m.content || '').trim());
+                      const htmlDocs = visible.filter(
+                        (m) => m.type === 'html' && ((m.content || '').trim() || (m.url || '').trim())
+                      );
                       return (
                         <div className="mt-2 rounded-lg border border-gray-700 bg-gray-900/50 p-4">
                           <p className="text-sm font-medium text-white mb-2">เอกสารประกอบ</p>
@@ -1841,16 +1882,24 @@ const AdminCourses = () => {
                             </div>
                           )}
                           {htmlDocs.map((m, idx) => {
-                            const clean = sanitizeMaterialHtml(m.content || '');
+                            const inline = (m.content || '').trim();
+                            const fetched = !inline && (m.url || '').trim() ? previewHtmlCache[m.url] : undefined;
+                            const fetching = !inline && (m.url || '').trim() && fetched === undefined;
+                            const raw = inline ? m.content || '' : fetched || '';
+                            const clean = sanitizeMaterialHtml(raw);
                             const hasVisibleText = clean.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim().length > 0;
                             return (
                               <div key={idx} className="mt-3 rounded-lg border border-gray-800 overflow-hidden">
                                 {m.title && <p className="text-sm font-semibold text-white bg-gray-900/60 px-4 py-2">{m.title}</p>}
-                                {hasVisibleText ? (
+                                {fetching ? (
+                                  <p className="text-gray-400 text-sm flex items-center gap-2 px-4 py-3">
+                                    <Loader2 className="h-4 w-4 animate-spin" /> กำลังโหลดเอกสาร...
+                                  </p>
+                                ) : hasVisibleText ? (
                                   <MaterialHtmlFrame html={clean} maxHeight={400} />
                                 ) : (
                                   <pre className="bg-white text-gray-900 p-4 max-h-[400px] overflow-auto whitespace-pre-wrap break-words text-sm font-sans">
-                                    {(m.content || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() || 'ไม่มีเนื้อหา'}
+                                    {raw.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim() || 'ไม่มีเนื้อหา'}
                                   </pre>
                                 )}
                               </div>
