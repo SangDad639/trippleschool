@@ -24,6 +24,8 @@ import {
   ChevronUp,
   Download,
   Lock,
+  RefreshCw,
+  WifiOff,
 } from 'lucide-react';
 
 interface LessonMaterial {
@@ -93,6 +95,9 @@ const CourseLearn = () => {
   // fetched here on demand — a course can carry tens of MB of inline docs).
   const [fullMaterials, setFullMaterials] = useState<Record<number, LessonMaterial[]>>({});
   const [materialsLoading, setMaterialsLoading] = useState(false);
+  // Load failures stay on the page (with a retry) instead of bouncing the user
+  // to /courses — a single flaky mobile request used to look like a logout.
+  const [loadError, setLoadError] = useState<{ expired: boolean } | null>(null);
 
   useEffect(() => {
     const lesson = currentLesson;
@@ -158,6 +163,7 @@ const CourseLearn = () => {
   const loadCourse = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       const data = await api.getCourseFull(slug!);
       // hasAccess = active subscription or admin. Non-members are NOT redirected away —
       // they can still watch preview lessons; member-only lessons render a locked
@@ -170,8 +176,7 @@ const CourseLearn = () => {
       setEnrollment(data.enrollment ?? null);
     } catch (error) {
       console.error('Failed to load course:', error);
-      toast.error('โหลดคอร์สไม่สำเร็จ');
-      navigate('/courses');
+      setLoadError({ expired: (error as any)?.status === 401 });
     } finally {
       setLoading(false);
     }
@@ -233,6 +238,41 @@ const CourseLearn = () => {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+      </div>
+    );
+  }
+
+  // Failed to load — stay put and let the user retry (bouncing to /courses read
+  // as "the site logged me out" whenever a mobile request hiccupped).
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <WifiOff className="h-12 w-12 text-gray-500" />
+        <div>
+          <p className="text-lg font-semibold text-white">
+            {loadError.expired ? 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่' : 'โหลดบทเรียนไม่สำเร็จ'}
+          </p>
+          <p className="mt-1 text-sm text-gray-400">
+            {loadError.expired
+              ? 'เข้าสู่ระบบอีกครั้งเพื่อเรียนต่อ — ความคืบหน้าของคุณถูกบันทึกไว้แล้ว'
+              : 'อาจเป็นเพราะสัญญาณอินเทอร์เน็ตสะดุด ลองกดโหลดใหม่อีกครั้ง'}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {loadError.expired ? (
+            <Button onClick={() => navigate('/login')} className="bg-purple-600 hover:bg-purple-700">
+              เข้าสู่ระบบ
+            </Button>
+          ) : (
+            <Button onClick={loadCourse} className="bg-purple-600 hover:bg-purple-700">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              ลองใหม่
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => navigate(`/courses/${slug}`)}>
+            กลับหน้าคอร์ส
+          </Button>
+        </div>
       </div>
     );
   }

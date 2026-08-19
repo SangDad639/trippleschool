@@ -23,6 +23,7 @@ const usePageTracking = () => {
 };
 import { GoogleOAuthProvider, GoogleLogin } from "@react-oauth/google";
 import { Toaster } from "@/components/ui/sonner";
+import { api } from "@/lib/api";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { LanguageProvider, useLanguage } from "@/contexts/LanguageContext";
@@ -258,6 +259,37 @@ const ProtectedRoute = ({ children, allowPending = false }: { children: React.Re
     return (
       <div className="page-wrapper flex items-center justify-center">
         <div className="text-muted-foreground">{t('common.loading')}</div>
+      </div>
+    );
+  }
+
+  // A token that survived bootstrap means the session is probably fine and the
+  // check just failed (offline, 5xx). Offer a retry instead of dumping the user
+  // on /login, which reads as "the site logged me out".
+  if (!user && api.getToken()) {
+    return (
+      <div className="page-wrapper flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <p className="text-lg font-semibold">เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ชั่วคราว</p>
+        <p className="text-sm text-muted-foreground">
+          บัญชีของคุณยังอยู่ — ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-primary text-primary-foreground px-4 py-2 rounded font-medium hover:opacity-90"
+          >
+            ลองใหม่
+          </button>
+          <button
+            onClick={() => {
+              api.setToken(null);
+              window.location.assign('/login');
+            }}
+            className="border border-border px-4 py-2 rounded font-medium hover:bg-muted"
+          >
+            เข้าสู่ระบบใหม่
+          </button>
+        </div>
       </div>
     );
   }

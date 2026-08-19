@@ -66,9 +66,11 @@ const Storefront = () => {
       .catch(() => setContinueItems([]));
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Billboard default: always the newest course (created_at DESC). Tips are
-  // single-episode extras — they never take the billboard.
+  // Billboard: an admin-pinned course wins; otherwise the newest course
+  // (created_at DESC). Tips are single-episode extras — they never take the
+  // billboard automatically, but an admin may still pin one deliberately.
   const billboard =
+    courses.find((c) => c.is_billboard) ||
     [...courses]
       .filter((c) => c.content_type !== 'tip')
       .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0] ||

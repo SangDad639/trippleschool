@@ -119,12 +119,20 @@ class ApiClient {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
+          // Callers need the status to tell a real auth failure (401/404 → the
+          // session is genuinely dead) from a transient one (network drop, 5xx).
+          // Without it, a momentary hiccup used to look identical to a bad token
+          // and cost the user their session / bounced them off the page.
+          const withStatus = <T extends Error>(e: T): T => {
+            (e as any).status = response.status;
+            return e;
+          };
 
           // Handle pending approval - throw with pendingApproval flag
           if (response.status === 403 && errorData.pendingApproval) {
             const error = new Error(errorData.error || 'Account pending approval');
             (error as any).pendingApproval = true;
-            throw error;
+            throw withStatus(error);
           }
 
           // Subscription required — dispatch an event so the app-level listener
@@ -137,14 +145,14 @@ class ApiClient {
             window.dispatchEvent(new CustomEvent('subscription:required', {
               detail: { code: errorData.code, message: errorData.error },
             }));
-            throw new Error(errorData.error || 'กรุณาสมัครสมาชิก');
+            throw withStatus(new Error(errorData.error || 'กรุณาสมัครสมาชิก'));
           }
 
           // Handle duplicate request - throw with duplicate flag for silent handling
           if (response.status === 409 && errorData.duplicate) {
             const error = new Error(errorData.error || 'Duplicate request');
             (error as any).duplicate = true;
-            throw error;
+            throw withStatus(error);
           }
 
           if ((response.status >= 500 || response.status === 429) && attempt < retries) {
@@ -155,7 +163,7 @@ class ApiClient {
 
           const err = new Error(errorData.error || `HTTP ${response.status}`);
           (err as any).errorCode = errorData.errorCode;
-          throw err;
+          throw withStatus(err);
         }
 
         return response.json();
@@ -2818,6 +2826,13 @@ class ApiClient {
     if (params?.type) qs.set('type', params.type);
     const q = qs.toString();
     return this.request(`/api/courses${q ? `?${q}` : ''}`);
+  }
+  /** Pin (or unpin) the course shown on the home-page billboard. Unpinned = automatic (newest course). */
+  async setCourseBillboard(courseId: number, pinned: boolean) {
+    return this.request(`/api/courses/${courseId}/billboard`, {
+      method: 'PUT',
+      body: JSON.stringify({ pinned }),
+    });
   }
   async getCourse(slug: string) {
     return this.request(`/api/courses/${encodeURIComponent(slug)}`);

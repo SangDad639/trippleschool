@@ -578,6 +578,41 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
+// ============ Admin: pin / unpin the home-page billboard ============
+// Only one course may be pinned, so pinning clears the previous one in the same
+// transaction. Unpinned (no row pinned at all) = the storefront falls back to
+// its automatic rule: newest course, tips excluded.
+router.put('/:id/billboard', authenticate, async (req: AuthRequest, res) => {
+  if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+  const { id } = req.params;
+  const pinned = req.body?.pinned !== false;
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`UPDATE courses SET is_billboard = false WHERE is_billboard = true`);
+    let course = null;
+    if (pinned) {
+      const result = await client.query(
+        `UPDATE courses SET is_billboard = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+        [id]
+      );
+      if (result.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Course not found' });
+      }
+      course = result.rows[0];
+    }
+    await client.query('COMMIT');
+    res.json({ pinned, course });
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('Error setting billboard:', error);
+    res.status(500).json({ error: 'Failed to set billboard' });
+  } finally {
+    client.release();
+  }
+});
+
 // ============ Admin: delete course (cascades) ============
 router.delete('/:id', authenticate, async (req: AuthRequest, res) => {
   try {

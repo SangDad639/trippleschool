@@ -78,6 +78,8 @@ interface Course {
   duration_hours: number;
   total_lessons: number;
   is_featured: boolean;
+  /** ปักขึ้น Billboard หน้าแรกเอง (ได้ครั้งละ 1 คอร์ส); ไม่ปัก = ใช้คอร์สล่าสุดอัตโนมัติ */
+  is_billboard?: boolean;
   is_active: boolean;
   display_order: number;
   created_at?: string;
@@ -567,6 +569,23 @@ const AdminCourses = () => {
     }
   };
 
+  // ปัก/ถอน Billboard หน้าแรก — ปักได้ครั้งละ 1 คอร์ส (BE เคลียร์ตัวเก่าให้เอง);
+  // ถอดหมด = กลับไปใช้กติกาอัตโนมัติ (คอร์สที่สร้างล่าสุด ไม่นับ Tip)
+  const handleToggleBillboard = async (course: Course) => {
+    const pinned = !course.is_billboard;
+    try {
+      await api.setCourseBillboard(course.id, pinned);
+      toast.success(
+        pinned
+          ? `ปัก "${course.name}" ขึ้น Billboard หน้าแรกแล้ว`
+          : 'ถอด Billboard แล้ว — กลับไปใช้คอร์สล่าสุดอัตโนมัติ'
+      );
+      loadCourses();
+    } catch (error: any) {
+      toast.error(`Error: ${error.message}`);
+    }
+  };
+
   // เลื่อนลำดับการแสดง (display_order) ขึ้น/ลง — คุมลำดับทั้งหน้าเว็บ.
   // Normalize ทั้งลิสต์เป็น 10,20,30,... ทุกครั้งที่ย้าย เพื่อแก้ปัญหาค่าซ้ำ (เดิมทุกตัวเป็น 0)
   const handleMoveCourse = async (course: Course, dir: -1 | 1) => {
@@ -916,6 +935,15 @@ const AdminCourses = () => {
     }
   };
 
+  // คอร์สที่ขึ้น Billboard จริงบนหน้าแรก: ตัวที่แอดมินปักไว้ก่อน ไม่มีก็ใช้กติกา
+  // อัตโนมัติ (สร้างล่าสุด ไม่นับ Tip) — ตรงกับ logic ใน Storefront.tsx
+  const pinnedBillboard = courses.find((c) => c.is_billboard && c.is_active) ?? null;
+  const autoBillboard =
+    [...courses]
+      .filter((c) => c.is_active && c.content_type !== 'tip')
+      .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0] ?? null;
+  const billboardId = (pinnedBillboard ?? autoBillboard)?.id ?? null;
+
   if (!user?.isAdmin) {
     return <div className="min-h-screen flex items-center justify-center text-muted-foreground">ไม่มีสิทธิ์เข้าถึง</div>;
   }
@@ -974,7 +1002,8 @@ const AdminCourses = () => {
           <>
           <p className="text-gray-500 text-xs mb-3 flex items-center gap-1.5 flex-wrap">
             <Star className="h-3.5 w-3.5 text-yellow-400" /> = ปักเป็น "คอร์สแนะนำ" (ขึ้นแถวแนะนำหน้าเว็บ) ·
-            Billboard หน้าแรก = คอร์สที่สร้างล่าสุดเสมอ · ใช้ลูกศร ▲▼ จัดลำดับการแสดงทั้งเว็บ
+            <Clapperboard className="h-3.5 w-3.5 text-purple-400" /> = ปักขึ้น "Billboard หน้าแรก" (ได้ครั้งละ 1 คอร์ส
+            — ไม่ปักไว้เลย = ใช้คอร์สที่สร้างล่าสุดอัตโนมัติ) · ใช้ลูกศร ▲▼ จัดลำดับการแสดงทั้งเว็บ
           </p>
           <Accordion type="multiple" className="space-y-4">
             {courses.map((course) => (
@@ -1009,23 +1038,39 @@ const AdminCourses = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {/* Billboard indicator: คอร์สที่สร้างล่าสุด (ไม่นับ Tip) = ขึ้น Billboard หน้าแรกเสมอ */}
-                        {course.is_active &&
-                          [...courses]
-                            .filter((c) => c.is_active && c.content_type !== 'tip')
-                            .sort(
-                              (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-                            )[0]?.id === course.id && (
-                            <Badge className="bg-purple-500/15 text-purple-400 border border-purple-500/30 flex items-center gap-1">
-                              <Clapperboard className="h-3 w-3" /> Billboard หน้าแรก
-                            </Badge>
-                          )}
+                        {/* Billboard: ปักเอง (📌) ชนะ ไม่ปักก็ใช้คอร์สล่าสุดอัตโนมัติ */}
+                        {billboardId === course.id && (
+                          <Badge className="bg-purple-500/15 text-purple-400 border border-purple-500/30 flex items-center gap-1">
+                            <Clapperboard className="h-3 w-3" />
+                            Billboard หน้าแรก{course.is_billboard ? ' (ปักเอง)' : ' (อัตโนมัติ)'}
+                          </Badge>
+                        )}
                         {course.content_type === 'tip' && (
                           <Badge className="bg-sky-500/15 text-sky-400 border border-sky-500/30">💡 Tip</Badge>
                         )}
                         <Badge variant={course.is_active ? 'default' : 'secondary'}>
                           {course.is_active ? 'Active' : 'Inactive'}
                         </Badge>
+
+                        {/* ปัก/ถอน Billboard หน้าแรก (span แทน button — อยู่ใน AccordionTrigger) */}
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          title={
+                            course.is_billboard
+                              ? 'ถอดออกจาก Billboard (กลับไปใช้คอร์สล่าสุดอัตโนมัติ)'
+                              : 'ปักคอร์สนี้ขึ้น Billboard หน้าแรก'
+                          }
+                          onClick={(e) => { e.stopPropagation(); handleToggleBillboard(course); }}
+                          onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleToggleBillboard(course); } }}
+                          className={`p-1.5 rounded-md border transition-colors ${
+                            course.is_billboard
+                              ? 'bg-purple-500/15 border-purple-500/40 text-purple-400 hover:bg-purple-500/25'
+                              : 'border-gray-700 text-gray-500 hover:text-purple-400 hover:border-purple-500/40'
+                          }`}
+                        >
+                          <Clapperboard className="h-4 w-4" />
+                        </span>
 
                         {/* ปัก/ถอนคอร์สแนะนำ (span แทน button — อยู่ใน AccordionTrigger) */}
                         <span

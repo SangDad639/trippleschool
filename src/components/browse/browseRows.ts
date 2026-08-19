@@ -16,6 +16,8 @@ export interface BrowseCourse {
   duration_hours: number;
   total_lessons: number;
   is_featured: boolean;
+  /** Admin pinned this course to the home-page billboard (at most one course). */
+  is_billboard?: boolean;
   lesson_count: number;
   price: number;
   discount_price: number | null;
