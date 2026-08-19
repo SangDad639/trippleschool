@@ -1943,7 +1943,11 @@ const AdminCourses = () => {
 
         {/* ซับไตเติลบอท Dialog — ความรู้ของผู้ช่วยประจำคอร์ส */}
         <Dialog open={!!subDialogCourse} onOpenChange={(o) => !o && setSubDialogCourse(null)}>
-          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          {/* ปิดได้เฉพาะปุ่ม X/Esc — คลิกนอกกรอบแล้วปิดทำให้งานอัปซับหลายบทหลุดกลางคัน */}
+          <DialogContent
+            className="max-w-2xl max-h-[85vh] overflow-y-auto"
+            onInteractOutside={(e) => e.preventDefault()}
+          >
             <DialogHeader>
               <DialogTitle className="truncate">🎬 ซับไตเติลบอท — {subDialogCourse?.name}</DialogTitle>
             </DialogHeader>
