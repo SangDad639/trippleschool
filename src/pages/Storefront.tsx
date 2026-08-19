@@ -152,6 +152,7 @@ const Storefront = () => {
                   thumbnail_url: item.thumbnail_url,
                   total_lessons: item.total_lessons,
                 } as BrowseCourse}
+                variant="grid"
                 progressPercent={item.progress_percent}
                 onClick={() =>
                   item.last_lesson_id
@@ -169,6 +170,7 @@ const Storefront = () => {
               <NetflixCard
                 key={`${row.key}-${course.id}`}
                 course={course}
+                variant="grid"
                 onClick={() => navigate(`/courses/${course.slug}`)}
               />
             ))}

@@ -99,6 +99,7 @@ const PublicCatalog = () => {
                 <NetflixCard
                   key={`${row.key}-${course.id}`}
                   course={course}
+                  variant="grid"
                   onClick={() => openCourse(course)}
                 />
               ))}
