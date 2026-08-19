@@ -945,6 +945,12 @@ const Admin = () => {
               </Button>
               <Button
                 variant="outline"
+                onClick={() => navigate('/admin/articles')}
+              >
+                บทความ
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => navigate('/admin/enrollments')}
               >
                 อนุมัติสมัครเรียน

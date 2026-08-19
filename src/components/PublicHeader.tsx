@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { to: '/', label: 'Home' },
   { to: '/tips', label: 'Tip' },
   { to: '/courses', label: 'Course' },
+  { to: '/content', label: 'Content' },
   { to: '/programs', label: 'Program' },
   { to: '/pricing', label: 'Pricing' },
 ];
@@ -239,6 +240,7 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
                       <DropdownMenuItem onClick={() => navigate('/admin/chats')}>แชทลูกค้า</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/admin/affiliate')}>จ่ายค่าคอมมิชชั่น</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/admin/banners')}>จัดการแบนเนอร์</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/admin/articles')}>จัดการบทความ</DropdownMenuItem>
                     </>
                   )}
                   <DropdownMenuSeparator />

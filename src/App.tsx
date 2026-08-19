@@ -34,6 +34,8 @@ import PublicHeader from "@/components/PublicHeader";
 import Storefront from "@/pages/Storefront";
 import PublicCatalog from "@/pages/PublicCatalog";
 import TipsCatalog from "@/pages/TipsCatalog";
+import ArticlesCatalog from "@/pages/ArticlesCatalog";
+import ArticleDetail from "@/pages/ArticleDetail";
 import Programs from "@/pages/Programs";
 import ProgramDetail from "@/pages/ProgramDetail";
 import Pricing from "@/pages/Pricing";
@@ -58,6 +60,7 @@ const PendingApproval = lazy(() => import("@/pages/PendingApproval"));
 const CourseLearn = lazy(() => import("@/pages/CourseLearn"));
 const MyCourses = lazy(() => import("@/pages/MyCourses"));
 const AdminCourses = lazy(() => import("@/pages/AdminCourses"));
+const AdminArticles = lazy(() => import("@/pages/AdminArticles"));
 const AdminEnrollments = lazy(() => import("@/pages/AdminEnrollments"));
 const AdminChats = lazy(() => import("@/pages/AdminChats"));
 
@@ -364,6 +367,8 @@ function AppRoutes() {
       <Route path="/" element={<Storefront />} />
       <Route path="/courses" element={<PublicCatalog />} />
       <Route path="/tips" element={<TipsCatalog />} />
+      <Route path="/content" element={<ArticlesCatalog />} />
+      <Route path="/content/:slug" element={<ArticleDetail />} />
       <Route path="/programs" element={<Programs />} />
       <Route path="/programs/:slug" element={<ProgramDetail />} />
       <Route path="/pricing" element={<Pricing />} />
@@ -392,6 +397,7 @@ function AppRoutes() {
       <Route path="/admin/banners" element={<ProtectedRoute><AdminBanners /></ProtectedRoute>} />
       <Route path="/admin/banners/:id/edit" element={<ProtectedRoute><AdminBannerEditor /></ProtectedRoute>} />
       <Route path="/admin/courses" element={<ProtectedRoute><AdminCourses /></ProtectedRoute>} />
+      <Route path="/admin/articles" element={<ProtectedRoute><AdminArticles /></ProtectedRoute>} />
       <Route path="/admin/enrollments" element={<ProtectedRoute><AdminEnrollments /></ProtectedRoute>} />
       <Route path="/admin/chats" element={<ProtectedRoute><AdminChats /></ProtectedRoute>} />
 

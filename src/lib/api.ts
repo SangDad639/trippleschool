@@ -2827,6 +2827,30 @@ class ApiClient {
     const q = qs.toString();
     return this.request(`/api/courses${q ? `?${q}` : ''}`);
   }
+  // ============================================
+  // Articles (บทความ — เมนู Content)
+  // ============================================
+  /** Public catalog — metadata only, active articles. */
+  async getArticles(): Promise<ArticleDto[]> {
+    return this.request('/api/articles');
+  }
+  /** One article with its body (content_html or content_url). */
+  async getArticle(slug: string): Promise<ArticleDto> {
+    return this.request(`/api/articles/${encodeURIComponent(slug)}`);
+  }
+  async getAdminArticles(): Promise<ArticleDto[]> {
+    return this.request('/api/articles/admin/all');
+  }
+  async createArticle(data: Partial<ArticleDto>): Promise<ArticleDto> {
+    return this.request('/api/articles', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateArticle(id: number, data: Partial<ArticleDto>): Promise<ArticleDto> {
+    return this.request(`/api/articles/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteArticle(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/articles/${id}`, { method: 'DELETE' });
+  }
+
   /** Pin (or unpin) the course shown on the home-page billboard. Unpinned = automatic (newest course). */
   async setCourseBillboard(courseId: number, pinned: boolean) {
     return this.request(`/api/courses/${courseId}/billboard`, {
@@ -3200,6 +3224,24 @@ export interface SubtitleSyncSummary {
     reason?: string;
     message?: string;
   }>;
+}
+
+/** บทความ (เมนู Content) — เนื้อหาอยู่ใน content_html (วางตรง) หรือ content_url (ไฟล์ HTML บน S3) */
+export interface ArticleDto {
+  id: number;
+  title: string;
+  slug: string;
+  excerpt: string | null;
+  cover_url: string | null;
+  content_html?: string | null;
+  content_url?: string | null;
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+  /** admin list only */
+  content_chars?: number;
+  has_content_file?: boolean;
 }
 
 export interface AgentKnowledgeDto {
