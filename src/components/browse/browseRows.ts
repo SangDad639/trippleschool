@@ -66,9 +66,10 @@ export function buildRows(courses: BrowseCourse[]): BrowseRow[] {
     (a, b) => Number(b.enrollment_count || 0) - Number(a.enrollment_count || 0)
   );
   const rows: BrowseRow[] = [
+    // มาใหม่ขึ้นแถวแรกเสมอ — ของใหม่คือสิ่งที่คนกลับมาดูบ่อยที่สุด
+    { key: 'new', title: 'มาใหม่ล่าสุด', courses: byNewest.filter((c) => isNewCourse(c.created_at)) },
     { key: 'featured', title: 'คอร์สแนะนำ', courses: courses.filter((c) => c.is_featured) },
     { key: 'tips', title: '💡 Tip — เรียนจบในตอนเดียว', courses: courses.filter((c) => c.content_type === 'tip') },
-    { key: 'new', title: 'มาใหม่ล่าสุด', courses: byNewest.filter((c) => isNewCourse(c.created_at)) },
     { key: 'popular', title: 'ยอดนิยม', courses: byPopular.filter((c) => Number(c.enrollment_count) > 0) },
     { key: 'beginner', title: 'สำหรับผู้เริ่มต้น', courses: courses.filter((c) => c.difficulty === 'beginner') },
     {
