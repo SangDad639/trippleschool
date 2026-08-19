@@ -235,12 +235,21 @@ const AdminCourses = () => {
       has_youtube: boolean;
       has_sub: boolean;
       chars: number;
+      too_short: boolean;
       language: string | null;
       fetched_at: string | null;
+      last_status: 'ok' | 'no_captions' | 'too_short' | 'failed' | null;
+      last_reason: string | null;
+      last_detail: string | null;
+      last_attempt_at: string | null;
     }>
   >([]);
   const [subLoading, setSubLoading] = useState(false);
   const [subBusy, setSubBusy] = useState<number | 'bulk' | null>(null);
+  const [syncingMissing, setSyncingMissing] = useState(false);
+  // ผลตรวจการเชื่อมต่อ YouTube ของเซิร์ฟเวอร์ — ใช้แยก "ระบบดึงไม่ได้" ออกจาก "คลิปไม่มีซับ"
+  const [ytHealth, setYtHealth] = useState<{ ok: boolean; message: string } | null>(null);
+  const [ytHealthChecking, setYtHealthChecking] = useState(false);
   const subFileRef = useRef<HTMLInputElement>(null);
   const subUploadTargetRef = useRef<number | null>(null);
 
@@ -477,7 +486,22 @@ const AdminCourses = () => {
   // ===== ซับไตเติลบอท (ความรู้ของผู้ช่วยประจำคอร์ส) =====
   const openSubDialog = (course: Course) => {
     setSubDialogCourse(course);
+    setYtHealth(null);
     loadSubLessons(course.id);
+  };
+
+  // ตรวจว่าเซิร์ฟเวอร์ติดต่อ YouTube ได้ไหม "ตอนนี้" — คำตอบของอาการ
+  // "กดแล้วไม่ได้ทุกคอร์ส" ที่เมื่อก่อนแยกไม่ออกว่าเป็นที่ระบบหรือที่คลิป
+  const handleCheckYoutubeHealth = async () => {
+    setYtHealthChecking(true);
+    try {
+      const r = await api.agentChatYoutubeHealth();
+      setYtHealth({ ok: r.ok, message: r.message });
+    } catch (error: any) {
+      setYtHealth({ ok: false, message: error?.message || 'ตรวจการเชื่อมต่อไม่สำเร็จ' });
+    } finally {
+      setYtHealthChecking(false);
+    }
   };
 
   const loadSubLessons = async (courseId: number) => {
@@ -492,19 +516,51 @@ const AdminCourses = () => {
     }
   };
 
+  // "ไม่มีซับ" / "คลิปไม่มีเสียงพูด" / "ดึงไม่ได้" คนละเรื่องกัน — เดิมรายงานรวมเป็น
+  // "ไม่พบซับอัตโนมัติเลย" ทำให้หาสาเหตุผิดทาง
+  const syncTail = (r: { no_captions: number; too_short: number; failed: number }) =>
+    [
+      r.no_captions > 0 ? `ยังไม่มีซับ ${r.no_captions} บท` : '',
+      r.too_short > 0 ? `คลิปไม่มีเสียงพูด ${r.too_short} บท` : '',
+      r.failed > 0 ? `ดึงไม่ได้ ${r.failed} บท (ลองอีกครั้ง)` : '',
+    ]
+      .filter(Boolean)
+      .join(' · ');
+
   const handleBulkSyncSubtitles = async () => {
     if (!subDialogCourse) return;
     setSubBusy('bulk');
     try {
       const r = await api.agentChatSyncSubtitles(subDialogCourse.id);
+      const tail = syncTail(r);
       if (r.total === 0) toast.info('คอร์สนี้ยังไม่มีบทเรียนที่มีวิดีโอ YouTube');
-      else if (r.ok === 0) toast.warning(`ไม่พบซับอัตโนมัติเลย (${r.total} บท) — ลองอัปโหลดไฟล์ซับเองรายบท`);
-      else toast.success(`ดึงซับสำเร็จ ${r.ok}/${r.total} บท${r.no_captions > 0 ? ` (ไม่มีซับ ${r.no_captions} บท)` : ''}`);
+      else if (r.ok === 0) toast.warning(`ไม่ได้ซับเพิ่มเลย (${r.total} บท) — ${tail || 'ลองอัปโหลดไฟล์ซับเองรายบท'}`);
+      else toast.success(`ดึงซับสำเร็จ ${r.ok}/${r.total} บท${tail ? ` · ${tail}` : ''}`);
       await loadSubLessons(subDialogCourse.id);
     } catch (error: any) {
       toast.error(error?.message || 'ดึงซับไม่สำเร็จ');
     } finally {
       setSubBusy(null);
+    }
+  };
+
+  // ดึงซับ "ทุกคอร์สที่ยังไม่มี" ในครั้งเดียว — เดิมต้องเปิดกล่องกดทีละคอร์ส
+  // ทำให้หลายคอร์สไม่เคยถูกดึงเลย บอทจึงไม่มีความรู้
+  const handleSyncMissingSubtitles = async () => {
+    if (!confirm('ดึงซับจาก YouTube ให้ทุกบทที่ยังไม่มีซับ (ทุกคอร์สที่เปิดใช้งาน)?\n\nใช้เวลาสักครู่ตามจำนวนคลิป — อย่าปิดหน้านี้')) return;
+    setSyncingMissing(true);
+    try {
+      const r = await api.agentChatSyncMissingSubtitles();
+      const tail = syncTail(r);
+      if (r.total === 0) toast.info('ทุกบทมีซับครบแล้ว ไม่มีอะไรต้องดึง');
+      else {
+        const courses = r.courses.filter((c) => c.ok > 0).length;
+        toast.success(`ดึงซับสำเร็จ ${r.ok}/${r.total} บท จาก ${courses} คอร์ส${tail ? ` · ${tail}` : ''}`, { duration: 8000 });
+      }
+    } catch (error: any) {
+      toast.error(error?.message || 'ดึงซับไม่สำเร็จ');
+    } finally {
+      setSyncingMissing(false);
     }
   };
 
@@ -515,7 +571,8 @@ const AdminCourses = () => {
       toast.success(`ดึงซับสำเร็จ (${r.chars.toLocaleString()} ตัวอักษร, ${r.language})`);
       if (subDialogCourse) await loadSubLessons(subDialogCourse.id);
     } catch (error: any) {
-      toast.error(error?.message || 'ดึงซับไม่สำเร็จ');
+      // BE ส่งข้อความตรงเคสมาแล้ว (ยังไม่มีซับ / คลิปไม่มีเสียงพูด / ถูกบล็อก)
+      toast.error(error?.message || 'ดึงซับไม่สำเร็จ', { duration: 7000 });
     } finally {
       setSubBusy(null);
     }
@@ -979,6 +1036,21 @@ const AdminCourses = () => {
             <p className="text-gray-400">สร้างและจัดการคอร์สเรียนและบทเรียน</p>
           </div>
           <div className="flex gap-2">
+            {/* ดึงซับให้ทุกคอร์สในคลิกเดียว — เดิมต้องเปิดกล่อง 🎬 ทีละคอร์ส
+                ทำให้หลายคอร์สไม่เคยถูกดึง บอทจึงไม่มีความรู้ */}
+            <Button
+              onClick={handleSyncMissingSubtitles}
+              variant="outline"
+              disabled={syncingMissing}
+              title="ดึงซับจาก YouTube ให้ทุกบทที่ยังไม่มีซับ (ทุกคอร์สที่เปิดใช้งาน)"
+            >
+              {syncingMissing ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Clapperboard className="h-4 w-4 mr-2 text-purple-400" />
+              )}
+              {syncingMissing ? 'กำลังดึงซับ...' : 'ดึงซับที่ยังไม่มี'}
+            </Button>
             <Button onClick={() => navigate('/admin/enrollments')} variant="outline">
               <Users className="h-4 w-4 mr-2" />
               จัดการ Enrollments
@@ -2000,6 +2072,11 @@ const AdminCourses = () => {
               ซับไตเติล = ความรู้ที่บอทผู้ช่วยคอร์สใช้ตอบคำถามเชิงลึก · ดึงอัตโนมัติจาก YouTube หรืออัปโหลดไฟล์ที่
               export มา (<b>.sbv .srt .vtt .txt</b> — ไฟล์แบบ "ข้อความ+เวลา" ใช้ได้เลย ระบบตัด timestamp ให้เอง)
             </p>
+            <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2 text-[11px] text-yellow-200/90">
+              ดึงจาก YouTube ได้เมื่อ: คลิป <b>มีคนพูด</b> (YouTube ถอดเสียงเป็นซับให้) และ <b>สร้างซับเสร็จแล้ว</b> —
+              คลิปที่เพิ่งอัปต้องรอราวไม่กี่นาทีถึงชั่วโมง ถ้ายังไม่ได้ให้กดใหม่ภายหลัง · คลิปที่มีแต่เพลง/เสียงเอฟเฟกต์
+              จะไม่ได้ซับที่ใช้งานได้ ให้อัปโหลดไฟล์เอง
+            </div>
             <div className="flex items-center gap-3 mb-1">
               <Button
                 size="sm"
@@ -2010,10 +2087,32 @@ const AdminCourses = () => {
                 {subBusy === 'bulk' ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <>📥 </>}
                 ดึงทั้งหมดจาก YouTube
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleCheckYoutubeHealth}
+                disabled={ytHealthChecking || subBusy !== null}
+                title="ตรวจว่าเซิร์ฟเวอร์ติดต่อ YouTube ได้ไหมตอนนี้ — ใช้แยกว่าปัญหาอยู่ที่ระบบหรือที่คลิป"
+              >
+                {ytHealthChecking ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <>🔌 </>}
+                ตรวจการเชื่อมต่อ
+              </Button>
               <span className="text-xs text-gray-400">
                 {subLessons.filter((l) => l.has_sub).length}/{subLessons.length} บทมีซับแล้ว
               </span>
             </div>
+            {ytHealth && (
+              <div
+                className={`rounded-md border px-3 py-2 text-xs ${
+                  ytHealth.ok
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                    : 'border-red-500/40 bg-red-500/10 text-red-300'
+                }`}
+              >
+                {ytHealth.ok ? '✅ ' : '⛔ '}
+                {ytHealth.message}
+              </div>
+            )}
             {subLoading ? (
               <div className="flex justify-center py-10">
                 <Loader2 className="h-6 w-6 animate-spin text-purple-500" />
@@ -2029,13 +2128,37 @@ const AdminCourses = () => {
                   >
                     <div className="flex-1 min-w-0">
                       <p className="text-sm text-white truncate">{l.title}</p>
-                      <p className="text-[11px] text-gray-500">
+                      <p className="text-[11px] text-gray-500 flex items-center gap-1.5 flex-wrap">
                         {l.has_sub
                           ? `✅ ${l.chars.toLocaleString()} ตัวอักษร (${l.language || '?'}) · ${
                               l.fetched_at ? new Date(l.fetched_at).toLocaleString('th-TH') : ''
                             }`
                           : '❌ ยังไม่มีซับ'}
+                        {/* ซับที่ไม่ใช่ไทยหมายถึงบอทจะอ้างอิงเนื้อหาภาษาอื่น — เดิมไม่มีการเตือน */}
+                        {l.has_sub && l.language && l.language !== 'th' && (
+                          <span className="rounded border border-yellow-500/40 bg-yellow-500/10 px-1.5 text-yellow-300">
+                            ⚠ ซับ {l.language.toUpperCase()} (บอทจะอ้างอิงภาษานี้)
+                          </span>
+                        )}
+                        {l.too_short && (
+                          <span className="rounded border border-orange-500/40 bg-orange-500/10 px-1.5 text-orange-300">
+                            ⚠ สั้นผิดปกติ — คลิปแทบไม่มีเสียงพูด
+                          </span>
+                        )}
                       </p>
+                      {/* บทที่ยังไม่มีซับ: บอกว่าครั้งล่าสุดที่ลองเกิดอะไรขึ้น
+                          (เดิมขึ้นแค่ "ยังไม่มีซับ" จึงไม่รู้ว่าคลิปไม่มีซับ หรือระบบดึงไม่ได้) */}
+                      {!l.has_sub && l.last_status && l.last_status !== 'ok' && (
+                        <p className="text-[11px] text-yellow-500/90 mt-0.5">
+                          ลองล่าสุด{' '}
+                          {l.last_attempt_at ? new Date(l.last_attempt_at).toLocaleString('th-TH') : ''} · ผล:{' '}
+                          {l.last_status === 'no_captions'
+                            ? 'YouTube ยังไม่มีซับของคลิปนี้'
+                            : l.last_status === 'too_short'
+                              ? 'คลิปแทบไม่มีเสียงพูด (ซับสั้นเกินไป)'
+                              : `ดึงไม่ได้ — ${l.last_reason || 'ไม่ทราบสาเหตุ'}${l.last_detail ? ` (${l.last_detail})` : ''}`}
+                        </p>
+                      )}
                     </div>
                     {l.has_youtube && (
                       <Button

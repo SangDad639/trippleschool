@@ -3108,11 +3108,31 @@ class ApiClient {
       has_youtube: boolean;
       has_sub: boolean;
       chars: number;
+      /** stored but too short to be useful knowledge (speechless clip) */
+      too_short: boolean;
       language: string | null;
       fetched_at: string | null;
+      /** last fetch attempt, recorded even when it stored nothing */
+      last_status: 'ok' | 'no_captions' | 'too_short' | 'failed' | null;
+      last_reason: string | null;
+      last_detail: string | null;
+      last_attempt_at: string | null;
     }>;
   }> {
     return this.request(`/api/agent-chat/admin/course/${courseId}/subtitles`);
+  }
+  /** Can the server reach YouTube captions right now? Separates "server refused" from "clip has none". */
+  async agentChatYoutubeHealth(): Promise<{
+    ok: boolean;
+    ms?: number;
+    chars?: number;
+    language?: string;
+    reason?: string;
+    detail?: string;
+    probe_lesson?: string;
+    message: string;
+  }> {
+    return this.request('/api/agent-chat/admin/youtube-health', {}, 0, 60000);
   }
   async agentChatUploadSubtitle(
     lessonId: number,
@@ -3132,14 +3152,17 @@ class ApiClient {
   async agentChatDeleteSubtitle(lessonId: number): Promise<{ ok: boolean }> {
     return this.request(`/api/agent-chat/admin/lessons/${lessonId}/subtitle`, { method: 'DELETE' });
   }
-  async agentChatSyncSubtitles(courseId: number): Promise<{
-    total: number;
-    ok: number;
-    no_captions: number;
-    results: Array<{ lesson_id: number; title: string; status: 'ok' | 'no_captions'; chars?: number }>;
-  }> {
+  async agentChatSyncSubtitles(courseId: number): Promise<SubtitleSyncSummary> {
     // Fetching captions for a whole course can take a while — long timeout, no retry.
     return this.request(`/api/agent-chat/admin/course/${courseId}/sync-subtitles`, { method: 'POST' }, 0, 300000);
+  }
+  /** Every active course, lessons that still have no subtitle. Long job — 10 min timeout. */
+  async agentChatSyncMissingSubtitles(): Promise<
+    SubtitleSyncSummary & {
+      courses: Array<{ course_id: number; course_name: string; ok: number; no_captions: number; too_short: number; failed: number }>;
+    }
+  > {
+    return this.request('/api/agent-chat/admin/sync-subtitles-missing', { method: 'POST' }, 0, 600000);
   }
   // Knowledge base (คลังความรู้บอท)
   async agentChatKnowledgeList(): Promise<{ knowledge: AgentKnowledgeDto[] }> {
@@ -3154,6 +3177,29 @@ class ApiClient {
   async agentChatKnowledgeDelete(id: number) {
     return this.request(`/api/agent-chat/admin/knowledge/${id}`, { method: 'DELETE' });
   }
+}
+
+/**
+ * Result of a subtitle sync. The buckets matter: `no_captions` means YouTube has
+ * nothing for that video (yet), `too_short` means it returned captions we refuse
+ * to store (speechless clip), `failed` means the fetch itself broke — the UI must
+ * not report all three as "ไม่พบซับ".
+ */
+export interface SubtitleSyncSummary {
+  total: number;
+  ok: number;
+  no_captions: number;
+  too_short: number;
+  failed: number;
+  results: Array<{
+    lesson_id: number;
+    title: string;
+    status: 'ok' | 'no_captions' | 'too_short' | 'failed';
+    chars?: number;
+    language?: string;
+    reason?: string;
+    message?: string;
+  }>;
 }
 
 export interface AgentKnowledgeDto {

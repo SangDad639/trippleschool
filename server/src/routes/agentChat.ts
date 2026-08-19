@@ -14,7 +14,7 @@ import { optionalAuth, authenticate, requireAdmin, AuthRequest } from '../middle
 import { rateLimit } from '../middleware/rateLimit.js';
 import { runAgentTurn } from '../services/agentChatService.js';
 import { hasActiveSubscription } from '../services/stripeService.js';
-import { fetchAutoCaptions } from '../utils/youtubeCaptions.js';
+import { fetchAutoCaptions, captionFailMessage, type CaptionFailReason } from '../utils/youtubeCaptions.js';
 import { parseSubtitleFile } from '../utils/subtitleParser.js';
 import { uploadFile, getFile } from '../utils/s3.js';
 import crypto from 'crypto';
@@ -60,6 +60,148 @@ function uploadSubtitleSingle(field: string) {
       next();
     });
 }
+
+// ===== Subtitle sync helpers (shared by the bulk / single / sync-missing routes) =====
+
+/**
+ * Below this, the "subtitles" are worthless as bot knowledge — a music-only or
+ * speechless clip still gets a caption track, and one of ours came back with 12
+ * characters. Storing that made the bot believe it had lesson content, so short
+ * results are reported instead of saved.
+ */
+const MIN_USEFUL_SUBTITLE_CHARS = 300;
+/** polite spacing between YouTube requests, with jitter so a batch isn't a metronome */
+const SYNC_DELAY_MS = () => 250 + Math.floor(Math.random() * 150);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+type SyncStatus = 'ok' | 'no_captions' | 'too_short' | 'failed';
+interface SyncResult {
+  lesson_id: number;
+  title: string;
+  status: SyncStatus;
+  chars?: number;
+  language?: string;
+  reason?: CaptionFailReason | 'db_error';
+  /** YouTube's own reason text or the HTTP status — kept for the audit trail */
+  detail?: string;
+  message?: string;
+}
+
+async function upsertSubtitle(lessonId: number, courseId: number, language: string, text: string) {
+  await pool.query(
+    `INSERT INTO lesson_subtitles (lesson_id, course_id, language, content, fetched_at)
+     VALUES ($1, $2, $3, $4, NOW())
+     ON CONFLICT (lesson_id) DO UPDATE
+       SET course_id = EXCLUDED.course_id, language = EXCLUDED.language,
+           content = EXCLUDED.content, fetched_at = NOW()`,
+    [lessonId, courseId, language, text]
+  );
+}
+
+/**
+ * Record what happened, always. A site-wide failure once left zero trace — no
+ * log line, no row — so afterwards nobody could tell a YouTube refusal from a
+ * clip without captions. Both the console line (greppable as [SubtitleSync] in
+ * Railway logs) and the row (shown in the admin dialog) exist for that reason.
+ */
+async function recordAttempt(result: SyncResult, courseId: number, userId?: number) {
+  console.log(
+    `[SubtitleSync] lesson=${result.lesson_id} course=${courseId} status=${result.status}` +
+      ` reason=${result.reason ?? '-'} chars=${result.chars ?? 0} lang=${result.language ?? '-'}` +
+      (result.detail ? ` detail=${result.detail}` : '')
+  );
+  try {
+    await pool.query(
+      `INSERT INTO subtitle_sync_attempts
+         (lesson_id, course_id, status, reason, detail, chars, language, attempted_by, attempted_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+       ON CONFLICT (lesson_id) DO UPDATE
+         SET course_id = EXCLUDED.course_id, status = EXCLUDED.status, reason = EXCLUDED.reason,
+             detail = EXCLUDED.detail, chars = EXCLUDED.chars, language = EXCLUDED.language,
+             attempted_by = EXCLUDED.attempted_by, attempted_at = NOW()`,
+      [
+        result.lesson_id,
+        courseId,
+        result.status,
+        result.reason ?? null,
+        result.detail ?? null,
+        result.chars ?? null,
+        result.language ?? null,
+        userId ?? null,
+      ]
+    );
+  } catch (error) {
+    // Audit trail must never break the sync itself.
+    console.error('[SubtitleSync] failed to record attempt:', error);
+  }
+}
+
+/** Fetch + store one lesson's captions. Never throws — failures become a result row. */
+async function syncLessonSubtitle(
+  lesson: { id: number; title: string; youtube_id: string },
+  courseId: number,
+  userId?: number
+): Promise<SyncResult> {
+  const finish = async (result: SyncResult): Promise<SyncResult> => {
+    await recordAttempt(result, courseId, userId);
+    return result;
+  };
+
+  const cap = await fetchAutoCaptions(lesson.youtube_id);
+  if (!cap.ok) {
+    return finish({
+      lesson_id: lesson.id,
+      title: lesson.title,
+      status: cap.reason === 'no_captions' ? 'no_captions' : 'failed',
+      reason: cap.reason,
+      detail: cap.detail,
+      message: captionFailMessage(cap.reason, cap.detail),
+    });
+  }
+  if (cap.text.length < MIN_USEFUL_SUBTITLE_CHARS) {
+    return finish({
+      lesson_id: lesson.id,
+      title: lesson.title,
+      status: 'too_short',
+      chars: cap.text.length,
+      language: cap.language,
+      message: `คลิปนี้แทบไม่มีเสียงพูด — ซับที่ YouTube ให้มามีแค่ ${cap.text.length} ตัวอักษร จึงไม่บันทึกเป็นความรู้ของบอท`,
+    });
+  }
+  try {
+    await upsertSubtitle(lesson.id, courseId, cap.language, cap.text);
+  } catch (error) {
+    console.error(`[AgentChat] subtitle save failed (lesson ${lesson.id}):`, error);
+    return finish({
+      lesson_id: lesson.id,
+      title: lesson.title,
+      status: 'failed',
+      reason: 'db_error',
+      message: 'บันทึกซับลงฐานข้อมูลไม่สำเร็จ',
+    });
+  }
+  return finish({
+    lesson_id: lesson.id,
+    title: lesson.title,
+    status: 'ok',
+    chars: cap.text.length,
+    language: cap.language,
+  });
+}
+
+function tallySync(results: SyncResult[]) {
+  const count = (s: SyncStatus) => results.filter((r) => r.status === s).length;
+  return {
+    total: results.length,
+    ok: count('ok'),
+    no_captions: count('no_captions'),
+    too_short: count('too_short'),
+    failed: count('failed'),
+  };
+}
+
+const LESSON_SYNC_COLUMNS = `id, title, youtube_id`;
+const ACTIVE_LESSONS_WITH_VIDEO = `is_active = true AND youtube_id IS NOT NULL AND youtube_id <> ''`;
 
 /** Course access = admin || active subscription || approved purchase (same gate as courses.ts). */
 async function hasCourseAccess(req: AuthRequest, courseId: number): Promise<boolean> {
@@ -505,35 +647,121 @@ router.post(
         )
       ).rows as Array<{ id: number; title: string; youtube_id: string }>;
 
-      const results: Array<{ lesson_id: number; title: string; status: 'ok' | 'no_captions'; chars?: number }> = [];
-      for (const l of lessons) {
-        const cap = await fetchAutoCaptions(l.youtube_id);
-        if (cap) {
-          await pool.query(
-            `INSERT INTO lesson_subtitles (lesson_id, course_id, language, content, fetched_at)
-             VALUES ($1, $2, $3, $4, NOW())
-             ON CONFLICT (lesson_id) DO UPDATE
-               SET course_id = EXCLUDED.course_id, language = EXCLUDED.language,
-                   content = EXCLUDED.content, fetched_at = NOW()`,
-            [l.id, courseId, cap.language, cap.text]
-          );
-          results.push({ lesson_id: l.id, title: l.title, status: 'ok', chars: cap.text.length });
-        } else {
-          results.push({ lesson_id: l.id, title: l.title, status: 'no_captions' });
-        }
+      const results: SyncResult[] = [];
+      for (const [i, l] of lessons.entries()) {
+        // Space the requests out — a 24-lesson course firing back-to-back is
+        // what gets us throttled, and a throttle used to be reported as
+        // "this video has no captions".
+        if (i > 0) await sleep(SYNC_DELAY_MS());
+        results.push(await syncLessonSubtitle(l, courseId, req.userId));
       }
-      res.json({
-        total: lessons.length,
-        ok: results.filter((r) => r.status === 'ok').length,
-        no_captions: results.filter((r) => r.status === 'no_captions').length,
-        results,
-      });
+      res.json({ ...tallySync(results), results });
     } catch (error) {
       console.error('[AgentChat] sync subtitles error:', error);
       res.status(500).json({ error: 'ดึงซับไตเติลไม่สำเร็จ' });
     }
   }
 );
+
+// ============ Admin: can THIS server reach YouTube captions right now? ============
+// The question "why did it fail for me but work for you?" was unanswerable
+// because a refused server and a caption-less clip produced the same message.
+// This probes one lesson that is known to have captions and reports the raw
+// outcome, so an admin can tell the two apart in one click. Writes nothing.
+// NOTE: must stay registered BEFORE /admin/:id.
+router.get('/admin/youtube-health', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    // Prefer a lesson we already have stored captions for: if the fetch fails
+    // for that one, it is the server's connection, not the video.
+    const probe = (
+      await pool.query(
+        `SELECT l.id, l.title, l.youtube_id
+         FROM lesson_subtitles ls
+         JOIN lessons l ON l.id = ls.lesson_id
+         WHERE COALESCE(l.youtube_id, '') <> ''
+         ORDER BY LENGTH(ls.content) DESC
+         LIMIT 1`
+      )
+    ).rows[0] as { id: number; title: string; youtube_id: string } | undefined;
+
+    if (!probe) {
+      return res.json({
+        ok: false,
+        reason: 'no_probe',
+        message: 'ยังไม่มีบทเรียนที่มีซับให้ใช้ทดสอบ — ลองดึงซับ 1 บทก่อน',
+      });
+    }
+
+    const started = Date.now();
+    const cap = await fetchAutoCaptions(probe.youtube_id);
+    const ms = Date.now() - started;
+    console.log(`[SubtitleSync] health probe lesson=${probe.id} ok=${cap.ok} ms=${ms}` + (cap.ok ? '' : ` reason=${cap.reason}`));
+
+    if (!cap.ok) {
+      return res.json({
+        ok: false,
+        ms,
+        reason: cap.reason,
+        detail: cap.detail,
+        probe_lesson: probe.title,
+        message: `เซิร์ฟเวอร์ดึงซับจาก YouTube ไม่ได้ตอนนี้ — ${captionFailMessage(cap.reason, cap.detail)}`,
+      });
+    }
+    res.json({
+      ok: true,
+      ms,
+      chars: cap.text.length,
+      language: cap.language,
+      probe_lesson: probe.title,
+      message: `เซิร์ฟเวอร์ดึงซับจาก YouTube ได้ปกติ (${(ms / 1000).toFixed(1)} วิ) — ถ้าบทไหนยังไม่ได้ซับ แปลว่าเป็นที่คลิปนั้น ไม่ใช่ที่ระบบ`,
+    });
+  } catch (error) {
+    console.error('[AgentChat] youtube health error:', error);
+    res.status(500).json({ ok: false, message: 'ตรวจการเชื่อมต่อไม่สำเร็จ' });
+  }
+});
+
+// ============ Admin: sync every lesson that still has no subtitle ============
+// One button for the whole site: courses were only ever synced one at a time, so
+// most of them had no bot knowledge at all. Skips lessons that already have a
+// row (re-running is cheap) and reports per course.
+// NOTE: must stay registered BEFORE /admin/:id.
+router.post('/admin/sync-subtitles-missing', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const lessons = (
+      await pool.query(
+        `SELECT l.id, l.title, l.youtube_id, l.course_id, c.name AS course_name
+         FROM lessons l
+         JOIN courses c ON c.id = l.course_id
+         LEFT JOIN lesson_subtitles ls ON ls.lesson_id = l.id
+         WHERE c.is_active = true AND l.${ACTIVE_LESSONS_WITH_VIDEO} AND ls.id IS NULL
+         ORDER BY l.course_id, l.lesson_order`
+      )
+    ).rows as Array<{ id: number; title: string; youtube_id: string; course_id: number; course_name: string }>;
+
+    const results: Array<SyncResult & { course_id: number }> = [];
+    for (const [i, l] of lessons.entries()) {
+      if (i > 0) await sleep(SYNC_DELAY_MS());
+      results.push({ ...(await syncLessonSubtitle(l, l.course_id, req.userId)), course_id: l.course_id });
+    }
+
+    // Per-course rollup so the admin sees which course still needs attention.
+    const byCourse = new Map<number, { course_id: number; course_name: string; ok: number; no_captions: number; too_short: number; failed: number }>();
+    for (const l of lessons) {
+      if (!byCourse.has(l.course_id)) {
+        byCourse.set(l.course_id, { course_id: l.course_id, course_name: l.course_name, ok: 0, no_captions: 0, too_short: 0, failed: 0 });
+      }
+    }
+    for (const r of results) {
+      const row = byCourse.get(r.course_id);
+      if (row) row[r.status] += 1;
+    }
+    res.json({ ...tallySync(results), courses: [...byCourse.values()], results });
+  } catch (error) {
+    console.error('[AgentChat] sync missing subtitles error:', error);
+    res.status(500).json({ error: 'ดึงซับที่ยังไม่มีไม่สำเร็จ' });
+  }
+});
 
 // ============ Admin: per-lesson subtitle status for a course ============
 router.get(
@@ -550,9 +778,14 @@ router.get(
                   (l.youtube_id IS NOT NULL AND l.youtube_id <> '') AS has_youtube,
                   (ls.id IS NOT NULL) AS has_sub,
                   COALESCE(LENGTH(ls.content), 0) AS chars,
-                  ls.language, ls.fetched_at
+                  (ls.id IS NOT NULL AND LENGTH(ls.content) < ${MIN_USEFUL_SUBTITLE_CHARS}) AS too_short,
+                  ls.language, ls.fetched_at,
+                  -- last attempt (even when it failed and stored nothing)
+                  sa.status AS last_status, sa.reason AS last_reason,
+                  sa.detail AS last_detail, sa.attempted_at AS last_attempt_at
            FROM lessons l
            LEFT JOIN lesson_subtitles ls ON ls.lesson_id = l.id
+           LEFT JOIN subtitle_sync_attempts sa ON sa.lesson_id = l.id
            WHERE l.course_id = $1 AND l.is_active = true
            ORDER BY l.lesson_order`,
           [courseId]
@@ -627,19 +860,14 @@ router.post(
       if (!lesson) return res.status(404).json({ error: 'ไม่พบบทเรียน' });
       if (!lesson.youtube_id) return res.status(400).json({ error: 'บทเรียนนี้ไม่มีวิดีโอ YouTube' });
 
-      const cap = await fetchAutoCaptions(lesson.youtube_id);
-      if (!cap) {
-        return res.status(404).json({ error: 'ไม่พบซับอัตโนมัติของวิดีโอนี้ — ลองอัปโหลดไฟล์ซับเองแทน' });
+      const result = await syncLessonSubtitle(lesson, lesson.course_id, req.userId);
+      if (result.status !== 'ok') {
+        // 404 only when the video genuinely has nothing; 409 when YouTube gave
+        // us captions we refuse to store; 502 when the fetch itself failed.
+        const code = result.status === 'no_captions' ? 404 : result.status === 'too_short' ? 409 : 502;
+        return res.status(code).json({ error: result.message, reason: result.reason, status: result.status, chars: result.chars });
       }
-      await pool.query(
-        `INSERT INTO lesson_subtitles (lesson_id, course_id, language, content, fetched_at)
-         VALUES ($1, $2, $3, $4, NOW())
-         ON CONFLICT (lesson_id) DO UPDATE
-           SET course_id = EXCLUDED.course_id, language = EXCLUDED.language,
-               content = EXCLUDED.content, fetched_at = NOW()`,
-        [lesson.id, lesson.course_id, cap.language, cap.text]
-      );
-      res.json({ ok: true, lesson_id: lesson.id, language: cap.language, chars: cap.text.length });
+      res.json({ ok: true, lesson_id: lesson.id, language: result.language, chars: result.chars });
     } catch (error) {
       console.error('[AgentChat] single sync error:', error);
       res.status(500).json({ error: 'ดึงซับไม่สำเร็จ' });
