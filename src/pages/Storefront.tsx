@@ -6,6 +6,7 @@ import PublicHeader from '@/components/PublicHeader';
 import HeroBillboard from '@/components/browse/HeroBillboard';
 import NetflixRow from '@/components/browse/NetflixRow';
 import NetflixCard from '@/components/browse/NetflixCard';
+import FeaturedRow from '@/components/browse/FeaturedRow';
 import { buildRows, type BrowseCourse } from '@/components/browse/browseRows';
 import { Badge } from '@/components/ui/badge';
 import { Loader2 } from 'lucide-react';
@@ -164,18 +165,28 @@ const Storefront = () => {
           </NetflixRow>
         )}
 
-        {rows.map((row) => (
-          <NetflixRow key={row.key} title={row.title}>
-            {row.courses.map((course) => (
-              <NetflixCard
-                key={`${row.key}-${course.id}`}
-                course={course}
-                variant="grid"
-                onClick={() => navigate(`/courses/${course.slug}`)}
-              />
-            ))}
-          </NetflixRow>
-        ))}
+        {rows.map((row) =>
+          // แถวมาใหม่ = mosaic: ใบใหม่สุดเป็นการ์ดใหญ่ซ้าย ที่เหลือกริดเล็กขวา
+          row.key === 'new' ? (
+            <FeaturedRow
+              key={row.key}
+              title={row.title}
+              courses={row.courses}
+              onOpen={(course) => navigate(`/courses/${course.slug}`)}
+            />
+          ) : (
+            <NetflixRow key={row.key} title={row.title}>
+              {row.courses.map((course) => (
+                <NetflixCard
+                  key={`${row.key}-${course.id}`}
+                  course={course}
+                  variant="grid"
+                  onClick={() => navigate(`/courses/${course.slug}`)}
+                />
+              ))}
+            </NetflixRow>
+          )
+        )}
 
         {courses.length === 0 && (
           <p className="text-center text-gray-400 py-24">ยังไม่มีคอร์สเปิดสอนในขณะนี้</p>

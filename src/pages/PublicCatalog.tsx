@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import PublicHeader from '@/components/PublicHeader';
 import NetflixRow from '@/components/browse/NetflixRow';
+import FeaturedRow from '@/components/browse/FeaturedRow';
 import NetflixCard from '@/components/browse/NetflixCard';
 import { buildRows, type BrowseCourse } from '@/components/browse/browseRows';
 import { Input } from '@/components/ui/input';
@@ -93,18 +94,23 @@ const PublicCatalog = () => {
       ) : (
         <>
           {/* Rails */}
-          {rows.map((row) => (
-            <NetflixRow key={row.key} title={row.title}>
-              {row.courses.map((course) => (
-                <NetflixCard
-                  key={`${row.key}-${course.id}`}
-                  course={course}
-                  variant="grid"
-                  onClick={() => openCourse(course)}
-                />
-              ))}
-            </NetflixRow>
-          ))}
+          {rows.map((row) =>
+            // แถวมาใหม่ = mosaic: ใบใหม่สุดเป็นการ์ดใหญ่ซ้าย ที่เหลือกริดเล็กขวา
+            row.key === 'new' ? (
+              <FeaturedRow key={row.key} title={row.title} courses={row.courses} onOpen={openCourse} />
+            ) : (
+              <NetflixRow key={row.key} title={row.title}>
+                {row.courses.map((course) => (
+                  <NetflixCard
+                    key={`${row.key}-${course.id}`}
+                    course={course}
+                    variant="grid"
+                    onClick={() => openCourse(course)}
+                  />
+                ))}
+              </NetflixRow>
+            )
+          )}
 
           {/* Full catalog grid */}
           <div className="px-4 md:px-12 pb-16">
