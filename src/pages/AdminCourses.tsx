@@ -328,7 +328,10 @@ const AdminCourses = () => {
 
   const loadCourses = async () => {
     try {
-      setLoading(true);
+      // Spinner เต็มหน้าเฉพาะโหลดครั้งแรก — การ refresh หลังบันทึก/ปัก/ลบ
+      // อัปเดตข้อมูลใต้หน้าเดิมเงียบๆ ไม่ unmount ลิสต์ (accordion ที่กางไว้
+      // และตำแหน่ง scroll จะคงอยู่ ไม่ต้องเลื่อนหาคอร์สใหม่ทุกครั้ง)
+      if (courses.length === 0) setLoading(true);
       const data = await api.getAdminCourses();
       setCourses(data);
     } catch (error) {
