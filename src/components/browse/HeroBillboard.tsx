@@ -7,10 +7,26 @@ import { type BrowseCourse, difficultyLabels } from './browseRows';
 
 // Full-bleed Netflix billboard: featured course backdrop + gradient overlays +
 // title / synopsis / CTA in the lower-left. Sits under the overlay header.
+// ฟอนต์ย่อตามความยาวชื่อ (แบบ Netflix) — ชื่อยาวบนฟอนต์ 6xl ในกรอบแคบเคยแตก
+// 4 บรรทัดและหักกลางวลีไทย ("(ศึก" ค้างท้ายบรรทัด)
+function titleSizeClass(name: string): string {
+  if (name.length > 70) return 'text-xl md:text-3xl lg:text-4xl';
+  if (name.length > 40) return 'text-2xl md:text-4xl lg:text-5xl';
+  return 'text-3xl md:text-5xl lg:text-6xl';
+}
+
+/** ชื่อรูปแบบ "English Title (คำแปลไทย)" → { main, sub } — รูปแบบอื่นคืน null */
+function splitBilingualTitle(name: string): { main: string; sub: string } | null {
+  const m = name.match(/^(.*?)\s*\((.+?)\)\s*$/);
+  if (!m || !m[1].trim() || !m[2].trim()) return null;
+  return { main: m[1].trim(), sub: m[2].trim() };
+}
+
 const HeroBillboard = ({ course }: { course: BrowseCourse }) => {
   const navigate = useNavigate();
   const rating = course.avg_rating && Number(course.avg_rating) > 0 ? Number(course.avg_rating) : null;
   const lessonCount = course.lesson_count || course.total_lessons || 0;
+  const titleParts = splitBilingualTitle(course.name);
 
   return (
     <section className="relative h-[65vh] min-h-[440px] w-full overflow-hidden">
@@ -27,11 +43,31 @@ const HeroBillboard = ({ course }: { course: BrowseCourse }) => {
       <div className="absolute inset-0 bg-gradient-to-r from-background via-background/60 to-transparent" />
       <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/30" />
 
-      <div className="absolute inset-x-0 bottom-0 px-4 md:px-12 pb-14 max-w-2xl">
+      <div className="absolute inset-x-0 bottom-0 px-4 md:px-12 pb-14 max-w-3xl">
         <Badge className="bg-purple-600 text-white text-xs mb-3">คอร์สแนะนำ</Badge>
-        <h1 className="text-white text-3xl md:text-5xl lg:text-6xl font-extrabold leading-tight mb-3 drop-shadow-lg text-balance">
-          {course.name}
-        </h1>
+        {/* ชื่อแบบ "English (คำแปลไทย)" แยกเป็นหัวใหญ่ + บรรทัดรอง — แต่ละบรรทัด
+            เป็นภาษาเดียว การตัดคำไทยปนอังกฤษจึงไม่เกิด (แบบเดียวกับชื่อแปลบน Netflix);
+            ชื่อที่ไม่มีวงเล็บแสดงเป็นหัวเดียว ฟอนต์ย่อตามความยาว */}
+        {titleParts ? (
+          <>
+            <h1
+              lang="th"
+              className={`text-white ${titleSizeClass(titleParts.main)} font-extrabold leading-tight drop-shadow-lg text-balance`}
+            >
+              {titleParts.main}
+            </h1>
+            <p lang="th" className="text-gray-200 text-base md:text-xl lg:text-2xl font-semibold mt-2 mb-3 drop-shadow text-balance">
+              {titleParts.sub}
+            </p>
+          </>
+        ) : (
+          <h1
+            lang="th"
+            className={`text-white ${titleSizeClass(course.name)} font-extrabold leading-tight mb-3 drop-shadow-lg text-balance`}
+          >
+            {course.name}
+          </h1>
+        )}
         {course.short_description && (
           <p className="text-gray-200 text-sm md:text-base line-clamp-3 max-w-xl mb-4 drop-shadow">
             {course.short_description}
