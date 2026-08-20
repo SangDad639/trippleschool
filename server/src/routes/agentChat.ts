@@ -527,7 +527,7 @@ router.post('/escalate', optionalAuth, async (req: AuthRequest, res: Response) =
     );
     await pool.query(
       `INSERT INTO chat_messages (conversation_id, sender_type, body) VALUES ($1, 'ai', $2)`,
-      [convId, 'ส่งเรื่องต่อให้ทีมงานแล้วค่ะ 🙋 ทีมงานจะตอบกลับในแชทนี้โดยเร็วที่สุด']
+      [convId, 'ส่งเรื่องให้ทีมงานแล้วค่ะ 🙋 เดี๋ยวทีมงานรีบมาตอบในแชทนี้เลยนะคะ']
     );
     res.json(await getThread(convId));
   } catch (error) {
@@ -556,7 +556,7 @@ router.post('/back-to-ai', optionalAuth, async (req: AuthRequest, res: Response)
       );
       await pool.query(
         `INSERT INTO chat_messages (conversation_id, sender_type, body) VALUES ($1, 'ai', $2)`,
-        [convId, 'น้องทริปเปิ้ลกลับมาแล้วค่ะ 🤖 ถามต่อได้เลยนะคะ (ถ้าต้องการทีมงานอีกครั้ง กด "คุยกับแอดมิน" ได้เสมอค่ะ)']
+        [convId, 'น้องทริปเปิ้ลกลับมาแล้วค่า ถามต่อได้เลยนะคะ 😊 (อยากคุยกับทีมงานอีกเมื่อไหร่ กด "คุยกับแอดมิน" ได้เสมอค่ะ)']
       );
     }
     res.json(await getThread(convId));

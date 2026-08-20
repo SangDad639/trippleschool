@@ -223,7 +223,7 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
             className="relative bg-card border border-border rounded-2xl rounded-br-sm shadow-xl px-4 py-3 pr-8 cursor-pointer hover:border-primary/50 transition-colors"
           >
             <p className="text-sm text-foreground leading-relaxed">
-              สวัสดีครับ 👋 มีคำถามเรื่องคอร์สนี้ ถาม<span className="font-semibold text-primary">น้องทริปเปิ้ล</span>ได้เลย
+              สวัสดีค่ะ 👋 มีคำถามเรื่องคอร์สนี้ ถาม<span className="font-semibold text-primary">น้องทริปเปิ้ล</span>ได้เลยนะคะ
             </p>
             <button
               onClick={(e) => {
@@ -288,7 +288,7 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
                   <Bot className="h-4 w-4 text-primary" />
                 </div>
                 <div className="bg-muted rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-foreground max-w-[80%]">
-                  สวัสดีค่ะ 👋 ถามได้เลยเกี่ยวกับคอร์ส "{courseName}" — เนื้อหาที่สอน ราคา หรือวิธีสมัครค่ะ
+                  สวัสดีค่ะ 👋 อยากรู้อะไรเกี่ยวกับคอร์ส "{courseName}" ถามน้องทริปเปิ้ลได้เลยนะคะ — เนื้อหาที่สอน ราคา หรือวิธีสมัครก็ได้ค่ะ
                 </div>
               </div>
             )}
@@ -331,8 +331,18 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
                     <span className="inline-block w-1.5 h-4 ml-0.5 align-text-bottom bg-primary/70 animate-pulse" />
                   </div>
                 ) : (
-                  <div className="bg-muted rounded-2xl rounded-tl-sm px-3 py-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  /* จุดสามจุดเด้งแบบ "กำลังพิมพ์" — ให้ความรู้สึกมีคนอยู่ปลายแชทมากกว่า spinner */
+                  <div className="bg-muted rounded-2xl rounded-tl-sm px-3.5 py-3" aria-label="กำลังพิมพ์">
+                    <span className="flex items-center gap-1 motion-reduce:hidden">
+                      {[0, 150, 300].map((delay) => (
+                        <span
+                          key={delay}
+                          className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/70 animate-bounce"
+                          style={{ animationDelay: `${delay}ms`, animationDuration: '1s' }}
+                        />
+                      ))}
+                    </span>
+                    <span className="hidden motion-reduce:inline text-xs text-muted-foreground">กำลังพิมพ์...</span>
                   </div>
                 )}
               </div>
