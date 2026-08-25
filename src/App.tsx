@@ -59,6 +59,8 @@ const MyCourses = lazy(() => import("@/pages/MyCourses"));
 const AdminCourses = lazy(() => import("@/pages/AdminCourses"));
 const AdminEnrollments = lazy(() => import("@/pages/AdminEnrollments"));
 const AdminChats = lazy(() => import("@/pages/AdminChats"));
+// Hidden page (/guide) — no nav tab, fully public. Currently intentionally blank.
+const Guide = lazy(() => import("@/pages/Guide"));
 
 // Login/Register page
 const AuthPage = () => {
@@ -340,6 +342,11 @@ function AppRoutes() {
       <Route path="/affiliate-info" element={<AffiliateInfo />} />
       <Route path="/update" element={<Update />} />
       <Route path="/update/:id" element={<UpdateDetail />} />
+
+      {/* Hidden from the nav, open to everyone (no login, no plan). Blank for now. */}
+      <Route path="/guide" element={<Guide />} />
+      <Route path="/guide/*" element={<Navigate to="/guide" replace />} />
+      <Route path="/help" element={<Navigate to="/guide" replace />} />
 
       <Route path="/login" element={<AuthPage />} />
       <Route path="/register" element={<AuthPage />} />
