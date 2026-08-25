@@ -1,6 +1,33 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+import { CLIPS } from "./src/components/guide/clipsData";
+
+// /guide-clips.json — the machine-readable twin of the /guide page.
+//
+// Triple Bot (the desktop app) shows the manual INSIDE the app, so it needs the clip list
+// as data. It cannot read it from this site's bundle, so it fetches this file: publish a
+// clip here and every installed app picks it up on its next open — no new exe.
+//
+// clipsData.ts stays the ONE place a clip is edited; the JSON is generated from it, so the
+// two cannot drift. Served in dev as well, so the app can be pointed at localhost:5173.
+const guideClipsFeed = (): Plugin => ({
+  name: "guide-clips-feed",
+  configureServer(server: ViteDevServer) {
+    server.middlewares.use("/guide-clips.json", (_req, res) => {
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
+      res.setHeader("Cache-Control", "no-store");
+      res.end(JSON.stringify({ clips: CLIPS }));
+    });
+  },
+  generateBundle() {
+    this.emitFile({
+      type: "asset",
+      fileName: "guide-clips.json",
+      source: JSON.stringify({ clips: CLIPS }, null, 2),
+    });
+  },
+});
 
 export default defineConfig({
   server: {
@@ -24,7 +51,7 @@ export default defineConfig({
       "viral-fe-production.up.railway.app",
     ]
   },
-  plugins: [react()],
+  plugins: [react(), guideClipsFeed()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
