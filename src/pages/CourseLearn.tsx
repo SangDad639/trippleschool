@@ -67,6 +67,7 @@ interface Course {
   name: string;
   slug: string;
   description: string;
+  price?: number;
   lessons: Lesson[];
   sections?: Section[];
   unassigned_lessons?: Lesson[];
@@ -173,7 +174,8 @@ const CourseLearn = () => {
       // hasAccess = active subscription or admin. Non-members are NOT redirected away —
       // they can still watch preview lessons; member-only lessons render a locked
       // overlay with a "subscribe" CTA instead of the video.
-      const access = !!data.isEnrolled;
+      // คอร์สฟรี (ราคา 0) = ทุกคนดูได้ทุกบท (server เปิด youtube_id ให้แล้ว)
+      const access = !!data.isEnrolled || Number(data.price) === 0;
       setHasAccess(access);
       setCourse(data);
       // data.enrollment is the progress row (or null for non-members). When null we

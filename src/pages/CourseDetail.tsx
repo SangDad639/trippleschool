@@ -527,11 +527,29 @@ const CourseDetail = () => {
                       ซื้อใหม่
                     </Button>
                   </div>
+                ) : isFree ? (
+                  /* คอร์สฟรี: กดเรียนได้ทันทีไม่ต้อง login — login มีไว้เก็บความคืบหน้าเท่านั้น */
+                  <div className="space-y-2">
+                    <Button onClick={handleStartLearning} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
+                      <Play className="h-3.5 w-3.5 mr-1.5" />
+                      เริ่มเรียนฟรีเลย
+                    </Button>
+                    {isAuthenticated ? (
+                      <Button variant="outline" onClick={openBuyDialog} className="w-full h-8 text-sm border-purple-500/40 text-purple-300 hover:bg-purple-500/10">
+                        <GraduationCap className="h-3.5 w-3.5 mr-1.5" />
+                        ลงทะเบียนคอร์สนี้ (บันทึกความคืบหน้า)
+                      </Button>
+                    ) : (
+                      <p className="text-gray-400 text-xs text-center">
+                        เรียนได้เลยไม่ต้องสมัคร — <button onClick={() => navigate('/login')} className="text-purple-400 hover:underline">เข้าสู่ระบบ</button> ถ้าอยากบันทึกความคืบหน้า
+                      </p>
+                    )}
+                  </div>
                 ) : (
                   <div className="space-y-2">
                     <Button onClick={openBuyDialog} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
-                      {isFree ? <Play className="h-3.5 w-3.5 mr-1.5" /> : <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />}
-                      {isFree ? 'ลงทะเบียนเรียนฟรี' : `ซื้อคอร์สนี้ ฿${buyAmount.toLocaleString()}`}
+                      <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
+                      ซื้อคอร์สนี้ ฿{buyAmount.toLocaleString()}
                     </Button>
                     <div className="py-1 text-center"><span className="text-gray-500 text-xs">— หรือ —</span></div>
                     <Button variant="outline" onClick={() => navigate('/subscription')} className="w-full h-8 text-sm border-purple-500/40 text-purple-300 hover:bg-purple-500/10">
@@ -609,7 +627,7 @@ const CourseDetail = () => {
               // Netflix-style episode row: video cover left (YouTube thumb via
               // our proxy — the video id never reaches the client), info right.
               // ctx = คอร์สแม่หรือ Tip แต่ละตัว (คนละ slug/สิทธิ์/ความคืบหน้า)
-              const rowCtx: LessonRowCtx = { slug: course.slug, hasAccess, enrollment };
+              const rowCtx: LessonRowCtx = { slug: course.slug, hasAccess: hasAccess || isFree, enrollment };
               const renderLessonRow = (lesson: Lesson, index: number, ctx: LessonRowCtx = rowCtx) => {
                 const isCompleted = ctx.enrollment?.completed_lessons?.includes(lesson.id);
                 const locked = !lesson.is_preview && !ctx.hasAccess;
@@ -821,7 +839,7 @@ const CourseDetail = () => {
                             // สิทธิ์/ความคืบหน้า/ปลายทาง = ของ tip เอง ไม่ใช่คอร์สแม่
                             const tipCtx: LessonRowCtx = {
                               slug: tc.slug,
-                              hasAccess: !!(tc.isEnrolled || tc.hasAccess),
+                              hasAccess: !!(tc.isEnrolled || tc.hasAccess) || Number(tc.price) === 0,
                               enrollment: tc.enrollment ?? null,
                             };
                             const tipLessons = tc.lessons || [];
