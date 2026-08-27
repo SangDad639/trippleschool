@@ -2854,12 +2854,38 @@ class ApiClient {
   // ============================================
   // Guide clips (คลิปคู่มือหน้า /guide)
   // ============================================
+  /** Public — groups shown on /guide, newest arrangement first. */
+  async getGuideGroups(): Promise<GuideGroupDto[]> {
+    return this.request('/api/guide/groups');
+  }
+  /** Public — one group plus its clips (the /guide/:slug page). */
+  async getGuideGroup(slug: string): Promise<GuideGroupDto> {
+    return this.request(`/api/guide/groups/${encodeURIComponent(slug)}`);
+  }
+  async getAdminGuideGroups(): Promise<GuideGroupDto[]> {
+    return this.request('/api/guide/groups/admin/all');
+  }
+  async createGuideGroup(data: Partial<GuideGroupDto>): Promise<GuideGroupDto> {
+    return this.request('/api/guide/groups', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateGuideGroup(id: number, data: Partial<GuideGroupDto>): Promise<GuideGroupDto> {
+    return this.request(`/api/guide/groups/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  /** ลบกลุ่ม = คลิปในกลุ่มหายไปด้วย (FK cascade) */
+  async deleteGuideGroup(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/guide/groups/${id}`, { method: 'DELETE' });
+  }
+  async reorderGuideGroups(ids: number[]): Promise<{ ok: boolean }> {
+    return this.request('/api/guide/groups/reorder', { method: 'POST', body: JSON.stringify({ ids }) });
+  }
+
   /** Public — active clips in display order. No auth: /guide is open to everyone. */
   async getGuideClips(): Promise<GuideClipDto[]> {
     return this.request('/api/guide/clips');
   }
-  async getAdminGuideClips(): Promise<GuideClipDto[]> {
-    return this.request('/api/guide/clips/admin/all');
+  async getAdminGuideClips(groupId?: number): Promise<GuideClipDto[]> {
+    const qs = groupId ? `?group_id=${groupId}` : '';
+    return this.request(`/api/guide/clips/admin/all${qs}`);
   }
   async createGuideClip(data: Partial<GuideClipDto>): Promise<GuideClipDto> {
     return this.request('/api/guide/clips', { method: 'POST', body: JSON.stringify(data) });
@@ -3266,6 +3292,20 @@ export interface SubtitleSyncSummary {
 }
 
 /** บทความ (เมนู Content) — เนื้อหาอยู่ใน content_html (วางตรง) หรือ content_url (ไฟล์ HTML บน S3) */
+export interface GuideGroupDto {
+  id: number;
+  title: string;
+  slug: string;
+  description: string | null;
+  cover_url: string | null;
+  is_active: boolean;
+  display_order: number;
+  /** จำนวนคลิปในกลุ่ม (ฝั่ง public นับเฉพาะคลิปที่เปิดอยู่) */
+  clip_count?: number | string;
+  /** มากับ getGuideGroup(slug) เท่านั้น */
+  clips?: GuideClipDto[];
+}
+
 export interface GuideAdminDto {
   id: number;
   email: string;
@@ -3276,6 +3316,8 @@ export interface GuideAdminDto {
 
 export interface GuideClipDto {
   id: number;
+  /** กลุ่มที่คลิปนี้อยู่ */
+  group_id?: number | null;
   title: string;
   subtitle: string | null;
   /** ลิงก์ YouTube ของคลิป */

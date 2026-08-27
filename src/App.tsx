@@ -61,6 +61,7 @@ const CourseLearn = lazy(() => import("@/pages/CourseLearn"));
 const MyCourses = lazy(() => import("@/pages/MyCourses"));
 const AdminCourses = lazy(() => import("@/pages/AdminCourses"));
 const AdminArticles = lazy(() => import("@/pages/AdminArticles"));
+const GuideGroup = lazy(() => import("@/pages/GuideGroup"));
 const AdminGuide = lazy(() => import("@/pages/AdminGuide"));
 const AdminEnrollments = lazy(() => import("@/pages/AdminEnrollments"));
 const AdminChats = lazy(() => import("@/pages/AdminChats"));
@@ -383,7 +384,7 @@ function AppRoutes() {
 
       {/* Hidden from the nav, open to everyone (no login, no plan). Blank for now. */}
       <Route path="/guide" element={<Guide />} />
-      <Route path="/guide/*" element={<Navigate to="/guide" replace />} />
+      <Route path="/guide/:slug" element={<GuideGroup />} />
       <Route path="/help" element={<Navigate to="/guide" replace />} />
 
       <Route path="/login" element={<AuthPage />} />

@@ -18,7 +18,7 @@ import { authenticate, requireAdmin, requireGuideAdmin, AuthRequest } from '../m
 const router = Router();
 
 /** thumbnail_url is exposed as `thumbnail` — the shape clipsData.ts already uses on the FE. */
-const CLIP_COLUMNS = `id, title, subtitle, url, thumbnail_url AS thumbnail, links, is_active, display_order`;
+const CLIP_COLUMNS = `id, group_id, title, subtitle, url, thumbnail_url AS thumbnail, links, is_active, display_order`;
 
 const TITLE_MAX = 255;
 const URL_MAX = 2048;
@@ -66,16 +66,23 @@ function readClipBody(body: any): { error?: string; values?: any } {
       thumbnail_url: thumbnail || null,
       links: JSON.stringify(sanitizeLinks(body?.links)),
       is_active: body?.is_active !== false,
+      group_id: Number.isInteger(Number(body?.group_id)) ? Number(body.group_id) : null,
     },
   };
 }
 
 /** Public — clips shown on /guide, active only, in display order. */
-router.get('/clips', async (_req, res: Response) => {
+router.get('/clips', async (req, res: Response) => {
+  const groupId = Number(req.query.group_id);
   try {
-    const result = await pool.query(
-      `SELECT ${CLIP_COLUMNS} FROM guide_clips WHERE is_active = true ORDER BY display_order ASC, id ASC`
-    );
+    const result = Number.isInteger(groupId)
+      ? await pool.query(
+          `SELECT ${CLIP_COLUMNS} FROM guide_clips WHERE is_active = true AND group_id = $1 ORDER BY display_order ASC, id ASC`,
+          [groupId]
+        )
+      : await pool.query(
+          `SELECT ${CLIP_COLUMNS} FROM guide_clips WHERE is_active = true ORDER BY display_order ASC, id ASC`
+        );
     res.json(result.rows);
   } catch (err: any) {
     console.error('[guide] list clips failed:', err?.message);
@@ -101,9 +108,15 @@ router.get('/clips.json', async (_req, res: Response) => {
 });
 
 /** Admin — every clip including hidden ones. */
-router.get('/clips/admin/all', authenticate, requireGuideAdmin, async (_req: AuthRequest, res: Response) => {
+router.get('/clips/admin/all', authenticate, requireGuideAdmin, async (req: AuthRequest, res: Response) => {
+  const groupId = Number(req.query.group_id);
   try {
-    const result = await pool.query(
+    const result = Number.isInteger(groupId)
+      ? await pool.query(
+          `SELECT ${CLIP_COLUMNS}, created_at, updated_at FROM guide_clips WHERE group_id = $1 ORDER BY display_order ASC, id ASC`,
+          [groupId]
+        )
+      : await pool.query(
       `SELECT ${CLIP_COLUMNS}, created_at, updated_at FROM guide_clips ORDER BY display_order ASC, id ASC`
     );
     res.json(result.rows);
@@ -119,16 +132,18 @@ router.post('/clips', authenticate, requireGuideAdmin, async (req: AuthRequest, 
 
   try {
     // New clips land at the end of the grid unless the caller pins an order.
-    const orderRow = await pool.query('SELECT COALESCE(MAX(display_order), -1) + 1 AS next FROM guide_clips');
+    const orderRow = values.group_id
+      ? await pool.query('SELECT COALESCE(MAX(display_order), -1) + 1 AS next FROM guide_clips WHERE group_id = $1', [values.group_id])
+      : await pool.query('SELECT COALESCE(MAX(display_order), -1) + 1 AS next FROM guide_clips');
     const displayOrder = Number.isFinite(Number(req.body?.display_order))
       ? Number(req.body.display_order)
       : orderRow.rows[0].next;
 
     const result = await pool.query(
-      `INSERT INTO guide_clips (title, subtitle, url, thumbnail_url, links, is_active, display_order)
-       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
+      `INSERT INTO guide_clips (title, subtitle, url, thumbnail_url, links, is_active, display_order, group_id)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8)
        RETURNING ${CLIP_COLUMNS}`,
-      [values.title, values.subtitle, values.url, values.thumbnail_url, values.links, values.is_active, displayOrder]
+      [values.title, values.subtitle, values.url, values.thumbnail_url, values.links, values.is_active, displayOrder, values.group_id]
     );
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
@@ -148,10 +163,11 @@ router.put('/clips/:id', authenticate, requireGuideAdmin, async (req: AuthReques
     const result = await pool.query(
       `UPDATE guide_clips
           SET title = $1, subtitle = $2, url = $3, thumbnail_url = $4,
-              links = $5::jsonb, is_active = $6, updated_at = NOW()
-        WHERE id = $7
+              links = $5::jsonb, is_active = $6,
+              group_id = COALESCE($7, group_id), updated_at = NOW()
+        WHERE id = $8
         RETURNING ${CLIP_COLUMNS}`,
-      [values.title, values.subtitle, values.url, values.thumbnail_url, values.links, values.is_active, id]
+      [values.title, values.subtitle, values.url, values.thumbnail_url, values.links, values.is_active, values.group_id, id]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Clip not found' });
     res.json(result.rows[0]);
@@ -196,6 +212,176 @@ router.post('/clips/reorder', authenticate, requireGuideAdmin, async (req: AuthR
     await client.query('ROLLBACK');
     console.error('[guide] reorder failed:', err?.message);
     res.status(500).json({ error: 'Failed to reorder guide clips' });
+  } finally {
+    client.release();
+  }
+});
+
+// ── กลุ่มคู่มือ (guide groups) ──────────────────────────────────────────────
+// โครงเดียวกับคอร์ส: กลุ่ม = คอร์ส, คลิปข้างใน = บทเรียน
+const GROUP_COLUMNS = `id, title, slug, description, cover_url, is_active, display_order`;
+
+/** slug ไทย/อังกฤษ/ตัวเลข — ตรงกับ sanitizeSlug ของบทความ */
+function toSlug(raw: unknown, fallback: string): string {
+  const base = String(raw ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9฀-๿-]/g, '')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 200);
+  return base || fallback;
+}
+
+/** Public — groups shown on /guide, with the number of clips inside each. */
+router.get('/groups', async (_req, res: Response) => {
+  try {
+    const result = await pool.query(
+      `SELECT g.id, g.title, g.slug, g.description, g.cover_url, g.is_active, g.display_order,
+              COUNT(c.id) FILTER (WHERE c.is_active) AS clip_count
+         FROM guide_groups g
+         LEFT JOIN guide_clips c ON c.group_id = g.id
+        WHERE g.is_active = true
+        GROUP BY g.id
+        ORDER BY g.display_order ASC, g.id ASC`
+    );
+    res.json(result.rows);
+  } catch (err: any) {
+    console.error('[guide] list groups failed:', err?.message);
+    res.status(500).json({ error: 'Failed to load guide groups' });
+  }
+});
+
+/** Public — one group plus its clips, the /guide/:slug page in a single round trip. */
+router.get('/groups/:slug', async (req, res: Response) => {
+  try {
+    const groupRes = await pool.query(
+      `SELECT ${GROUP_COLUMNS} FROM guide_groups WHERE slug = $1 AND is_active = true`,
+      [req.params.slug]
+    );
+    if (groupRes.rows.length === 0) return res.status(404).json({ error: 'Group not found' });
+
+    const clipsRes = await pool.query(
+      `SELECT ${CLIP_COLUMNS} FROM guide_clips
+        WHERE group_id = $1 AND is_active = true
+        ORDER BY display_order ASC, id ASC`,
+      [groupRes.rows[0].id]
+    );
+    res.json({ ...groupRes.rows[0], clips: clipsRes.rows });
+  } catch (err: any) {
+    console.error('[guide] group detail failed:', err?.message);
+    res.status(500).json({ error: 'Failed to load guide group' });
+  }
+});
+
+router.get('/groups/admin/all', authenticate, requireGuideAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const result = await pool.query(
+      `SELECT g.id, g.title, g.slug, g.description, g.cover_url, g.is_active, g.display_order,
+              COUNT(c.id) AS clip_count
+         FROM guide_groups g
+         LEFT JOIN guide_clips c ON c.group_id = g.id
+        GROUP BY g.id
+        ORDER BY g.display_order ASC, g.id ASC`
+    );
+    res.json(result.rows);
+  } catch (err: any) {
+    console.error('[guide] admin groups failed:', err?.message);
+    res.status(500).json({ error: 'Failed to load guide groups' });
+  }
+});
+
+router.post('/groups', authenticate, requireGuideAdmin, async (req: AuthRequest, res: Response) => {
+  const title = trimmed(req.body?.title, TITLE_MAX);
+  if (!title) return res.status(400).json({ error: 'ต้องใส่ชื่อกลุ่ม' });
+
+  try {
+    const orderRow = await pool.query('SELECT COALESCE(MAX(display_order), -1) + 1 AS next FROM guide_groups');
+    // Slug must stay unique: fall back to the row order, then let a collision retry once.
+    let slug = toSlug(req.body?.slug || title, `group-${orderRow.rows[0].next}`);
+    const clash = await pool.query('SELECT 1 FROM guide_groups WHERE slug = $1', [slug]);
+    if (clash.rowCount) slug = `${slug}-${orderRow.rows[0].next}`;
+
+    const result = await pool.query(
+      `INSERT INTO guide_groups (title, slug, description, cover_url, is_active, display_order)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING ${GROUP_COLUMNS}`,
+      [
+        title,
+        slug,
+        trimmed(req.body?.description, 2000) || null,
+        trimmed(req.body?.cover_url, URL_MAX) || null,
+        req.body?.is_active !== false,
+        orderRow.rows[0].next,
+      ]
+    );
+    res.status(201).json({ ...result.rows[0], clip_count: 0 });
+  } catch (err: any) {
+    console.error('[guide] create group failed:', err?.message);
+    res.status(500).json({ error: 'Failed to create guide group' });
+  }
+});
+
+router.put('/groups/:id', authenticate, requireGuideAdmin, async (req: AuthRequest, res: Response) => {
+  const id = Number(req.params.id);
+  const title = trimmed(req.body?.title, TITLE_MAX);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+  if (!title) return res.status(400).json({ error: 'ต้องใส่ชื่อกลุ่ม' });
+
+  try {
+    const result = await pool.query(
+      `UPDATE guide_groups
+          SET title = $1, description = $2, cover_url = $3, is_active = $4, updated_at = NOW()
+        WHERE id = $5
+        RETURNING ${GROUP_COLUMNS}`,
+      [
+        title,
+        trimmed(req.body?.description, 2000) || null,
+        trimmed(req.body?.cover_url, URL_MAX) || null,
+        req.body?.is_active !== false,
+        id,
+      ]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Group not found' });
+    res.json(result.rows[0]);
+  } catch (err: any) {
+    console.error('[guide] update group failed:', err?.message);
+    res.status(500).json({ error: 'Failed to update guide group' });
+  }
+});
+
+/** Deleting a group takes its clips with it (FK ON DELETE CASCADE) — the UI warns first. */
+router.delete('/groups/:id', authenticate, requireGuideAdmin, async (req: AuthRequest, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const result = await pool.query('DELETE FROM guide_groups WHERE id = $1', [id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Group not found' });
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[guide] delete group failed:', err?.message);
+    res.status(500).json({ error: 'Failed to delete guide group' });
+  }
+});
+
+router.post('/groups/reorder', authenticate, requireGuideAdmin, async (req: AuthRequest, res: Response) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
+  if (ids.length === 0) return res.status(400).json({ error: 'ต้องส่งลำดับ id มาด้วย' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (let i = 0; i < ids.length; i++) {
+      await client.query('UPDATE guide_groups SET display_order = $1, updated_at = NOW() WHERE id = $2', [i, ids[i]]);
+    }
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (err: any) {
+    await client.query('ROLLBACK');
+    console.error('[guide] reorder groups failed:', err?.message);
+    res.status(500).json({ error: 'Failed to reorder guide groups' });
   } finally {
     client.release();
   }
