@@ -14,6 +14,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
@@ -334,6 +335,9 @@ const AdminGuide = () => {
         <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editing ? 'แก้ไขคลิป' : 'เพิ่มคลิป'}</DialogTitle>
+            <DialogDescription>
+              ใส่ลิงก์ YouTube แล้วกดบันทึก — คลิปจะขึ้นบนหน้า /guide ทันทีโดยไม่ต้อง deploy ใหม่
+            </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
