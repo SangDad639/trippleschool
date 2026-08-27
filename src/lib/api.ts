@@ -2862,6 +2862,12 @@ class ApiClient {
   async getGuideGroup(slug: string): Promise<GuideGroupDto> {
     return this.request(`/api/guide/groups/${encodeURIComponent(slug)}`);
   }
+  /** อัปโหลดภาพปกของคู่มือ (ผู้ดูแลคู่มือใช้ได้ ไม่ต้องเป็นแอดมินเต็ม) */
+  async uploadGuideImage(file: File): Promise<{ url: string }> {
+    const formData = new FormData();
+    formData.append('image', file);
+    return this.request('/api/guide/upload-image', { method: 'POST', body: formData });
+  }
   async getAdminGuideGroups(): Promise<GuideGroupDto[]> {
     return this.request('/api/guide/groups/admin/all');
   }

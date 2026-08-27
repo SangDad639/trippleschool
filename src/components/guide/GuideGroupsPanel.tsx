@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { api, type GuideGroupDto } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -38,6 +38,8 @@ import {
   ChevronDown,
   ChevronRight,
   PlayCircle,
+  Upload,
+  Trash,
 } from 'lucide-react';
 
 const emptyForm = { title: '', description: '', cover_url: '', is_active: true };
@@ -60,6 +62,8 @@ const GuideGroupsPanel = ({ onSelect }: GuideGroupsPanelProps) => {
   const [saving, setSaving] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<GuideGroupDto | null>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
     try {
@@ -140,6 +144,27 @@ const GuideGroupsPanel = ({ onSelect }: GuideGroupsPanelProps) => {
       toast.error(err?.message || 'ลบไม่สำเร็จ');
     } finally {
       setDeleteTarget(null);
+    }
+  };
+
+  /** อัปโหลดปกกลุ่ม — ท่อเดียวกับปกคอร์ส (S3 + ย่อ variant card/hero) */
+  const handleCoverFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('รองรับเฉพาะไฟล์รูปภาพ');
+      return;
+    }
+    setCoverBusy(true);
+    try {
+      const { url } = await api.uploadGuideImage(file);
+      setForm((f) => ({ ...f, cover_url: url }));
+      toast.success('อัปโหลดปกแล้ว');
+    } catch (err: any) {
+      toast.error(err?.message || 'อัปโหลดปกไม่สำเร็จ');
+    } finally {
+      setCoverBusy(false);
     }
   };
 
@@ -315,21 +340,52 @@ const GuideGroupsPanel = ({ onSelect }: GuideGroupsPanelProps) => {
               />
             </div>
 
+            {/* ปกกลุ่ม — ทรงเดียวกับปกคอร์สในหน้าจัดการคอร์ส */}
             <div>
               <Label>ภาพปก</Label>
-              <Input
-                value={form.cover_url}
-                onChange={(e) => setForm((f) => ({ ...f, cover_url: e.target.value }))}
-                placeholder="/banner1.jpg หรือ https://..."
-                className="mt-1"
-              />
-              {form.cover_url.trim() && (
-                <img
-                  src={api.mediaUrl(form.cover_url.trim(), 'card')}
-                  alt=""
-                  className="mt-2 aspect-video w-full rounded-md border border-border object-cover"
-                />
-              )}
+              <div className="mt-1 flex items-center gap-3">
+                {form.cover_url.trim() ? (
+                  <img
+                    src={api.mediaUrl(form.cover_url.trim(), 'card')}
+                    alt="ภาพปก"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.opacity = '0.2';
+                    }}
+                    className="aspect-video w-32 rounded-md border border-gray-700 bg-gray-800 object-cover"
+                  />
+                ) : (
+                  <div className="flex aspect-video w-32 items-center justify-center rounded-md border border-gray-700 bg-gray-800 text-[10px] text-muted-foreground">
+                    ยังไม่มีปก
+                  </div>
+                )}
+                <div className="flex flex-col gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={coverBusy}
+                    onClick={() => coverInputRef.current?.click()}
+                    className="gap-1.5"
+                  >
+                    {coverBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                    อัปโหลดปก
+                  </Button>
+                  {form.cover_url.trim() && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={coverBusy}
+                      onClick={() => setForm((f) => ({ ...f, cover_url: '' }))}
+                      className="gap-1.5 text-gray-400"
+                    >
+                      <Trash className="h-3.5 w-3.5" /> เอาปกออก
+                    </Button>
+                  )}
+                  <p className="text-[11px] text-gray-500">แนะนำอัตราส่วน 16:9 · ไม่เกิน 5MB</p>
+                </div>
+                <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverFile} />
+              </div>
             </div>
 
             <label className="flex cursor-pointer items-center gap-2">

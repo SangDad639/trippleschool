@@ -12,7 +12,10 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import multer from 'multer';
 import pool from '../db.js';
+import { uploadFile } from '../utils/s3.js';
+import { makeThumbnailVariant, variantKey } from '../utils/imageResize.js';
 import { authenticate, requireAdmin, requireGuideAdmin, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
@@ -216,6 +219,49 @@ router.post('/clips/reorder', authenticate, requireGuideAdmin, async (req: AuthR
     client.release();
   }
 });
+
+// ── อัปโหลดภาพปก ────────────────────────────────────────────────────────────
+// คู่มือใช้ท่อเดียวกับปกคอร์ส (S3 + variant card/hero + เสิร์ฟผ่าน proxy สาธารณะ
+// /api/courses/thumbnails/*) แต่ต้องมี endpoint ของตัวเอง เพราะของคอร์สบังคับ
+// req.isAdmin — ผู้ดูแลคู่มือจะอัปโหลดไม่ได้
+const imageUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Only image files allowed'));
+  },
+});
+
+router.post(
+  '/upload-image',
+  authenticate,
+  requireGuideAdmin,
+  imageUpload.single('image'),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+      const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+      const rand = Math.random().toString(36).slice(2, 10);
+      const key = `course-thumb/${Date.now()}-${rand}.${ext}`;
+      await uploadFile(req.file.buffer, key, req.file.mimetype, { contentDisposition: 'inline' });
+
+      // ย่อไว้ล่วงหน้าเหมือนปกคอร์ส — ถ้าย่อไม่สำเร็จ proxy จะ fallback เป็นไฟล์เดิม
+      for (const v of ['card', 'hero'] as const) {
+        try {
+          const out = await makeThumbnailVariant(req.file.buffer, v);
+          if (out) await uploadFile(out, variantKey(key, v), 'image/webp', { contentDisposition: 'inline' });
+        } catch (e) {
+          console.error(`[guide] ${v} variant failed:`, e);
+        }
+      }
+      res.json({ url: `/api/courses/thumbnails/${key}` });
+    } catch (err: any) {
+      console.error('[guide] upload image failed:', err?.message);
+      res.status(500).json({ error: 'อัปโหลดภาพไม่สำเร็จ' });
+    }
+  }
+);
 
 // ── กลุ่มคู่มือ (guide groups) ──────────────────────────────────────────────
 // โครงเดียวกับคอร์ส: กลุ่ม = คอร์ส, คลิปข้างใน = บทเรียน

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { api, type GuideClipDto, type GuideGroupDto } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -37,6 +37,8 @@ import {
   ChevronDown,
   ExternalLink,
   X,
+  Upload,
+  RotateCcw,
 } from 'lucide-react';
 
 const YT_ID = /(?:v=|youtu\.be\/|embed\/|shorts\/)([a-zA-Z0-9_-]{11})/;
@@ -77,6 +79,8 @@ const GuideClipsPanel = ({ group }: GuideClipsPanelProps) => {
   const [saving, setSaving] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<GuideClipDto | null>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const load = async () => {
     try {
@@ -186,6 +190,30 @@ const GuideClipsPanel = ({ group }: GuideClipsPanelProps) => {
     }
   };
 
+  /**
+   * อัปโหลดปกเอง — ท่อเดียวกับปกบทเรียนของคอร์ส (S3 + ย่อ variant)
+   * ไม่ใส่ = การ์ดจะใช้ปกจาก YouTube ให้อัตโนมัติ
+   */
+  const handleCoverFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('รองรับเฉพาะไฟล์รูปภาพ');
+      return;
+    }
+    setCoverBusy(true);
+    try {
+      const { url } = await api.uploadGuideImage(file);
+      setForm((f) => ({ ...f, thumbnail: url }));
+      toast.success('อัปโหลดปกคลิปแล้ว');
+    } catch (err: any) {
+      toast.error(err?.message || 'อัปโหลดปกไม่สำเร็จ');
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
   const updateLink = (index: number, patch: Partial<LinkRow>) =>
     setForm((f) => ({ ...f, links: f.links.map((l, i) => (i === index ? { ...l, ...patch } : l)) }));
 
@@ -212,7 +240,7 @@ const GuideClipsPanel = ({ group }: GuideClipsPanelProps) => {
       ) : (
         <div className="space-y-2">
           {clips.map((clip, index) => {
-            const thumb = previewThumb(clip);
+            const thumb = api.mediaUrl(previewThumb(clip), 'card');
             return (
               <Card key={clip.id} className={clip.is_active ? '' : 'opacity-60'}>
                 <CardContent className="flex flex-col gap-3 p-3 sm:flex-row sm:items-center">
@@ -325,13 +353,55 @@ const GuideClipsPanel = ({ group }: GuideClipsPanelProps) => {
               </p>
             </div>
 
-            {previewThumb(form) && (
-              <img
-                src={previewThumb(form)!}
-                alt=""
-                className="aspect-video w-full rounded-md border border-border object-cover"
-              />
-            )}
+            {/* ปกคลิป — ค่าเริ่มต้นใช้ปกจาก YouTube เหมือนบทเรียนในคอร์ส */}
+            <div>
+              <Label>ปกคลิป</Label>
+              <div className="mt-1 flex items-center gap-3">
+                {previewThumb(form) ? (
+                  <img
+                    src={api.mediaUrl(previewThumb(form)!, 'card')}
+                    alt="ปกคลิป"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).style.opacity = '0.2';
+                    }}
+                    className="aspect-video w-32 rounded-md border border-gray-700 bg-gray-800 object-cover"
+                  />
+                ) : (
+                  <div className="flex aspect-video w-32 items-center justify-center rounded-md border border-gray-700 bg-gray-800 text-[10px] text-muted-foreground">
+                    ยังไม่มีปก
+                  </div>
+                )}
+                <div className="flex flex-col gap-1.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={coverBusy}
+                    onClick={() => coverInputRef.current?.click()}
+                    className="gap-1.5"
+                  >
+                    {coverBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                    อัปโหลดปกเอง
+                  </Button>
+                  {form.thumbnail.trim() && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={coverBusy}
+                      onClick={() => setForm((f) => ({ ...f, thumbnail: '' }))}
+                      className="gap-1.5 text-gray-400"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" /> ใช้ปกจาก YouTube
+                    </Button>
+                  )}
+                  <p className="text-[11px] text-gray-500">
+                    {form.thumbnail.trim() ? 'ใช้ปกที่อัปโหลดเอง' : 'ใช้ปกจาก YouTube อัตโนมัติ'}
+                  </p>
+                </div>
+                <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverFile} />
+              </div>
+            </div>
 
             <div>
               <Label>ชื่อคลิป</Label>
@@ -353,17 +423,7 @@ const GuideClipsPanel = ({ group }: GuideClipsPanelProps) => {
               />
             </div>
 
-            <div>
-              <Label>ภาพปกเอง (ไม่ใส่ = ใช้ของ YouTube)</Label>
-              <Input
-                value={form.thumbnail}
-                onChange={(e) => setForm((f) => ({ ...f, thumbnail: e.target.value }))}
-                placeholder="/banner1.jpg หรือ https://..."
-                className="mt-1"
-              />
-            </div>
-
-            <div>
+            <div className="border-t border-gray-800 pt-4">
               <div className="flex items-center justify-between">
                 <Label>ปุ่มลิงก์ใต้คลิป</Label>
                 <Button

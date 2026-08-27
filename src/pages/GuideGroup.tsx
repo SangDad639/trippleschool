@@ -164,7 +164,8 @@ const GuideGroup = () => {
 
 /** แถวคลิป — ปกซ้าย ข้อมูลขวา เหมือนแถวบทเรียนในหน้าคอร์ส */
 const ClipRow = ({ clip, index, onPlay }: { clip: GuideClipDto; index: number; onPlay: () => void }) => {
-  const thumb = clipThumbnail(clip);
+  // ปกที่อัปโหลดเองเก็บเป็น path สัมพัทธ์ — prod คนละ origin จึงต้องผ่าน mediaUrl
+  const thumb = api.mediaUrl(clipThumbnail(clip), 'card');
 
   return (
     // คลิกได้ทั้งแถว — ปุ่มลิงก์ข้างในกัน bubble ไว้แล้ว จึงไม่เปิดคลิปตามไปด้วย
@@ -173,7 +174,7 @@ const ClipRow = ({ clip, index, onPlay }: { clip: GuideClipDto; index: number; o
       className="group flex cursor-pointer gap-3 rounded-lg bg-gray-800/40 p-2 transition-colors hover:bg-gray-800"
     >
       <div className="relative aspect-video w-28 flex-none overflow-hidden rounded-md bg-gradient-to-br from-gray-700 to-gray-800 sm:w-36 md:w-44">
-        {thumb && (
+        {thumb ? (
           <img
             src={thumb}
             alt=""
@@ -185,7 +186,7 @@ const ClipRow = ({ clip, index, onPlay }: { clip: GuideClipDto; index: number; o
               if (img.src.includes('maxresdefault')) img.src = img.src.replace('maxresdefault', 'hqdefault');
             }}
           />
-        )}
+        ) : null}
         <span className="absolute inset-0 flex items-center justify-center bg-black/25 transition-colors group-hover:bg-black/45">
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#FFB300] shadow-lg transition-transform group-hover:scale-110">
             <Play className="ml-0.5 h-4 w-4 fill-black text-black" />
