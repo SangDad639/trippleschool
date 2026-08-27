@@ -23,6 +23,7 @@ const usePageTracking = () => {
 };
 import { GoogleOAuthProvider, GoogleLogin } from "@react-oauth/google";
 import { Toaster } from "@/components/ui/sonner";
+import { api } from "@/lib/api";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { LanguageProvider, useLanguage } from "@/contexts/LanguageContext";
@@ -33,6 +34,8 @@ import PublicHeader from "@/components/PublicHeader";
 import Storefront from "@/pages/Storefront";
 import PublicCatalog from "@/pages/PublicCatalog";
 import TipsCatalog from "@/pages/TipsCatalog";
+import ArticlesCatalog from "@/pages/ArticlesCatalog";
+import ArticleDetail from "@/pages/ArticleDetail";
 import Programs from "@/pages/Programs";
 import ProgramDetail from "@/pages/ProgramDetail";
 import Pricing from "@/pages/Pricing";
@@ -57,6 +60,7 @@ const PendingApproval = lazy(() => import("@/pages/PendingApproval"));
 const CourseLearn = lazy(() => import("@/pages/CourseLearn"));
 const MyCourses = lazy(() => import("@/pages/MyCourses"));
 const AdminCourses = lazy(() => import("@/pages/AdminCourses"));
+const AdminArticles = lazy(() => import("@/pages/AdminArticles"));
 const AdminEnrollments = lazy(() => import("@/pages/AdminEnrollments"));
 const AdminChats = lazy(() => import("@/pages/AdminChats"));
 // Hidden page (/guide) — no nav tab, fully public. Currently intentionally blank.
@@ -264,6 +268,37 @@ const ProtectedRoute = ({ children, allowPending = false }: { children: React.Re
     );
   }
 
+  // A token that survived bootstrap means the session is probably fine and the
+  // check just failed (offline, 5xx). Offer a retry instead of dumping the user
+  // on /login, which reads as "the site logged me out".
+  if (!user && api.getToken()) {
+    return (
+      <div className="page-wrapper flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <p className="text-lg font-semibold">เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ชั่วคราว</p>
+        <p className="text-sm text-muted-foreground">
+          บัญชีของคุณยังอยู่ — ตรวจสอบอินเทอร์เน็ตแล้วลองใหม่อีกครั้ง
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-primary text-primary-foreground px-4 py-2 rounded font-medium hover:opacity-90"
+          >
+            ลองใหม่
+          </button>
+          <button
+            onClick={() => {
+              api.setToken(null);
+              window.location.assign('/login');
+            }}
+            className="border border-border px-4 py-2 rounded font-medium hover:bg-muted"
+          >
+            เข้าสู่ระบบใหม่
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
     return <Navigate to="/login" replace />;
   }
@@ -334,6 +369,8 @@ function AppRoutes() {
       <Route path="/" element={<Storefront />} />
       <Route path="/courses" element={<PublicCatalog />} />
       <Route path="/tips" element={<TipsCatalog />} />
+      <Route path="/content" element={<ArticlesCatalog />} />
+      <Route path="/content/:slug" element={<ArticleDetail />} />
       <Route path="/programs" element={<Programs />} />
       <Route path="/programs/:slug" element={<ProgramDetail />} />
       <Route path="/pricing" element={<Pricing />} />
@@ -367,6 +404,7 @@ function AppRoutes() {
       <Route path="/admin/banners" element={<ProtectedRoute><AdminBanners /></ProtectedRoute>} />
       <Route path="/admin/banners/:id/edit" element={<ProtectedRoute><AdminBannerEditor /></ProtectedRoute>} />
       <Route path="/admin/courses" element={<ProtectedRoute><AdminCourses /></ProtectedRoute>} />
+      <Route path="/admin/articles" element={<ProtectedRoute><AdminArticles /></ProtectedRoute>} />
       <Route path="/admin/enrollments" element={<ProtectedRoute><AdminEnrollments /></ProtectedRoute>} />
       <Route path="/admin/chats" element={<ProtectedRoute><AdminChats /></ProtectedRoute>} />
 

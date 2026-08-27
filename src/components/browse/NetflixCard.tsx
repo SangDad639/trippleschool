@@ -23,19 +23,24 @@ interface NetflixCardProps {
   statusBadge?: ReactNode;
   /** Owned-course contexts (my courses): the price line makes no sense there. */
   hidePrice?: boolean;
+  /** Mosaic hero cell: stretch to wrapper height instead of fixed 16:9. */
+  fill?: boolean;
 }
 
 // 16:9 Netflix-style card. Title sits on a permanent bottom gradient; hover
 // scales the card up and reveals meta (rating / lessons / level / price).
-const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statusBadge, hidePrice }: NetflixCardProps) => {
+const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statusBadge, hidePrice, fill }: NetflixCardProps) => {
   const reviewCount = Number(course.review_count) || 0;
   const lessonCount = course.lesson_count || course.total_lessons || 0;
   const width = variant === 'rail' ? 'w-[230px] md:w-[270px] flex-none snap-start' : 'w-full';
+  // fill = stretch to the wrapper's height (mosaic hero cell) instead of the
+  // fixed 16:9 — the wrapper's grid row-span decides how tall this card is.
+  const shape = fill ? 'h-full min-h-[200px]' : 'aspect-video';
 
   return (
     <div
       onClick={onClick}
-      className={`${width} relative aspect-video rounded-md overflow-hidden bg-gray-800 cursor-pointer group/card transition-transform duration-300 hover:scale-105 hover:z-10 hover:shadow-2xl hover:shadow-black/60`}
+      className={`${width} ${shape} relative rounded-md overflow-hidden bg-gray-800 cursor-pointer group/card transition-transform duration-300 hover:scale-105 hover:z-10 hover:shadow-2xl hover:shadow-black/60`}
     >
       {course.thumbnail_url ? (
         <img

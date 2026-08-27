@@ -15,6 +15,7 @@ import adminRoutes from './routes/admin.js';
 import affiliateRoutes from './routes/affiliate.js';
 import tutorialsRoutes from './routes/tutorials.js';
 import coursesRoutes from './routes/courses.js';
+import articlesRoutes from './routes/articles.js';
 import enrollmentsRoutes from './routes/enrollments.js';
 import agentChatRoutes from './routes/agentChat.js';
 import pool from './db.js';
@@ -117,6 +118,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/affiliate', affiliateRoutes);
 app.use('/api/tutorials', tutorialsRoutes);
 app.use('/api/courses', coursesRoutes);
+app.use('/api/articles', articlesRoutes);
 app.use('/api/enrollments', enrollmentsRoutes);
 app.use('/api/agent-chat', agentChatRoutes);
 

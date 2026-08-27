@@ -119,12 +119,20 @@ class ApiClient {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
+          // Callers need the status to tell a real auth failure (401/404 → the
+          // session is genuinely dead) from a transient one (network drop, 5xx).
+          // Without it, a momentary hiccup used to look identical to a bad token
+          // and cost the user their session / bounced them off the page.
+          const withStatus = <T extends Error>(e: T): T => {
+            (e as any).status = response.status;
+            return e;
+          };
 
           // Handle pending approval - throw with pendingApproval flag
           if (response.status === 403 && errorData.pendingApproval) {
             const error = new Error(errorData.error || 'Account pending approval');
             (error as any).pendingApproval = true;
-            throw error;
+            throw withStatus(error);
           }
 
           // Subscription required — dispatch an event so the app-level listener
@@ -137,14 +145,14 @@ class ApiClient {
             window.dispatchEvent(new CustomEvent('subscription:required', {
               detail: { code: errorData.code, message: errorData.error },
             }));
-            throw new Error(errorData.error || 'กรุณาสมัครสมาชิก');
+            throw withStatus(new Error(errorData.error || 'กรุณาสมัครสมาชิก'));
           }
 
           // Handle duplicate request - throw with duplicate flag for silent handling
           if (response.status === 409 && errorData.duplicate) {
             const error = new Error(errorData.error || 'Duplicate request');
             (error as any).duplicate = true;
-            throw error;
+            throw withStatus(error);
           }
 
           if ((response.status >= 500 || response.status === 429) && attempt < retries) {
@@ -155,7 +163,7 @@ class ApiClient {
 
           const err = new Error(errorData.error || `HTTP ${response.status}`);
           (err as any).errorCode = errorData.errorCode;
-          throw err;
+          throw withStatus(err);
         }
 
         return response.json();
@@ -2819,6 +2827,37 @@ class ApiClient {
     const q = qs.toString();
     return this.request(`/api/courses${q ? `?${q}` : ''}`);
   }
+  // ============================================
+  // Articles (บทความ — เมนู Content)
+  // ============================================
+  /** Public catalog — metadata only, active articles. */
+  async getArticles(): Promise<ArticleDto[]> {
+    return this.request('/api/articles');
+  }
+  /** One article with its body (content_html or content_url). */
+  async getArticle(slug: string): Promise<ArticleDto> {
+    return this.request(`/api/articles/${encodeURIComponent(slug)}`);
+  }
+  async getAdminArticles(): Promise<ArticleDto[]> {
+    return this.request('/api/articles/admin/all');
+  }
+  async createArticle(data: Partial<ArticleDto>): Promise<ArticleDto> {
+    return this.request('/api/articles', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateArticle(id: number, data: Partial<ArticleDto>): Promise<ArticleDto> {
+    return this.request(`/api/articles/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteArticle(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/articles/${id}`, { method: 'DELETE' });
+  }
+
+  /** Pin (or unpin) the course shown on the home-page billboard. Unpinned = automatic (newest course). */
+  async setCourseBillboard(courseId: number, pinned: boolean) {
+    return this.request(`/api/courses/${courseId}/billboard`, {
+      method: 'PUT',
+      body: JSON.stringify({ pinned }),
+    });
+  }
   async getCourse(slug: string) {
     return this.request(`/api/courses/${encodeURIComponent(slug)}`);
   }
@@ -2865,7 +2904,7 @@ class ApiClient {
     formData.append('file', file);
     return this.request('/api/courses/upload-material', { method: 'POST', body: formData });
   }
-  async uploadCourseHtml(file: File): Promise<{ content: string; name: string }> {
+  async uploadCourseHtml(file: File): Promise<{ url: string; name: string }> {
     const formData = new FormData();
     formData.append('file', file);
     return this.request('/api/courses/upload-html', { method: 'POST', body: formData });
@@ -3093,11 +3132,31 @@ class ApiClient {
       has_youtube: boolean;
       has_sub: boolean;
       chars: number;
+      /** stored but too short to be useful knowledge (speechless clip) */
+      too_short: boolean;
       language: string | null;
       fetched_at: string | null;
+      /** last fetch attempt, recorded even when it stored nothing */
+      last_status: 'ok' | 'no_captions' | 'too_short' | 'failed' | null;
+      last_reason: string | null;
+      last_detail: string | null;
+      last_attempt_at: string | null;
     }>;
   }> {
     return this.request(`/api/agent-chat/admin/course/${courseId}/subtitles`);
+  }
+  /** Can the server reach YouTube captions right now? Separates "server refused" from "clip has none". */
+  async agentChatYoutubeHealth(): Promise<{
+    ok: boolean;
+    ms?: number;
+    chars?: number;
+    language?: string;
+    reason?: string;
+    detail?: string;
+    probe_lesson?: string;
+    message: string;
+  }> {
+    return this.request('/api/agent-chat/admin/youtube-health', {}, 0, 60000);
   }
   async agentChatUploadSubtitle(
     lessonId: number,
@@ -3117,14 +3176,17 @@ class ApiClient {
   async agentChatDeleteSubtitle(lessonId: number): Promise<{ ok: boolean }> {
     return this.request(`/api/agent-chat/admin/lessons/${lessonId}/subtitle`, { method: 'DELETE' });
   }
-  async agentChatSyncSubtitles(courseId: number): Promise<{
-    total: number;
-    ok: number;
-    no_captions: number;
-    results: Array<{ lesson_id: number; title: string; status: 'ok' | 'no_captions'; chars?: number }>;
-  }> {
+  async agentChatSyncSubtitles(courseId: number): Promise<SubtitleSyncSummary> {
     // Fetching captions for a whole course can take a while — long timeout, no retry.
     return this.request(`/api/agent-chat/admin/course/${courseId}/sync-subtitles`, { method: 'POST' }, 0, 300000);
+  }
+  /** Every active course, lessons that still have no subtitle. Long job — 10 min timeout. */
+  async agentChatSyncMissingSubtitles(): Promise<
+    SubtitleSyncSummary & {
+      courses: Array<{ course_id: number; course_name: string; ok: number; no_captions: number; too_short: number; failed: number }>;
+    }
+  > {
+    return this.request('/api/agent-chat/admin/sync-subtitles-missing', { method: 'POST' }, 0, 600000);
   }
   // Knowledge base (คลังความรู้บอท)
   async agentChatKnowledgeList(): Promise<{ knowledge: AgentKnowledgeDto[] }> {
@@ -3139,6 +3201,47 @@ class ApiClient {
   async agentChatKnowledgeDelete(id: number) {
     return this.request(`/api/agent-chat/admin/knowledge/${id}`, { method: 'DELETE' });
   }
+}
+
+/**
+ * Result of a subtitle sync. The buckets matter: `no_captions` means YouTube has
+ * nothing for that video (yet), `too_short` means it returned captions we refuse
+ * to store (speechless clip), `failed` means the fetch itself broke — the UI must
+ * not report all three as "ไม่พบซับ".
+ */
+export interface SubtitleSyncSummary {
+  total: number;
+  ok: number;
+  no_captions: number;
+  too_short: number;
+  failed: number;
+  results: Array<{
+    lesson_id: number;
+    title: string;
+    status: 'ok' | 'no_captions' | 'too_short' | 'failed';
+    chars?: number;
+    language?: string;
+    reason?: string;
+    message?: string;
+  }>;
+}
+
+/** บทความ (เมนู Content) — เนื้อหาอยู่ใน content_html (วางตรง) หรือ content_url (ไฟล์ HTML บน S3) */
+export interface ArticleDto {
+  id: number;
+  title: string;
+  slug: string;
+  excerpt: string | null;
+  cover_url: string | null;
+  content_html?: string | null;
+  content_url?: string | null;
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+  /** admin list only */
+  content_chars?: number;
+  has_content_file?: boolean;
 }
 
 export interface AgentKnowledgeDto {

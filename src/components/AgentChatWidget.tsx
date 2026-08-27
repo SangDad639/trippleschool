@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { MessageCircle, X, Send, Loader2, Bot, Headset, ImagePlus } from 'lucide-react';
+import { X, Send, Loader2, Bot, Headset, ImagePlus } from 'lucide-react';
 
 // Guest identity survives reloads; logged-in users are keyed by their token.
 function getGuestId(): string {
@@ -29,9 +29,13 @@ interface AgentChatWidgetProps {
   courseName: string;
 }
 
+// บับเบิลทักทายโผล่ครั้งเดียวตลอดไป — กด ✕ หรือเปิดแชทแล้วจะไม่โผล่อีก
+const GREETING_DISMISSED_KEY = 'agent_chat_greeting_dismissed';
+
 const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  const [showGreeting, setShowGreeting] = useState(false);
   const [thread, setThread] = useState<AgentChatThreadDto>({ conversation: null, messages: [] });
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -84,7 +88,20 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
     if (open && listRef.current) listRef.current.scrollTop = listRef.current.scrollHeight;
   }, [open, thread.messages.length, sending, streamingText]);
 
+  // โผล่บับเบิลหลังเข้าหน้า 2.5 วิ เฉพาะคนที่ยังไม่เคยปิด/เปิดแชท
+  useEffect(() => {
+    if (localStorage.getItem(GREETING_DISMISSED_KEY)) return;
+    const t = setTimeout(() => setShowGreeting(true), 2500);
+    return () => clearTimeout(t);
+  }, []);
+
+  const dismissGreeting = () => {
+    setShowGreeting(false);
+    localStorage.setItem(GREETING_DISMISSED_KEY, '1');
+  };
+
   const handleOpen = () => {
+    dismissGreeting();
     setOpen(true);
     setUnread(false);
     load();
@@ -195,15 +212,49 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
 
   return (
     <>
+      {/* บับเบิลทักทาย — ครั้งเดียวตลอดไปจนกว่าจะกดปิดหรือเปิดแชท */}
+      {!open && showGreeting && (
+        <div className="fixed bottom-24 sm:bottom-28 right-4 z-[60] max-w-[260px] animate-in fade-in slide-in-from-bottom-2 duration-500">
+          <div
+            onClick={handleOpen}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && handleOpen()}
+            className="relative bg-card border border-border rounded-2xl rounded-br-sm shadow-xl px-4 py-3 pr-8 cursor-pointer hover:border-primary/50 transition-colors"
+          >
+            <p className="text-sm text-foreground leading-relaxed">
+              สวัสดีค่ะ 👋 มีคำถามเรื่องคอร์สนี้ ถาม<span className="font-semibold text-primary">น้องทริปเปิ้ล</span>ได้เลยนะคะ
+            </p>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                dismissGreeting();
+              }}
+              aria-label="ปิดข้อความทักทาย"
+              className="absolute top-1.5 right-1.5 p-1 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+            {/* หางชี้ลงหาปุ่ม */}
+            <span className="absolute -bottom-1.5 right-6 w-3 h-3 bg-card border-b border-r border-border rotate-45" />
+          </div>
+        </div>
+      )}
+
       {/* FAB */}
       {!open && (
         <button
           onClick={handleOpen}
           aria-label="เปิดแชทผู้ช่วย"
-          className="fixed bottom-4 right-4 z-[60] w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg shadow-primary/30 flex items-center justify-center hover:scale-105 transition-transform"
+          className="fixed bottom-4 right-4 z-[60] w-16 h-16 sm:w-[4.5rem] sm:h-[4.5rem] rounded-full bg-gradient-to-br from-primary to-fuchsia-600 text-primary-foreground shadow-xl shadow-primary/50 flex items-center justify-center hover:scale-110 transition-transform"
         >
-          <MessageCircle className="h-6 w-6" />
-          {unread && <span className="absolute top-0 right-0 w-3.5 h-3.5 rounded-full bg-red-500 border-2 border-background" />}
+          {/* วงแหวน pulse เรียกสายตา (ปิดเองเมื่อผู้ใช้ตั้งค่าลดการเคลื่อนไหว) */}
+          <span
+            className="absolute inset-0 rounded-full bg-primary/40 animate-ping motion-reduce:hidden pointer-events-none"
+            style={{ animationDuration: '2.5s' }}
+          />
+          <Bot className="h-8 w-8 sm:h-9 sm:w-9 relative" />
+          {unread && <span className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-red-500 border-2 border-background" />}
         </button>
       )}
 
@@ -237,7 +288,7 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
                   <Bot className="h-4 w-4 text-primary" />
                 </div>
                 <div className="bg-muted rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-foreground max-w-[80%]">
-                  สวัสดีค่ะ 👋 ถามได้เลยเกี่ยวกับคอร์ส "{courseName}" — เนื้อหาที่สอน ราคา หรือวิธีสมัครค่ะ
+                  สวัสดีค่ะ 👋 อยากรู้อะไรเกี่ยวกับคอร์ส "{courseName}" ถามน้องทริปเปิ้ลได้เลยนะคะ — เนื้อหาที่สอน ราคา หรือวิธีสมัครก็ได้ค่ะ
                 </div>
               </div>
             )}
@@ -280,8 +331,18 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
                     <span className="inline-block w-1.5 h-4 ml-0.5 align-text-bottom bg-primary/70 animate-pulse" />
                   </div>
                 ) : (
-                  <div className="bg-muted rounded-2xl rounded-tl-sm px-3 py-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  /* จุดสามจุดเด้งแบบ "กำลังพิมพ์" — ให้ความรู้สึกมีคนอยู่ปลายแชทมากกว่า spinner */
+                  <div className="bg-muted rounded-2xl rounded-tl-sm px-3.5 py-3" aria-label="กำลังพิมพ์">
+                    <span className="flex items-center gap-1 motion-reduce:hidden">
+                      {[0, 150, 300].map((delay) => (
+                        <span
+                          key={delay}
+                          className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/70 animate-bounce"
+                          style={{ animationDelay: `${delay}ms`, animationDuration: '1s' }}
+                        />
+                      ))}
+                    </span>
+                    <span className="hidden motion-reduce:inline text-xs text-muted-foreground">กำลังพิมพ์...</span>
                   </div>
                 )}
               </div>

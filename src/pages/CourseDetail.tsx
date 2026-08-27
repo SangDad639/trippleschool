@@ -41,6 +41,8 @@ import {
   CheckCircle2,
   ListChecks,
   MessageSquare,
+  RefreshCw,
+  WifiOff,
 } from 'lucide-react';
 
 interface Lesson {
@@ -123,6 +125,9 @@ const CourseDetail = () => {
   // hasAccess = approved purchase for THIS course (or admin) — comes from the BE.
   const [hasAccess, setHasAccess] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Load failures stay on the page (with a retry) instead of bouncing the user
+  // to /courses — a single flaky mobile request used to look like a logout.
+  const [loadError, setLoadError] = useState<{ expired: boolean } | null>(null);
 
   // Slip-upload (buy) dialog state
   const [buyDialogOpen, setBuyDialogOpen] = useState(false);
@@ -159,6 +164,7 @@ const CourseDetail = () => {
   const loadCourse = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       if (isAuthenticated) {
         const data = await api.getCourseFull(slug!);
         setCourse(data);
@@ -172,8 +178,22 @@ const CourseDetail = () => {
       }
     } catch (error) {
       console.error('Failed to load course:', error);
-      toast.error('โหลดคอร์สไม่สำเร็จ');
-      navigate('/courses');
+      const status = (error as any)?.status;
+      // 401 = the session really is dead; anything else is treated as
+      // transient, and for members we still try the public view so the page
+      // shows the course instead of an error (access state just won't show).
+      if (isAuthenticated && status !== 401) {
+        try {
+          const data = await api.getCourse(slug!);
+          setCourse(data);
+          setEnrollment(null);
+          setHasAccess(false);
+          return;
+        } catch (fallbackError) {
+          console.error('Public fallback also failed:', fallbackError);
+        }
+      }
+      setLoadError({ expired: status === 401 });
     } finally {
       setLoading(false);
     }
@@ -254,6 +274,44 @@ const CourseDetail = () => {
     return (
       <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+      </div>
+    );
+  }
+
+  // Failed to load — stay put and let the user retry (bouncing to /courses read
+  // as "the site logged me out" whenever a mobile request hiccupped).
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <PublicHeader />
+        <div className="flex flex-col items-center justify-center gap-4 px-4 py-24 text-center">
+          <WifiOff className="h-12 w-12 text-gray-500" />
+          <div>
+            <p className="text-lg font-semibold text-white">
+              {loadError.expired ? 'เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่' : 'โหลดข้อมูลคอร์สไม่สำเร็จ'}
+            </p>
+            <p className="mt-1 text-sm text-gray-400">
+              {loadError.expired
+                ? 'เข้าสู่ระบบอีกครั้งเพื่อดูคอร์สนี้ต่อ — คอร์สที่ซื้อไว้ยังอยู่ครบ'
+                : 'อาจเป็นเพราะสัญญาณอินเทอร์เน็ตสะดุด ลองกดโหลดใหม่อีกครั้ง'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {loadError.expired ? (
+              <Button onClick={() => navigate('/login')} className="bg-purple-600 hover:bg-purple-700">
+                เข้าสู่ระบบ
+              </Button>
+            ) : (
+              <Button onClick={loadCourse} className="bg-purple-600 hover:bg-purple-700">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                ลองใหม่
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => navigate('/courses')}>
+              กลับหน้าคอร์สทั้งหมด
+            </Button>
+          </div>
+        </div>
       </div>
     );
   }

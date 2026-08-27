@@ -72,7 +72,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (error) {
         console.error('Failed to load user:', error);
-        api.setToken(null);
+        // Drop the token ONLY when the server says the session is actually
+        // dead (401 invalid/expired, 404 user gone). Any other failure —
+        // offline, mobile network drop, 5xx, a proxy answering with HTML —
+        // used to wipe a perfectly good token and log the user out for good.
+        const status = (error as any)?.status;
+        if (status === 401 || status === 404) api.setToken(null);
       } finally {
         setLoading(false);
       }

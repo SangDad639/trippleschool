@@ -17,7 +17,11 @@ interface MaterialHtmlFrameProps {
  * sandbox, so any embedded <script> that survives sanitization can't run.
  */
 export function MaterialHtmlFrame({ html, className, maxHeight = 600 }: MaterialHtmlFrameProps) {
-  const [height, setHeight] = useState(maxHeight);
+  // Start SMALL and grow to fit. Starting at maxHeight breaks the measurement:
+  // scrollHeight can never be less than the frame's own viewport, so a short
+  // document inside an already-huge frame "measures" as huge and never shrinks
+  // (a 2-line article once rendered as a 20,000px white void this way).
+  const [height, setHeight] = useState(80);
   const frameRef = useRef<HTMLIFrameElement>(null);
 
   const handleLoad = () => {
