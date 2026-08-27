@@ -11,7 +11,6 @@ import {
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { useAuth } from '@/contexts/AuthContext';
-import { useLanguage } from '@/contexts/LanguageContext';
 import { GraduationCap, User as UserIcon, Shield, LogOut, ChevronDown, Menu, Crown, Search, X } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -45,7 +44,6 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
-  const { language, setLanguage } = useLanguage();
   const [scrolled, setScrolled] = useState(false);
   const [searchOpen, setSearchOpen] = useState(!!search?.query);
 
@@ -113,15 +111,17 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
 
   return (
     <header className={headerClass}>
-      <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between gap-2">
+      <div className="max-w-6xl mx-auto px-4 h-14 lg:h-16 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 sm:gap-4 min-w-0">
           <Link to="/" className="flex items-center gap-2 font-bold text-white shrink-0">
-            <GraduationCap className="h-6 w-6 text-purple-400" />
-            <span className="bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent">Triple School</span>
+            <GraduationCap className="h-6 w-6 lg:h-7 lg:w-7 xl:h-8 xl:w-8 text-purple-400" />
+            <span className="text-base lg:text-lg xl:text-xl bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent">Triple School</span>
           </Link>
 
-          {/* Desktop nav — Netflix-style: active item white + bold */}
-          <nav className="hidden md:flex items-center gap-5 text-sm">
+          {/* Desktop nav — Netflix-style: active item white + bold.
+              ไล่ขนาดตามจอ: md=14px (tablet เบียด) → lg=16px → xl=18px
+              (จอ lg 1024 ตอน login มีชิป+ปุ่มขวาหลายตัว 18px จะล้น จึงขยับที่ xl) */}
+          <nav className="hidden md:flex items-center gap-5 lg:gap-6 xl:gap-7 text-sm lg:text-base xl:text-lg">
             {NAV_ITEMS.map((item) => (
               <Link
                 key={item.to}
@@ -154,14 +154,6 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
                   {item.label}
                 </DropdownMenuItem>
               ))}
-              {!user && (
-                <>
-                  <DropdownMenuSeparator className="sm:hidden" />
-                  <DropdownMenuItem className="sm:hidden" onClick={() => navigate('/login')}>
-                    เข้าสู่ระบบ
-                  </DropdownMenuItem>
-                </>
-              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -179,14 +171,6 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
             </Button>
           )}
           {search && searchOpen && searchBox('hidden sm:block w-44 md:w-64 animate-in fade-in slide-in-from-right-2 duration-200')}
-          <button
-            onClick={() => setLanguage(language === 'th' ? 'en' : 'th')}
-            className="text-xs text-gray-400 hover:text-white px-2 py-1 rounded transition-colors"
-            aria-label="Toggle language"
-          >
-            {language === 'th' ? 'EN' : 'TH'}
-          </button>
-
           {user ? (
             <>
               {/* Subscription days-left chip (desktop; mobile sees it in the profile dropdown) */}
@@ -258,14 +242,10 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
               </DropdownMenu>
             </>
           ) : (
-            <>
-              <Button size="sm" variant="ghost" onClick={() => navigate('/login')} className="hidden sm:inline-flex text-gray-300 hover:text-white">
-                เข้าสู่ระบบ
-              </Button>
-              <Button size="sm" onClick={() => navigate('/subscription/transfer-v2')} className="bg-purple-600 hover:bg-purple-700">
-                สมัครสมาชิก
-              </Button>
-            </>
+            /* ปุ่มเดียวพอ — ในหน้า login มีทางไปสมัครสมาชิกอยู่แล้ว */
+            <Button size="sm" onClick={() => navigate('/login')} className="bg-purple-600 hover:bg-purple-700">
+              เข้าสู่ระบบ
+            </Button>
           )}
         </div>
       </div>

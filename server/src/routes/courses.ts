@@ -519,7 +519,15 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       JSON.stringify(Array.isArray(requirements) ? requirements : []),
       content_type === 'tip' ? 'tip' : 'course',
     ]);
-    res.json(result.rows[0]);
+    const created = result.rows[0];
+    // การปักคือ "ปรับชั่วคราว" — คอร์สใหม่ (ที่เข้าเกณฑ์ Billboard อัตโนมัติ: เป็น
+    // course และ active) ต้องขึ้น Billboard เสมอ จึงถอดปักเก่าทิ้งให้ตอนสร้าง
+    // (สร้าง Tip หรือฉบับร่างไม่แตะปัก เพราะไม่เข้าเกณฑ์อัตโนมัติอยู่แล้ว)
+    if (created.content_type === 'course' && created.is_active) {
+      await pool.query(`UPDATE courses SET is_billboard = false WHERE is_billboard = true`);
+      created.is_billboard = false;
+    }
+    res.json(created);
   } catch (error) {
     console.error('Error creating course:', error);
     if ((error as any).code === '23505') return res.status(400).json({ error: 'Course slug already exists' });
