@@ -1,22 +1,38 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import PublicHeader from '@/components/PublicHeader';
 import ClipCard from '@/components/guide/ClipCard';
 import { CLIPS, clipEmbedUrl, type GuideClip } from '@/components/guide/clipsData';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { api } from '@/lib/api';
 
 /**
  * /guide - hidden clip page. Not in PublicHeader's NAV_ITEMS, no auth gate,
- * no subscription gate, no API calls: anyone with the link can watch.
+ * no subscription gate: anyone with the link can watch. It is linked from the
+ * Triple Bot desktop app's login screen, where the reader has no session yet.
  *
- * Clips live in src/components/guide/clipsData.ts (edit CLIPS to add/remove).
- * Cards load thumbnails only; the YouTube iframe mounts after a click, so a
- * page full of clips stays light on mobile.
+ * Clips come from the DB (admin manages them at /admin/guide), so publishing a
+ * clip needs no deploy. CLIPS in clipsData.ts is the fallback rendered when the
+ * API is unreachable, and the source of the build-time /guide-clips.json.
  *
- * The earlier 12-article manual is parked, unused, in components/guide/
- * (see GuideCenter.tsx for how to switch it back on).
+ * Cards load thumbnails only; the YouTube iframe mounts on click and is torn
+ * down on close, so a page full of clips stays light and a closed clip stops.
  */
 const Guide = () => {
+  const [clips, setClips] = useState<GuideClip[]>(CLIPS);
   const [playing, setPlaying] = useState<GuideClip | null>(null);
+
+  useEffect(() => {
+    api
+      .getGuideClips()
+      .then((rows) => {
+        // An empty table means the admin cleared it on purpose - show nothing
+        // rather than resurrecting the hardcoded fallback list.
+        if (Array.isArray(rows)) setClips(rows as GuideClip[]);
+      })
+      .catch(() => {
+        /* keep the bundled fallback */
+      });
+  }, []);
 
   return (
     <>
@@ -24,7 +40,7 @@ const Guide = () => {
       <div className="page-wrapper">
         <div className="mx-auto min-h-[70vh] max-w-6xl px-4 py-10 md:px-6">
           <div className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {CLIPS.map((clip, i) => (
+            {clips.map((clip, i) => (
               <ClipCard key={clip.id} clip={clip} slot={i + 1} onPlay={setPlaying} />
             ))}
           </div>

@@ -18,6 +18,7 @@ import coursesRoutes from './routes/courses.js';
 import articlesRoutes from './routes/articles.js';
 import enrollmentsRoutes from './routes/enrollments.js';
 import agentChatRoutes from './routes/agentChat.js';
+import guideRoutes from './routes/guide.js';
 import pool from './db.js';
 import { startSubscriptionNotificationJob } from './jobs/subscriptionNotificationJob.js';
 
@@ -121,6 +122,7 @@ app.use('/api/courses', coursesRoutes);
 app.use('/api/articles', articlesRoutes);
 app.use('/api/enrollments', enrollmentsRoutes);
 app.use('/api/agent-chat', agentChatRoutes);
+app.use('/api/guide', guideRoutes);
 
 // Initialize database tables
 async function initializeDatabase() {
