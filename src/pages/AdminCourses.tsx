@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
 import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
-import { api } from '@/lib/api';
+import { api, type TagDto } from '@/lib/api';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -80,6 +80,11 @@ interface Course {
   is_featured: boolean;
   /** ปักขึ้น Billboard หน้าแรกเอง (ได้ครั้งละ 1 คอร์ส); ไม่ปัก = ใช้คอร์สล่าสุดอัตโนมัติ */
   is_billboard?: boolean;
+  /** ชื่อย่อขึ้นเมนู header (join จากตาราง tags) */
+  tag?: string | null;
+  tag_id?: number | null;
+  /** ชื่อย่อของ Tip เอง (แสดงใน UI แทน title ที่ยาว) */
+  tag_name?: string | null;
   is_active: boolean;
   display_order: number;
   created_at?: string;
@@ -145,6 +150,8 @@ const initialCourseForm = {
   price: 0,
   discount_price: null as number | null,
   content_type: 'course' as 'course' | 'tip',
+  tag_id: null as number | null,
+  tag_name: '',
   learning_outcomes: [] as string[],
   requirements: [] as string[],
 };
@@ -247,6 +254,10 @@ const AdminCourses = () => {
   const [subLoading, setSubLoading] = useState(false);
   const [subBusy, setSubBusy] = useState<number | 'bulk' | null>(null);
   const [syncingMissing, setSyncingMissing] = useState(false);
+  // คลัง tag (ชื่อย่อขึ้นเมนู header) — ใช้ทั้งช่องเลือกใน dialog และหน้าจัดการ
+  const [tags, setTags] = useState<TagDto[]>([]);
+  const [tagDialogOpen, setTagDialogOpen] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
   // ผลตรวจการเชื่อมต่อ YouTube ของเซิร์ฟเวอร์ — ใช้แยก "ระบบดึงไม่ได้" ออกจาก "คลิปไม่มีซับ"
   const [ytHealth, setYtHealth] = useState<{ ok: boolean; message: string } | null>(null);
   const [ytHealthChecking, setYtHealthChecking] = useState(false);
@@ -291,7 +302,43 @@ const AdminCourses = () => {
   useEffect(() => {
     if (!user?.isAdmin) return;
     loadCourses();
+    loadTags();
   }, [user]);
+
+  const loadTags = async () => {
+    try {
+      setTags(await api.getTags());
+    } catch (e) {
+      console.error('Failed to load tags:', e);
+    }
+  };
+
+  // สร้าง tag เร็วๆ จากใน dialog คอร์ส — สร้างแล้วเลือกให้ทันที
+  const handleQuickCreateTag = async () => {
+    const name = prompt('ชื่อ tag ใหม่ (สั้นๆ เช่น Gemini, ChatCut):')?.trim();
+    if (!name) return;
+    try {
+      const tag = await api.createTag(name);
+      await loadTags();
+      setCourseForm((prev) => ({ ...prev, tag_id: tag.id }));
+      toast.success(`สร้าง tag "${tag.name}" และเลือกให้แล้ว`);
+    } catch (e: any) {
+      toast.error(e?.message || 'สร้าง tag ไม่สำเร็จ');
+    }
+  };
+
+  const handleDeleteTag = async (tag: TagDto) => {
+    const used = tag.course_count || 0;
+    if (!confirm(`ลบ tag "${tag.name}"?${used ? `\n\nมีคอร์ส/ทิปใช้อยู่ ${used} รายการ — จะกลายเป็นไม่มี tag` : ''}`)) return;
+    try {
+      await api.deleteTag(tag.id);
+      toast.success('ลบ tag แล้ว');
+      loadTags();
+      loadCourses();
+    } catch (e: any) {
+      toast.error(e?.message || 'ลบไม่สำเร็จ');
+    }
+  };
 
   // Preview of S3-stored html materials needs their text fetched first
   // (inline-content rows render directly and skip this).
@@ -395,6 +442,8 @@ const AdminCourses = () => {
         price: course.price || 0,
         discount_price: course.discount_price,
         content_type: course.content_type === 'tip' ? 'tip' : 'course',
+        tag_id: course.tag_id ?? null,
+        tag_name: course.tag_name || '',
         learning_outcomes: Array.isArray(course.learning_outcomes) ? course.learning_outcomes : [],
         requirements: Array.isArray(course.requirements) ? course.requirements : [],
       });
@@ -1054,6 +1103,9 @@ const AdminCourses = () => {
               )}
               {syncingMissing ? 'กำลังดึงซับ...' : 'ดึงซับที่ยังไม่มี'}
             </Button>
+            <Button onClick={() => setTagDialogOpen(true)} variant="outline" title="จัดการชื่อย่อที่ขึ้นเมนู Tip/Course บน header">
+              🏷️ จัดการ Tag
+            </Button>
             <Button onClick={() => navigate('/admin/enrollments')} variant="outline">
               <Users className="h-4 w-4 mr-2" />
               จัดการ Enrollments
@@ -1122,6 +1174,12 @@ const AdminCourses = () => {
                         )}
                         {course.content_type === 'tip' && (
                           <Badge className="bg-sky-500/15 text-sky-400 border border-sky-500/30">💡 Tip</Badge>
+                        )}
+                        {/* tag ที่ขึ้นเมนู header — ไม่มี = เตือนให้ไปตั้ง */}
+                        {course.tag ? (
+                          <Badge variant="outline" className="text-gray-300 border-gray-600">🏷️ {course.tag}</Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-yellow-500/80 border-yellow-500/30">ไม่มี tag</Badge>
                         )}
                         <Badge variant={course.is_active ? 'default' : 'secondary'}>
                           {course.is_active ? 'Active' : 'Inactive'}
@@ -1600,6 +1658,43 @@ const AdminCourses = () => {
                   </SelectContent>
                 </Select>
               </div>
+              <div>
+                <Label>
+                  🏷️ {courseForm.content_type === 'tip'
+                    ? 'Link Tag (เลือก tag เดียวกับคอร์สแม่ = Tip นี้เกาะกับคอร์สนั้น)'
+                    : 'Tag (ชื่อย่อที่ขึ้นในเมนู Course บน header)'}
+                </Label>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <Select
+                    value={courseForm.tag_id === null ? 'none' : String(courseForm.tag_id)}
+                    onValueChange={(v) => setCourseForm({ ...courseForm, tag_id: v === 'none' ? null : Number(v) })}
+                  >
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="— ไม่มี tag —" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">— ไม่มี tag —</SelectItem>
+                      {tags.map((t) => (
+                        <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button type="button" variant="outline" size="sm" onClick={handleQuickCreateTag} title="สร้าง tag ใหม่">
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              {courseForm.content_type === 'tip' && (
+                <div>
+                  <Label>🏷️ Tag Name ของ Tip (ชื่อย่อสั้นๆ ที่แสดงในเมนู Tip และชื่อ tab — สั้นกว่า title)</Label>
+                  <Input
+                    value={courseForm.tag_name}
+                    onChange={(e) => setCourseForm({ ...courseForm, tag_name: e.target.value.slice(0, 40) })}
+                    placeholder='เช่น "FLUX 3", "Monsoon Clash" (เว้นว่าง = ใช้ชื่อเต็มตัดสั้น)'
+                    className="mt-1.5"
+                  />
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label>ระดับความยาก</Label>
@@ -2206,6 +2301,67 @@ const AdminCourses = () => {
               className="hidden"
               onChange={handleSubtitleFileChange}
             />
+          </DialogContent>
+        </Dialog>
+
+        {/* จัดการ Tag — ชื่อย่อที่ขึ้นเมนู Tip/Course บน header */}
+        <Dialog open={tagDialogOpen} onOpenChange={setTagDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>🏷️ จัดการ Tag</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs text-gray-400 -mt-1">
+              Tag = ชื่อย่อที่แสดงในเมนู Course/Tip บน header · Tip ที่ใช้ tag เดียวกับคอร์ส = เกาะกับคอร์สนั้น
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                value={newTagName}
+                onChange={(e) => setNewTagName(e.target.value)}
+                placeholder="ชื่อ tag ใหม่ เช่น Gemini"
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter' && newTagName.trim()) {
+                    try {
+                      await api.createTag(newTagName.trim());
+                      setNewTagName('');
+                      loadTags();
+                    } catch (err: any) {
+                      toast.error(err?.message || 'สร้างไม่สำเร็จ');
+                    }
+                  }
+                }}
+              />
+              <Button
+                size="sm"
+                className="bg-purple-600 hover:bg-purple-700"
+                disabled={!newTagName.trim()}
+                onClick={async () => {
+                  try {
+                    await api.createTag(newTagName.trim());
+                    setNewTagName('');
+                    loadTags();
+                  } catch (err: any) {
+                    toast.error(err?.message || 'สร้างไม่สำเร็จ');
+                  }
+                }}
+              >
+                <Plus className="h-4 w-4 mr-1" /> เพิ่ม
+              </Button>
+            </div>
+            <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
+              {tags.length === 0 ? (
+                <p className="text-center text-gray-500 text-sm py-6">ยังไม่มี tag</p>
+              ) : (
+                tags.map((t) => (
+                  <div key={t.id} className="flex items-center gap-2 rounded-md border border-gray-800 px-3 py-2">
+                    <span className="flex-1 text-sm text-white">{t.name}</span>
+                    <span className="text-xs text-gray-500">{t.course_count || 0} รายการ</span>
+                    <Button size="sm" variant="ghost" className="text-red-400 hover:text-red-300 h-7 px-2" onClick={() => handleDeleteTag(t)}>
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
           </DialogContent>
         </Dialog>
 

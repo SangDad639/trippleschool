@@ -2922,6 +2922,19 @@ class ApiClient {
     return this.request(`/api/guide/admins/${id}/password`, { method: 'POST', body: JSON.stringify({ password }) });
   }
 
+  // ============================================
+  // Tags (ชื่อย่อขึ้นเมนู header — คลังกลาง Course/Tip)
+  // ============================================
+  async getTags(): Promise<TagDto[]> {
+    return this.request('/api/courses/tags');
+  }
+  async createTag(name: string): Promise<TagDto> {
+    return this.request('/api/courses/tags', { method: 'POST', body: JSON.stringify({ name }) });
+  }
+  async deleteTag(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/courses/tags/${id}`, { method: 'DELETE' });
+  }
+
   /** Pin (or unpin) the course shown on the home-page billboard. Unpinned = automatic (newest course). */
   async setCourseBillboard(courseId: number, pinned: boolean) {
     return this.request(`/api/courses/${courseId}/billboard`, {
@@ -3295,6 +3308,16 @@ export interface SubtitleSyncSummary {
     reason?: string;
     message?: string;
   }>;
+}
+
+/** Tag = ชื่อย่อขึ้นเมนู header; Tip ที่ใช้ tag เดียวกับคอร์ส = เกาะกับคอร์สนั้น */
+export interface TagDto {
+  id: number;
+  name: string;
+  display_order: number;
+  created_at: string;
+  /** จำนวนคอร์ส+ทิปที่ใช้ tag นี้ (จาก GET /tags) */
+  course_count?: number;
 }
 
 /** บทความ (เมนู Content) — เนื้อหาอยู่ใน content_html (วางตรง) หรือ content_url (ไฟล์ HTML บน S3) */

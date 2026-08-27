@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { api } from '@/lib/api';
+import type { BrowseCourse } from '@/components/browse/browseRows';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -21,6 +23,44 @@ const NAV_ITEMS = [
   { to: '/programs', label: 'Program' },
   { to: '/pricing', label: 'Pricing' },
 ];
+
+// Tip กับ Course มีเมนูย่อยตอน hover: ลิสต์ทุกตัวด้วยชื่อย่อ (tag)
+const HOVER_MENUS: Record<string, 'course' | 'tip'> = { '/courses': 'course', '/tips': 'tip' };
+
+// แคชระดับ module — ทุกหน้าใช้ header ร่วมกัน fetch ครั้งแรกที่ hover ครั้งเดียวพอ
+let coursesCache: BrowseCourse[] | null = null;
+let coursesCachePromise: Promise<BrowseCourse[]> | null = null;
+function fetchCoursesOnce(): Promise<BrowseCourse[]> {
+  if (coursesCache) return Promise.resolve(coursesCache);
+  if (!coursesCachePromise) {
+    coursesCachePromise = api
+      .getCourses()
+      .then((rows: BrowseCourse[]) => {
+        coursesCache = rows;
+        return rows;
+      })
+      .catch(() => {
+        coursesCachePromise = null; // ล้มเหลว → hover ครั้งหน้าลองใหม่
+        return [];
+      });
+  }
+  return coursesCachePromise;
+}
+
+/** ป้ายในเมนูย่อย: Tip ใช้ tag_name ของตัวเองก่อน (สั้นสุด) → tag (link) → title ตัดสั้น */
+function menuLabel(c: BrowseCourse): string {
+  if (c.tag_name) return c.tag_name;
+  if (c.tag) return c.tag;
+  return c.name.length > 26 ? `${c.name.slice(0, 26)}…` : c.name;
+}
+
+/** มีวิดีโอใหม่ภายใน 7 วัน (นับจากเวลา admin เพิ่มบทเรียน) → ขึ้นป้าย Update */
+const UPDATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+function hasRecentUpdate(c: BrowseCourse): boolean {
+  if (!c.last_lesson_at) return false;
+  const ms = Date.now() - new Date(c.last_lesson_at).getTime();
+  return ms >= 0 && ms < UPDATE_WINDOW_MS;
+}
 
 /** Whole days left on the subscription; null = none/expired. */
 function subscriptionDaysLeft(expiresAt?: string | null): number | null {
@@ -46,6 +86,24 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
   const { user, logout } = useAuth();
   const [scrolled, setScrolled] = useState(false);
   const [searchOpen, setSearchOpen] = useState(!!search?.query);
+  // เมนูย่อย hover ของ Tip/Course
+  const [hoverMenu, setHoverMenu] = useState<'course' | 'tip' | null>(null);
+  const [menuCourses, setMenuCourses] = useState<BrowseCourse[]>(coursesCache || []);
+  const hoverCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const openHoverMenu = (kind: 'course' | 'tip') => {
+    if (hoverCloseTimer.current) clearTimeout(hoverCloseTimer.current);
+    setHoverMenu(kind);
+    fetchCoursesOnce().then(setMenuCourses);
+  };
+  // หน่วงปิดเล็กน้อย — เมาส์เลื่อนจากตัวเมนูลงแผงย่อยต้องไม่หลุด
+  const closeHoverMenuSoon = () => {
+    if (hoverCloseTimer.current) clearTimeout(hoverCloseTimer.current);
+    hoverCloseTimer.current = setTimeout(() => setHoverMenu(null), 150);
+  };
+  useEffect(() => () => {
+    if (hoverCloseTimer.current) clearTimeout(hoverCloseTimer.current);
+  }, []);
 
   useEffect(() => {
     if (!overlay) return;
@@ -120,19 +178,64 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
 
           {/* Desktop nav — Netflix-style: active item white + bold.
               ไล่ขนาดตามจอ: md=14px (tablet เบียด) → lg=16px → xl=18px
-              (จอ lg 1024 ตอน login มีชิป+ปุ่มขวาหลายตัว 18px จะล้น จึงขยับที่ xl) */}
+              (จอ lg 1024 ตอน login มีชิป+ปุ่มขวาหลายตัว 18px จะล้น จึงขยับที่ xl)
+              Tip/Course มีเมนูย่อยตอน hover: ลิสต์ทุกตัวด้วยชื่อย่อ (tag) */}
           <nav className="hidden md:flex items-center gap-5 lg:gap-6 xl:gap-7 text-sm lg:text-base xl:text-lg">
-            {NAV_ITEMS.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={`transition-colors ${
-                  isActive(item.to) ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'
-                }`}
-              >
-                {item.label}
-              </Link>
-            ))}
+            {NAV_ITEMS.map((item) => {
+              const hoverKind = HOVER_MENUS[item.to];
+              const link = (
+                <Link
+                  key={hoverKind ? undefined : item.to}
+                  to={item.to}
+                  className={`transition-colors ${
+                    isActive(item.to) ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+              if (!hoverKind) return link;
+              const items = menuCourses.filter(
+                (c) => (c.content_type === 'tip' ? 'tip' : 'course') === hoverKind
+              );
+              // tip ที่ไม่มี tag_name ของตัวเองแต่ link tag ซ้ำกัน — เติม title กันแยกไม่ออก
+              const tagCounts: Record<string, number> = {};
+              for (const c of items) if (!c.tag_name && c.tag) tagCounts[c.tag] = (tagCounts[c.tag] || 0) + 1;
+              const labelFor = (c: BrowseCourse) =>
+                !c.tag_name && c.tag && tagCounts[c.tag] > 1 ? `${c.tag} — ${c.name.slice(0, 18)}…` : menuLabel(c);
+              return (
+                <div
+                  key={item.to}
+                  className="relative"
+                  onMouseEnter={() => openHoverMenu(hoverKind)}
+                  onMouseLeave={closeHoverMenuSoon}
+                >
+                  {link}
+                  {hoverMenu === hoverKind && items.length > 0 && (
+                    <div className="absolute left-1/2 -translate-x-1/2 top-full pt-3 z-50">
+                      <div className="min-w-[180px] max-w-[260px] max-h-[70vh] overflow-y-auto rounded-lg border border-border bg-background/95 backdrop-blur shadow-2xl py-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                        {items.map((c) => (
+                          <Link
+                            key={c.id}
+                            to={`/courses/${c.slug}`}
+                            onClick={() => setHoverMenu(null)}
+                            className="flex items-center gap-1.5 px-4 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+                            title={c.name}
+                          >
+                            <span className="truncate">{labelFor(c)}</span>
+                            {hasRecentUpdate(c) && (
+                              <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded px-1 py-px">
+                                Update
+                              </span>
+                            )}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </nav>
 
           {/* Mobile nav — the 5 items collapse into a dropdown */}

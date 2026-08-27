@@ -90,6 +90,32 @@ interface Course {
   enrollment_count?: string; // bigint serialized as string
   avg_rating?: number;
   review_count?: string; // bigint serialized as string
+  content_type?: 'course' | 'tip';
+  /** tag เดียวกัน = Tip เกาะคอร์สนี้ (ระบบ Tag) */
+  tag_id?: number | null;
+}
+
+/** Tip ที่เกาะคอร์สนี้ (จาก list payload) + เนื้อหาที่โหลด lazy ตอนเปิด tab */
+interface RelatedTip {
+  id: number;
+  name: string;
+  slug: string;
+  created_at?: string;
+  tag_id?: number | null;
+  /** ชื่อย่อของ Tip เอง — ใช้เป็นชื่อ tab (สั้นกว่า title) */
+  tag_name?: string | null;
+}
+interface TipTabData {
+  loading: boolean;
+  error: boolean;
+  course?: Course & { hasAccess?: boolean; isEnrolled?: boolean; enrollment?: Enrollment | null };
+}
+
+/** บริบทของแถวบทเรียน — คอร์สแม่กับ Tip แต่ละตัวมี slug/สิทธิ์/ความคืบหน้าของตัวเอง */
+interface LessonRowCtx {
+  slug: string;
+  hasAccess: boolean;
+  enrollment: Enrollment | null;
 }
 
 interface Enrollment {
@@ -136,6 +162,10 @@ const CourseDetail = () => {
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Tip ที่เกาะคอร์สนี้ผ่าน tag เดียวกัน → แสดงเป็น tab ต่อจาก "พื้นฐาน"
+  const [relatedTips, setRelatedTips] = useState<RelatedTip[]>([]);
+  const [tipData, setTipData] = useState<Record<number, TipTabData>>({});
+
   // Reviews (public read).
   const [reviews, setReviews] = useState<Review[]>([]);
   const [reviewAvg, setReviewAvg] = useState(0);
@@ -158,6 +188,42 @@ const CourseDetail = () => {
       setReviewCount(Number(data.count) || 0);
     } catch (error) {
       console.error('Failed to load reviews:', error);
+    }
+  };
+
+  // หา Tip ที่เกาะคอร์สนี้ (tag_id เดียวกัน) — เฉพาะหน้าที่เป็น course และมี tag
+  useEffect(() => {
+    setRelatedTips([]);
+    setTipData({});
+    if (!course || course.content_type === 'tip' || course.tag_id == null) return;
+    let cancelled = false;
+    api
+      .getCourses({ type: 'tip' })
+      .then((tips: RelatedTip[]) => {
+        if (cancelled) return;
+        setRelatedTips(
+          tips
+            .filter((t) => t.tag_id != null && t.tag_id === course.tag_id)
+            .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime())
+        );
+      })
+      .catch((e) => console.error('Failed to load related tips:', e));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [course?.id, course?.tag_id]);
+
+  // โหลดเนื้อหา tip ครั้งแรกที่เปิด tab (สิทธิ์/ความคืบหน้าเป็นของ tip เอง)
+  const loadTipTab = async (tip: RelatedTip) => {
+    if (tipData[tip.id]?.course || tipData[tip.id]?.loading) return;
+    setTipData((prev) => ({ ...prev, [tip.id]: { loading: true, error: false } }));
+    try {
+      const data = isAuthenticated ? await api.getCourseFull(tip.slug) : await api.getCourse(tip.slug);
+      setTipData((prev) => ({ ...prev, [tip.id]: { loading: false, error: false, course: data } }));
+    } catch (e) {
+      console.error('Failed to load tip content:', e);
+      setTipData((prev) => ({ ...prev, [tip.id]: { loading: false, error: true } }));
     }
   };
 
@@ -542,14 +608,16 @@ const CourseDetail = () => {
 
               // Netflix-style episode row: video cover left (YouTube thumb via
               // our proxy — the video id never reaches the client), info right.
-              const renderLessonRow = (lesson: Lesson, index: number) => {
-                const isCompleted = enrollment?.completed_lessons?.includes(lesson.id);
-                const locked = !lesson.is_preview && !hasAccess;
+              // ctx = คอร์สแม่หรือ Tip แต่ละตัว (คนละ slug/สิทธิ์/ความคืบหน้า)
+              const rowCtx: LessonRowCtx = { slug: course.slug, hasAccess, enrollment };
+              const renderLessonRow = (lesson: Lesson, index: number, ctx: LessonRowCtx = rowCtx) => {
+                const isCompleted = ctx.enrollment?.completed_lessons?.includes(lesson.id);
+                const locked = !lesson.is_preview && !ctx.hasAccess;
                 return (
                   <div
                     key={lesson.id}
                     className="group flex gap-3 p-2 rounded-lg transition-colors bg-gray-800/40 hover:bg-gray-800 cursor-pointer"
-                    onClick={() => navigate(`/app/courses/${course.slug}/learn/${lesson.id}`)}
+                    onClick={() => navigate(`/app/courses/${ctx.slug}/learn/${lesson.id}`)}
                   >
                     {/* Cover */}
                     <div className="relative w-28 sm:w-36 md:w-44 aspect-video flex-none rounded-md overflow-hidden bg-gradient-to-br from-gray-700 to-gray-800">
@@ -613,10 +681,6 @@ const CourseDetail = () => {
                 return { completedCount, totalDuration };
               };
 
-              if (allLessons.length === 0) {
-                return <p className="text-gray-400 text-center py-8">ยังไม่มีบทเรียน</p>;
-              }
-
               // Accordion for an arbitrary list of sections (reused by both tabs).
               const renderSectionAccordion = (list: Section[]) => (
                 <Accordion type="multiple" defaultValue={list.map(s => s.id.toString())} className="space-y-2">
@@ -668,39 +732,113 @@ const CourseDetail = () => {
                 </div>
               ) : null;
 
-              if (hasSections) {
-                const basicSections = sections.filter(s => (s.mode ?? 'basic') === 'basic');
-                const updateSections = sections.filter(s => s.mode === 'update');
+              // ---------- เนื้อหาของคอร์สนี้เอง (= tab "พื้นฐาน" เมื่อมี tip เกาะ) ----------
+              const basicContent = (() => {
+                if (allLessons.length === 0) {
+                  return <p className="text-gray-400 text-center py-8">ยังไม่มีบทเรียน</p>;
+                }
+                if (hasSections) {
+                  const basicSections = sections.filter(s => (s.mode ?? 'basic') === 'basic');
+                  const updateSections = sections.filter(s => s.mode === 'update');
 
-                // No update sections → render exactly as before (no tabs).
-                if (updateSections.length === 0) {
+                  // No update sections → render exactly as before (no inner tabs).
+                  if (updateSections.length === 0) {
+                    return (
+                      <div className="space-y-2">
+                        {renderSectionAccordion(sections)}
+                        {unassignedBlock}
+                      </div>
+                    );
+                  }
+
+                  // Mixed basic/update → two inner tabs; unassigned lessons live under พื้นฐาน.
                   return (
-                    <div className="space-y-2">
-                      {renderSectionAccordion(sections)}
-                      {unassignedBlock}
-                    </div>
+                    <Tabs defaultValue="basic">
+                      <TabsList className="mb-3">
+                        <TabsTrigger value="basic">พื้นฐาน</TabsTrigger>
+                        <TabsTrigger value="update">อัพเดท</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="basic" className="mt-0 space-y-2">
+                        {renderSectionAccordion(basicSections)}
+                        {unassignedBlock}
+                      </TabsContent>
+                      <TabsContent value="update" className="mt-0 space-y-2">
+                        {renderSectionAccordion(updateSections)}
+                      </TabsContent>
+                    </Tabs>
                   );
                 }
+                return <div className="space-y-1.5">{allLessons.map((lesson, index) => renderLessonRow(lesson, index))}</div>;
+              })();
 
-                // Mixed basic/update → two tabs; unassigned lessons live under พื้นฐาน.
-                return (
-                  <Tabs defaultValue="basic">
-                    <TabsList className="mb-3">
-                      <TabsTrigger value="basic">พื้นฐาน</TabsTrigger>
-                      <TabsTrigger value="update">อัพเดท</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="basic" className="mt-0 space-y-2">
-                      {renderSectionAccordion(basicSections)}
-                      {unassignedBlock}
-                    </TabsContent>
-                    <TabsContent value="update" className="mt-0 space-y-2">
-                      {renderSectionAccordion(updateSections)}
-                    </TabsContent>
-                  </Tabs>
-                );
-              }
+              // ไม่มี Tip เกาะ → หน้าตาเดิมทุกอย่าง ไม่มี tab bar
+              if (relatedTips.length === 0) return basicContent;
 
-              return <div className="space-y-1.5">{allLessons.map((lesson, index) => renderLessonRow(lesson, index))}</div>;
+              // มี Tip เกาะ (tag เดียวกัน) → tab นอก: "พื้นฐาน" + Tip แต่ละตัว
+              // ชื่อ tab = tag_name ของ tip เอง (admin ตั้ง) → ไม่มีค่อยตัด title
+              const tipLabel = (t: RelatedTip) => {
+                if (t.tag_name) return t.tag_name;
+                const n = t.name.trim();
+                return n.length > 20 ? `${n.slice(0, 20)}…` : n;
+              };
+              return (
+                <Tabs
+                  defaultValue="basic"
+                  onValueChange={(v) => {
+                    const tip = relatedTips.find((t) => `tip-${t.id}` === v);
+                    if (tip) loadTipTab(tip);
+                  }}
+                >
+                  <TabsList className="mb-3 flex-wrap h-auto gap-1">
+                    <TabsTrigger value="basic">พื้นฐาน</TabsTrigger>
+                    {relatedTips.map((t) => (
+                      <TabsTrigger key={t.id} value={`tip-${t.id}`} title={t.name}>
+                        {tipLabel(t)}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                  <TabsContent value="basic" className="mt-0">
+                    {basicContent}
+                  </TabsContent>
+                  {relatedTips.map((t) => {
+                    const data = tipData[t.id];
+                    return (
+                      <TabsContent key={t.id} value={`tip-${t.id}`} className="mt-0">
+                        {!data || data.loading ? (
+                          <div className="flex justify-center py-10">
+                            <Loader2 className="h-6 w-6 animate-spin text-purple-500" />
+                          </div>
+                        ) : data.error || !data.course ? (
+                          <div className="text-center py-8">
+                            <p className="text-gray-400 text-sm mb-3">โหลดเนื้อหาไม่สำเร็จ</p>
+                            <Button size="sm" variant="outline" onClick={() => loadTipTab(t)}>
+                              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />ลองใหม่
+                            </Button>
+                          </div>
+                        ) : (
+                          (() => {
+                            const tc = data.course;
+                            // สิทธิ์/ความคืบหน้า/ปลายทาง = ของ tip เอง ไม่ใช่คอร์สแม่
+                            const tipCtx: LessonRowCtx = {
+                              slug: tc.slug,
+                              hasAccess: !!(tc.isEnrolled || tc.hasAccess),
+                              enrollment: tc.enrollment ?? null,
+                            };
+                            const tipLessons = tc.lessons || [];
+                            return tipLessons.length === 0 ? (
+                              <p className="text-gray-400 text-center py-8">ยังไม่มีบทเรียน</p>
+                            ) : (
+                              <div className="space-y-1.5">
+                                {tipLessons.map((l, i) => renderLessonRow(l, i, tipCtx))}
+                              </div>
+                            );
+                          })()
+                        )}
+                      </TabsContent>
+                    );
+                  })}
+                </Tabs>
+              );
             })()}
           </CardContent>
         </Card>

@@ -433,18 +433,64 @@ router.post('/upload-html', authenticate, uploadSingle(htmlUpload, 'file'), asyn
   }
 });
 
+// ============ Tags (ชื่อย่อขึ้นเมนู header — คลังกลางใช้ร่วม Course/Tip) ============
+// NOTE: named routes must be registered before /:slug.
+router.get('/tags', async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT t.*, COUNT(c.id)::int AS course_count
+       FROM tags t LEFT JOIN courses c ON c.tag_id = t.id
+       GROUP BY t.id ORDER BY t.display_order ASC, t.name ASC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching tags:', error);
+    res.status(500).json({ error: 'โหลด tag ไม่สำเร็จ' });
+  }
+});
+
+router.post('/tags', authenticate, async (req: AuthRequest, res) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    const name = typeof req.body.name === 'string' ? req.body.name.trim().slice(0, 40) : '';
+    if (!name) return res.status(400).json({ error: 'กรุณาใส่ชื่อ tag' });
+    const result = await pool.query(`INSERT INTO tags (name) VALUES ($1) RETURNING *`, [name]);
+    res.json(result.rows[0]);
+  } catch (error) {
+    if ((error as any).code === '23505') return res.status(400).json({ error: 'มี tag ชื่อนี้อยู่แล้ว' });
+    console.error('Error creating tag:', error);
+    res.status(500).json({ error: 'สร้าง tag ไม่สำเร็จ' });
+  }
+});
+
+router.delete('/tags/:id', authenticate, async (req: AuthRequest, res) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Bad tag id' });
+    // FK ON DELETE SET NULL — คอร์ส/ทิปที่ใช้อยู่จะกลายเป็นไม่มี tag เอง
+    const result = await pool.query(`DELETE FROM tags WHERE id = $1 RETURNING id`, [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'ไม่พบ tag' });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error deleting tag:', error);
+    res.status(500).json({ error: 'ลบ tag ไม่สำเร็จ' });
+  }
+});
+
 // ============ Admin: list all courses (incl. inactive) ============
 router.get('/admin/all', authenticate, async (req: AuthRequest, res) => {
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const result = await pool.query(`
-      SELECT c.*,
+      SELECT c.*, t.name AS tag,
         COUNT(DISTINCT l.id) as lesson_count,
         COUNT(DISTINCT e.id) as enrollment_count
       FROM courses c
+      LEFT JOIN tags t ON t.id = c.tag_id
       LEFT JOIN lessons l ON c.id = l.course_id
       LEFT JOIN course_enrollments e ON c.id = e.course_id
-      GROUP BY c.id
+      GROUP BY c.id, t.name
       ORDER BY c.display_order ASC, c.created_at DESC
     `);
     res.json(result.rows);
@@ -459,12 +505,14 @@ router.get('/', async (req, res) => {
   try {
     const { featured, difficulty, search, sort, type } = req.query;
     let query = `
-      SELECT c.*,
+      SELECT c.*, t.name AS tag,
+        MAX(l.created_at) FILTER (WHERE l.is_active = true) as last_lesson_at,
         COUNT(DISTINCT l.id) FILTER (WHERE l.is_active = true) as lesson_count,
         COUNT(DISTINCT e.id) FILTER (WHERE e.status = 'approved') as enrollment_count,
         COALESCE(AVG(r.rating), 0)::numeric(3,2) as avg_rating,
         COUNT(DISTINCT r.id) as review_count
       FROM courses c
+      LEFT JOIN tags t ON t.id = c.tag_id
       LEFT JOIN lessons l ON c.id = l.course_id
       LEFT JOIN course_enrollments e ON c.id = e.course_id
       LEFT JOIN course_reviews r ON c.id = r.course_id
@@ -476,7 +524,7 @@ router.get('/', async (req, res) => {
     if (type === 'course' || type === 'tip') { query += ` AND c.content_type = $${paramIndex}`; params.push(type); paramIndex++; }
     if (difficulty) { query += ` AND c.difficulty = $${paramIndex}`; params.push(difficulty); paramIndex++; }
     if (search) { query += ` AND (c.name ILIKE $${paramIndex} OR c.description ILIKE $${paramIndex})`; params.push(`%${search}%`); paramIndex++; }
-    query += ` GROUP BY c.id`;
+    query += ` GROUP BY c.id, t.name`;
     const order = sort === 'popular' ? `enrollment_count DESC, c.created_at DESC`
       : sort === 'new' ? `c.created_at DESC`
       : sort === 'price_asc' ? `COALESCE(c.discount_price, c.price) ASC`
@@ -499,7 +547,7 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-      content_type,
+      content_type, tag_id, tag_name,
     } = req.body;
     if (!name || !slug) return res.status(400).json({ error: 'Name and slug are required' });
     const result = await pool.query(`
@@ -507,9 +555,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
         name, slug, description, short_description, thumbnail_url,
         instructor_name, instructor_avatar, difficulty, duration_hours,
         is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-        content_type
+        content_type, tag_id, tag_name
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *
     `, [
       name, slug, description || null, short_description || null, thumbnail_url || null,
@@ -518,6 +566,8 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       JSON.stringify(Array.isArray(learning_outcomes) ? learning_outcomes : []),
       JSON.stringify(Array.isArray(requirements) ? requirements : []),
       content_type === 'tip' ? 'tip' : 'course',
+      Number.isInteger(tag_id) ? tag_id : null,
+      typeof tag_name === 'string' && tag_name.trim() ? tag_name.trim().slice(0, 40) : null,
     ]);
     const created = result.rows[0];
     // การปักคือ "ปรับชั่วคราว" — คอร์สใหม่ (ที่เข้าเกณฑ์ Billboard อัตโนมัติ: เป็น
@@ -544,8 +594,20 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, is_active, display_order, price, discount_price, learning_outcomes, requirements,
-      content_type,
+      content_type, tag_id, tag_name,
     } = req.body;
+    // tag_id/tag_name ตั้งเฉพาะเมื่อส่งมา และรองรับส่ง null/'' = ล้างค่า (COALESCE ทำไม่ได้)
+    const extraSets: string[] = [];
+    const extraParams: any[] = [];
+    if (tag_id !== undefined) {
+      extraParams.push(Number.isInteger(tag_id) ? tag_id : null);
+      extraSets.push(`tag_id = $${18 + extraParams.length}`);
+    }
+    if (tag_name !== undefined) {
+      extraParams.push(typeof tag_name === 'string' && tag_name.trim() ? tag_name.trim().slice(0, 40) : null);
+      extraSets.push(`tag_name = $${18 + extraParams.length}`);
+    }
+    const tagSet = extraSets.length ? `, ${extraSets.join(', ')}` : '';
     const result = await pool.query(`
       UPDATE courses SET
         name = COALESCE($1, name),
@@ -565,7 +627,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
         learning_outcomes = COALESCE($15, learning_outcomes),
         requirements = COALESCE($16, requirements),
         content_type = COALESCE($17, content_type),
-        updated_at = CURRENT_TIMESTAMP
+        updated_at = CURRENT_TIMESTAMP${tagSet}
       WHERE id = $18
       RETURNING *
     `, [
@@ -576,6 +638,7 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
       requirements !== undefined ? JSON.stringify(requirements) : null,
       content_type === 'tip' || content_type === 'course' ? content_type : null,
       id,
+      ...extraParams,
     ]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     res.json(result.rows[0]);

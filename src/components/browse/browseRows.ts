@@ -18,6 +18,13 @@ export interface BrowseCourse {
   is_featured: boolean;
   /** Admin pinned this course to the home-page billboard (at most one course). */
   is_billboard?: boolean;
+  /** ชื่อย่อขึ้นเมนู header (จากตาราง tags — link tag) */
+  tag?: string | null;
+  tag_id?: number | null;
+  /** ชื่อย่อของ Tip เอง (สั้นกว่า title — ใช้แสดงใน UI) */
+  tag_name?: string | null;
+  /** เวลาที่ admin เพิ่มบทเรียนล่าสุด — ใช้ตัดสินป้าย "Update" (7 วัน) */
+  last_lesson_at?: string | null;
   lesson_count: number;
   price: number;
   discount_price: number | null;
