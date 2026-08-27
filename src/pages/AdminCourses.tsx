@@ -637,7 +637,7 @@ const AdminCourses = () => {
       await api.setCourseBillboard(course.id, pinned);
       toast.success(
         pinned
-          ? `ปัก "${course.name}" ขึ้น Billboard หน้าแรกแล้ว`
+          ? `ปัก "${course.name}" ขึ้น Billboard แล้ว (ชั่วคราว — สร้างคอร์สใหม่เมื่อไหร่ระบบกลับอัตโนมัติ)`
           : 'ถอด Billboard แล้ว — กลับไปใช้คอร์สล่าสุดอัตโนมัติ'
       );
       loadCourses();
@@ -1077,8 +1077,8 @@ const AdminCourses = () => {
           <>
           <p className="text-gray-500 text-xs mb-3 flex items-center gap-1.5 flex-wrap">
             <Star className="h-3.5 w-3.5 text-yellow-400" /> = ปักเป็น "คอร์สแนะนำ" (ขึ้นแถวแนะนำหน้าเว็บ) ·
-            <Clapperboard className="h-3.5 w-3.5 text-purple-400" /> = ปักขึ้น "Billboard หน้าแรก" (ได้ครั้งละ 1 คอร์ส
-            — ไม่ปักไว้เลย = ใช้คอร์สที่สร้างล่าสุดอัตโนมัติ) · ใช้ลูกศร ▲▼ จัดลำดับการแสดงทั้งเว็บ
+            <Clapperboard className="h-3.5 w-3.5 text-purple-400" /> = ปักขึ้น "Billboard หน้าแรก" ชั่วคราว (ครั้งละ 1 คอร์ส
+            — พอสร้างคอร์สใหม่ ระบบถอดปักแล้วกลับอัตโนมัติเอง) · ใช้ลูกศร ▲▼ จัดลำดับการแสดงทั้งเว็บ
           </p>
           <Accordion type="multiple" className="space-y-4">
             {courses.map((course) => (
