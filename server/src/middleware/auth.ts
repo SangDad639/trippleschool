@@ -14,6 +14,8 @@ export interface AuthRequest extends Request {
   userEmail?: string;
   isAdmin?: boolean;
   isSuperAdmin?: boolean;
+  /** จัดการคลิปคู่มือได้อย่างเดียว — ไม่ใช่แอดมินเต็มระบบ */
+  isGuideAdmin?: boolean;
 }
 
 export const authenticate = (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -29,12 +31,14 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
       email: string;
       isAdmin: boolean;
       isSuperAdmin?: boolean;
+      isGuideAdmin?: boolean;
     };
 
     req.userId = decoded.userId;
     req.userEmail = decoded.email;
     req.isAdmin = decoded.isAdmin;
     req.isSuperAdmin = !!decoded.isSuperAdmin;
+    req.isGuideAdmin = !!decoded.isGuideAdmin;
 
     next();
   } catch (error) {
@@ -57,11 +61,13 @@ export const optionalAuth = (req: AuthRequest, _res: Response, next: NextFunctio
         email: string;
         isAdmin: boolean;
         isSuperAdmin?: boolean;
+        isGuideAdmin?: boolean;
       };
       req.userId = decoded.userId;
       req.userEmail = decoded.email;
       req.isAdmin = decoded.isAdmin;
       req.isSuperAdmin = !!decoded.isSuperAdmin;
+      req.isGuideAdmin = !!decoded.isGuideAdmin;
     }
   } catch {
     // Invalid/expired token → treat as anonymous (do not reject).
@@ -87,11 +93,13 @@ export const authenticateQueryOrHeader = (req: AuthRequest, res: Response, next:
       email: string;
       isAdmin: boolean;
       isSuperAdmin?: boolean;
+      isGuideAdmin?: boolean;
     };
     req.userId = decoded.userId;
     req.userEmail = decoded.email;
     req.isAdmin = decoded.isAdmin;
     req.isSuperAdmin = !!decoded.isSuperAdmin;
+    req.isGuideAdmin = !!decoded.isGuideAdmin;
     next();
   } catch (error) {
     res.status(401).json({ error: 'Invalid or expired token' });
@@ -108,6 +116,18 @@ export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction
 export const requireSuperAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
   if (!req.isSuperAdmin) {
     return res.status(403).json({ error: 'Super admin access required' });
+  }
+  next();
+};
+
+/**
+ * Guide-clip editors: full admins pass too, so an admin never needs the extra
+ * flag. Everything outside /api/guide still requires requireAdmin, which this
+ * deliberately does not satisfy.
+ */
+export const requireGuideAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
+  if (!req.isAdmin && !req.isGuideAdmin) {
+    return res.status(403).json({ error: 'Guide admin access required' });
   }
   next();
 };

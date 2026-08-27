@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api, type GuideClipDto } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
+import GuideAdminsPanel from '@/components/guide/GuideAdminsPanel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -92,13 +93,17 @@ const AdminGuide = () => {
     }
   };
 
+  // ผู้ดูแลคู่มือ (is_guide_admin) เข้าหน้านี้ได้ แต่เห็นเฉพาะส่วนจัดการคลิป
+  const canEditClips = !!(user?.isAdmin || user?.isSuperAdmin || user?.isGuideAdmin);
+  const isFullAdmin = !!(user?.isAdmin || user?.isSuperAdmin);
+
   useEffect(() => {
-    if (!user?.isAdmin && !user?.isSuperAdmin) return;
+    if (!canEditClips) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  if (!user?.isAdmin && !user?.isSuperAdmin) {
+  if (!canEditClips) {
     return (
       <div className="page-wrapper flex items-center justify-center">
         <p className="text-muted-foreground">หน้านี้สำหรับผู้ดูแลระบบเท่านั้น</p>
@@ -204,7 +209,7 @@ const AdminGuide = () => {
     <div className="page-wrapper">
       <div className="sticky top-0 z-10 border-b border-border bg-card/95 backdrop-blur">
         <div className="container mx-auto flex max-w-5xl items-center gap-3 px-4 py-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/admin')}>
+          <Button variant="ghost" size="icon" onClick={() => navigate(isFullAdmin ? '/admin' : '/')}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div className="flex-1">
@@ -328,6 +333,7 @@ const AdminGuide = () => {
             })}
           </div>
         )}
+        {isFullAdmin && <GuideAdminsPanel />}
       </div>
 
       {/* ── ฟอร์มเพิ่ม / แก้ไขคลิป ── */}

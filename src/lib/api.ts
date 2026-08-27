@@ -2875,6 +2875,21 @@ class ApiClient {
     return this.request('/api/guide/clips/reorder', { method: 'POST', body: JSON.stringify({ ids }) });
   }
 
+  /** Guide admins — full admins only; a guide admin cannot appoint anyone. */
+  async getGuideAdmins(): Promise<GuideAdminDto[]> {
+    return this.request('/api/guide/admins');
+  }
+  /** Existing email → flag it. Unknown email → create the account (password required). */
+  async grantGuideAdmin(email: string, password?: string): Promise<GuideAdminDto & { created: boolean }> {
+    return this.request('/api/guide/admins', { method: 'POST', body: JSON.stringify({ email, password }) });
+  }
+  async revokeGuideAdmin(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/guide/admins/${id}`, { method: 'DELETE' });
+  }
+  async resetGuideAdminPassword(id: number, password: string): Promise<{ ok: boolean }> {
+    return this.request(`/api/guide/admins/${id}/password`, { method: 'POST', body: JSON.stringify({ password }) });
+  }
+
   /** Pin (or unpin) the course shown on the home-page billboard. Unpinned = automatic (newest course). */
   async setCourseBillboard(courseId: number, pinned: boolean) {
     return this.request(`/api/courses/${courseId}/billboard`, {
@@ -3251,6 +3266,14 @@ export interface SubtitleSyncSummary {
 }
 
 /** บทความ (เมนู Content) — เนื้อหาอยู่ใน content_html (วางตรง) หรือ content_url (ไฟล์ HTML บน S3) */
+export interface GuideAdminDto {
+  id: number;
+  email: string;
+  join_date?: string;
+  /** true = แอดมินเต็มระบบอยู่แล้ว (ไม่ได้ถูกจำกัดแค่คู่มือ) */
+  is_admin: boolean;
+}
+
 export interface GuideClipDto {
   id: number;
   title: string;

@@ -10,8 +10,10 @@
  * at this URL instead and pick up admin edits without a frontend deploy.
  */
 import { Router, Response } from 'express';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import pool from '../db.js';
-import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth.js';
+import { authenticate, requireAdmin, requireGuideAdmin, AuthRequest } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -99,7 +101,7 @@ router.get('/clips.json', async (_req, res: Response) => {
 });
 
 /** Admin — every clip including hidden ones. */
-router.get('/clips/admin/all', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+router.get('/clips/admin/all', authenticate, requireGuideAdmin, async (_req: AuthRequest, res: Response) => {
   try {
     const result = await pool.query(
       `SELECT ${CLIP_COLUMNS}, created_at, updated_at FROM guide_clips ORDER BY display_order ASC, id ASC`
@@ -111,7 +113,7 @@ router.get('/clips/admin/all', authenticate, requireAdmin, async (_req: AuthRequ
   }
 });
 
-router.post('/clips', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/clips', authenticate, requireGuideAdmin, async (req: AuthRequest, res: Response) => {
   const { error, values } = readClipBody(req.body);
   if (error) return res.status(400).json({ error });
 
@@ -135,7 +137,7 @@ router.post('/clips', authenticate, requireAdmin, async (req: AuthRequest, res: 
   }
 });
 
-router.put('/clips/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.put('/clips/:id', authenticate, requireGuideAdmin, async (req: AuthRequest, res: Response) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
 
@@ -159,7 +161,7 @@ router.put('/clips/:id', authenticate, requireAdmin, async (req: AuthRequest, re
   }
 });
 
-router.delete('/clips/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.delete('/clips/:id', authenticate, requireGuideAdmin, async (req: AuthRequest, res: Response) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
 
@@ -178,7 +180,7 @@ router.delete('/clips/:id', authenticate, requireAdmin, async (req: AuthRequest,
  * admin arranged it; positions are rewritten from the array index so the rows
  * cannot drift into duplicate display_order values.
  */
-router.post('/clips/reorder', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+router.post('/clips/reorder', authenticate, requireGuideAdmin, async (req: AuthRequest, res: Response) => {
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
   if (ids.length === 0) return res.status(400).json({ error: 'ต้องส่งลำดับ id มาด้วย' });
 
@@ -196,6 +198,107 @@ router.post('/clips/reorder', authenticate, requireAdmin, async (req: AuthReques
     res.status(500).json({ error: 'Failed to reorder guide clips' });
   } finally {
     client.release();
+  }
+});
+
+// ── ผู้ดูแลคู่มือ (guide admins) ────────────────────────────────────────────
+// จัดการโดยแอดมินเต็มเท่านั้น — ผู้ดูแลคู่มือแต่งตั้งกันเองไม่ได้
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_MIN = 8;
+
+/** เลขอ้างอิงผู้แนะนำ — คอลัมน์นี้ unique ทุกบัญชีต้องมี */
+const generateRefcode = () => crypto.randomUUID().slice(0, 8).toLowerCase();
+
+router.get('/admins', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, email, join_date, COALESCE(is_admin, false) AS is_admin
+         FROM users
+        WHERE COALESCE(is_guide_admin, false) = true
+        ORDER BY email ASC`
+    );
+    res.json(result.rows);
+  } catch (err: any) {
+    console.error('[guide] list admins failed:', err?.message);
+    res.status(500).json({ error: 'Failed to load guide admins' });
+  }
+});
+
+/**
+ * Grant the guide-admin flag. An existing account is flagged in place; an unknown
+ * email creates a fresh member account, which is why a password is required then.
+ * The flag lives in the JWT, so the account picks it up at its next sign-in.
+ */
+router.post('/admins', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const password = String(req.body?.password || '');
+
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'อีเมลไม่ถูกต้อง' });
+
+  try {
+    const existing = await pool.query('SELECT id FROM users WHERE LOWER(email) = $1', [email]);
+
+    if (existing.rows.length > 0) {
+      const result = await pool.query(
+        `UPDATE users SET is_guide_admin = true WHERE id = $1 RETURNING id, email, join_date, COALESCE(is_admin, false) AS is_admin`,
+        [existing.rows[0].id]
+      );
+      return res.json({ ...result.rows[0], created: false });
+    }
+
+    if (password.length < PASSWORD_MIN) {
+      return res.status(400).json({ error: `บัญชีใหม่ต้องตั้งรหัสผ่านอย่างน้อย ${PASSWORD_MIN} ตัวอักษร` });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      `INSERT INTO users (email, password_hash, credits, is_approved, refcode, is_guide_admin)
+       VALUES ($1, $2, 0, true, $3, true)
+       RETURNING id, email, join_date, COALESCE(is_admin, false) AS is_admin`,
+      [email, passwordHash, generateRefcode()]
+    );
+    res.status(201).json({ ...result.rows[0], created: true });
+  } catch (err: any) {
+    console.error('[guide] grant admin failed:', err?.message);
+    res.status(500).json({ error: 'Failed to grant guide admin' });
+  }
+});
+
+/** Revoke the flag only — the account itself stays, as an ordinary member. */
+router.delete('/admins/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const result = await pool.query('UPDATE users SET is_guide_admin = false WHERE id = $1', [id]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'User not found' });
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[guide] revoke admin failed:', err?.message);
+    res.status(500).json({ error: 'Failed to revoke guide admin' });
+  }
+});
+
+/** Reset a guide admin's password — there is no self-serve reset in the app. */
+router.post('/admins/:id/password', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const id = Number(req.params.id);
+  const password = String(req.body?.password || '');
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+  if (password.length < PASSWORD_MIN) {
+    return res.status(400).json({ error: `รหัสผ่านต้องยาวอย่างน้อย ${PASSWORD_MIN} ตัวอักษร` });
+  }
+
+  try {
+    const passwordHash = await bcrypt.hash(password, 10);
+    const result = await pool.query(
+      'UPDATE users SET password_hash = $1 WHERE id = $2 AND COALESCE(is_guide_admin, false) = true',
+      [passwordHash, id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Guide admin not found' });
+    res.json({ ok: true });
+  } catch (err: any) {
+    console.error('[guide] reset password failed:', err?.message);
+    res.status(500).json({ error: 'Failed to reset password' });
   }
 });
 

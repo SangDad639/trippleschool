@@ -244,6 +244,12 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
                       <DropdownMenuItem onClick={() => navigate('/admin/articles')}>จัดการบทความ</DropdownMenuItem>
                     </>
                   )}
+                  {!user.isAdmin && !user.isSuperAdmin && user.isGuideAdmin && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => navigate('/admin/guide')}>จัดการคลิปคู่มือ</DropdownMenuItem>
+                    </>
+                  )}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => { logout(); navigate('/'); }} className="text-red-400 focus:text-red-400">
                     <LogOut className="h-4 w-4 mr-2" /> ออกจากระบบ

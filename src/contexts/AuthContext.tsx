@@ -8,6 +8,8 @@ interface User {
   joinDate: string;
   isAdmin?: boolean;
   isSuperAdmin?: boolean;
+  /** จัดการคลิปคู่มือได้อย่างเดียว ไม่ใช่แอดมินเต็มระบบ */
+  isGuideAdmin?: boolean;
   isApproved?: boolean;
   subscriptionExpiresAt?: string | null;
   refcode?: string;
@@ -64,6 +66,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             joinDate: userData.joinDate,
             isAdmin: userData.isAdmin,
             isSuperAdmin: userData.isSuperAdmin,
+            isGuideAdmin: userData.isGuideAdmin,
             isApproved: userData.isApproved,
             subscriptionExpiresAt: userData.subscriptionExpiresAt,
             refcode: userData.refcode,
@@ -97,6 +100,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         joinDate: response.user.joinDate,
         isAdmin: response.user.isAdmin,
         isSuperAdmin: response.user.isSuperAdmin,
+        isGuideAdmin: response.user.isGuideAdmin,
         isApproved: response.user.isApproved,
         subscriptionExpiresAt: response.user.subscriptionExpiresAt,
         refcode: response.user.refcode,
@@ -121,6 +125,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         joinDate: response.user.joinDate,
         isAdmin: response.user.isAdmin,
         isSuperAdmin: response.user.isSuperAdmin,
+        isGuideAdmin: response.user.isGuideAdmin,
         isApproved: response.user.isApproved,
         subscriptionExpiresAt: response.user.subscriptionExpiresAt,
         refcode: response.user.refcode,
@@ -155,6 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           joinDate: response.user.joinDate,
           isAdmin: response.user.isAdmin,
           isSuperAdmin: response.user.isSuperAdmin,
+          isGuideAdmin: response.user.isGuideAdmin,
           isApproved: response.user.isApproved,
           subscriptionExpiresAt: response.user.subscriptionExpiresAt,
           refcode: response.user.refcode,
@@ -183,6 +189,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         joinDate: userData.joinDate,
         isAdmin: userData.isAdmin,
         isSuperAdmin: userData.isSuperAdmin,
+        isGuideAdmin: userData.isGuideAdmin,
         isApproved: userData.isApproved,
         subscriptionExpiresAt: userData.subscriptionExpiresAt,
         refcode: userData.refcode,

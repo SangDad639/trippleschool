@@ -98,7 +98,7 @@ router.post(
 
       // Generate token immediately for auto-approved users
       const token = jwt.sign(
-        { userId: user.id, email: user.email, isAdmin: false, isSuperAdmin: !!user.is_super_admin },
+        { userId: user.id, email: user.email, isAdmin: false, isSuperAdmin: !!user.is_super_admin, isGuideAdmin: !!user.is_guide_admin },
         JWT_SECRET,
         { expiresIn: '7d' }
       );
@@ -111,7 +111,7 @@ router.post(
           email: user.email,
           credits: defaultCredits,
           isAdmin: false,
-          isSuperAdmin: !!user.is_super_admin,
+          isSuperAdmin: !!user.is_super_admin, isGuideAdmin: !!user.is_guide_admin,
           isApproved: true,
           refcode: user.refcode,
         },
@@ -143,7 +143,10 @@ router.post(
       const result = await pool.query(
         `SELECT id, email, password_hash, credits, is_admin, join_date,
                 is_approved, subscription_expires_at, refcode,
-                COALESCE(is_super_admin, false) as is_super_admin
+                COALESCE(is_super_admin, false) as is_super_admin,
+              -- อ่านผ่าน to_jsonb: ถ้า 041_guide_admin_role ยังไม่ถูกรัน คอลัมน์นี้จะยังไม่มี
+              -- การอ้างชื่อคอลัมน์ตรงๆ จะทำให้ login พังทั้งเว็บ แบบนี้ได้ NULL แล้วตกเป็น false แทน
+              COALESCE((to_jsonb(users.*) ->> 'is_guide_admin')::boolean, false) as is_guide_admin
          FROM users WHERE email = $1`,
         [email]
       );
@@ -173,7 +176,7 @@ router.post(
 
       // Generate token
       const token = jwt.sign(
-        { userId: user.id, email: user.email, isAdmin: user.is_admin, isSuperAdmin: !!user.is_super_admin },
+        { userId: user.id, email: user.email, isAdmin: user.is_admin, isSuperAdmin: !!user.is_super_admin, isGuideAdmin: !!user.is_guide_admin },
         JWT_SECRET,
         { expiresIn: '7d' }
       );
@@ -185,7 +188,7 @@ router.post(
           email: user.email,
           credits: user.credits,
           isAdmin: user.is_admin,
-          isSuperAdmin: !!user.is_super_admin,
+          isSuperAdmin: !!user.is_super_admin, isGuideAdmin: !!user.is_guide_admin,
           joinDate: user.join_date,
           isApproved: user.is_approved,
           subscriptionExpiresAt: user.subscription_expires_at,
@@ -228,7 +231,10 @@ router.post('/google', async (req: Request, res: Response) => {
     const existingUser = await pool.query(
       `SELECT id, email, credits, is_admin, join_date,
               is_approved, subscription_expires_at, refcode,
-              COALESCE(is_super_admin, false) as is_super_admin
+              COALESCE(is_super_admin, false) as is_super_admin,
+              -- อ่านผ่าน to_jsonb: ถ้า 041_guide_admin_role ยังไม่ถูกรัน คอลัมน์นี้จะยังไม่มี
+              -- การอ้างชื่อคอลัมน์ตรงๆ จะทำให้ login พังทั้งเว็บ แบบนี้ได้ NULL แล้วตกเป็น false แทน
+              COALESCE((to_jsonb(users.*) ->> 'is_guide_admin')::boolean, false) as is_guide_admin
        FROM users WHERE email = $1`,
       [email]
     );
@@ -297,7 +303,7 @@ router.post('/google', async (req: Request, res: Response) => {
 
     // Generate token
     const token = jwt.sign(
-      { userId: user.id, email: user.email, isAdmin: user.is_admin || false, isSuperAdmin: !!user.is_super_admin },
+      { userId: user.id, email: user.email, isAdmin: user.is_admin || false, isSuperAdmin: !!user.is_super_admin, isGuideAdmin: !!user.is_guide_admin },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -309,7 +315,7 @@ router.post('/google', async (req: Request, res: Response) => {
         email: user.email,
         credits: user.credits,
         isAdmin: user.is_admin || false,
-        isSuperAdmin: !!user.is_super_admin,
+        isSuperAdmin: !!user.is_super_admin, isGuideAdmin: !!user.is_guide_admin,
         joinDate: user.join_date,
         isApproved: true,
         subscriptionExpiresAt: user.subscription_expires_at,
@@ -338,7 +344,10 @@ router.get('/me', async (req: Request, res: Response) => {
     const result = await pool.query(
       `SELECT id, email, credits, is_admin, join_date,
               is_approved, subscription_expires_at, openai_api_key, refcode,
-              COALESCE(is_super_admin, false) as is_super_admin
+              COALESCE(is_super_admin, false) as is_super_admin,
+              -- อ่านผ่าน to_jsonb: ถ้า 041_guide_admin_role ยังไม่ถูกรัน คอลัมน์นี้จะยังไม่มี
+              -- การอ้างชื่อคอลัมน์ตรงๆ จะทำให้ login พังทั้งเว็บ แบบนี้ได้ NULL แล้วตกเป็น false แทน
+              COALESCE((to_jsonb(users.*) ->> 'is_guide_admin')::boolean, false) as is_guide_admin
        FROM users WHERE id = $1`,
       [decoded.userId]
     );
@@ -353,7 +362,7 @@ router.get('/me', async (req: Request, res: Response) => {
       email: user.email,
       credits: user.credits,
       isAdmin: user.is_admin,
-      isSuperAdmin: !!user.is_super_admin,
+      isSuperAdmin: !!user.is_super_admin, isGuideAdmin: !!user.is_guide_admin,
       joinDate: user.join_date,
       isApproved: user.is_approved,
       subscriptionExpiresAt: user.subscription_expires_at,
