@@ -13,29 +13,33 @@
  */
 import pg from 'pg';
 import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, readdirSync } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// In dev (tsx) loads server/.env. In prod (k8s Job) env injected via secret.
-if (!process.env.DATABASE_URL) {
-  dotenv.config({ path: join(__dirname, '..', '..', '.env') });
-}
-
-if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL not set');
-  process.exit(1);
-}
-
 const SQL_DIR = join(__dirname, 'sql');
 
-const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
-});
+/**
+ * Importing this file must stay side-effect free: index.ts calls runMigrations()
+ * at boot, and a module that dialled the DB (or called process.exit) on import
+ * would take the API down with it.
+ */
+function createPool(): pg.Pool {
+  // In dev (tsx) loads server/.env. In prod the env is injected by the platform.
+  if (!process.env.DATABASE_URL) {
+    dotenv.config({ path: join(__dirname, '..', '..', '.env') });
+  }
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL not set');
+  }
+  return new pg.Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
+  });
+}
 
 async function ensureMigrationsTable(client: pg.PoolClient) {
   await client.query(`
@@ -76,7 +80,8 @@ async function applyMigration(client: pg.PoolClient, file: string) {
   }
 }
 
-async function run() {
+export async function runMigrations(): Promise<void> {
+  const pool = createPool();
   const client = await pool.connect();
   try {
     await ensureMigrationsTable(client);
@@ -107,7 +112,13 @@ async function run() {
   }
 }
 
-run().catch((err) => {
-  console.error('\n❌ Migration runner failed:', err.message || err);
-  process.exit(1);
-});
+// CLI mode only (`npm run migrate`) — importing the module just gets the function.
+const invokedDirectly =
+  !!process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (invokedDirectly) {
+  runMigrations().catch((err) => {
+    console.error('\n❌ Migration runner failed:', err.message || err);
+    process.exit(1);
+  });
+}

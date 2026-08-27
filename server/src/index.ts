@@ -21,6 +21,7 @@ import agentChatRoutes from './routes/agentChat.js';
 import guideRoutes from './routes/guide.js';
 import pool from './db.js';
 import { startSubscriptionNotificationJob } from './jobs/subscriptionNotificationJob.js';
+import { runMigrations } from './migrations/runner.js';
 
 // ========== STARTUP ENV VALIDATION ==========
 const REQUIRED_ENV_VARS = ['DATABASE_URL', 'JWT_SECRET'] as const;
@@ -171,6 +172,24 @@ async function initializeDatabase() {
 }
 
 // Start server
+/**
+ * Apply pending SQL migrations before serving. Deploys here are a git push with
+ * no migration step, so a new table would otherwise reach production only if
+ * someone remembered to run `npm run migrate` by hand — the guide_clips table
+ * shipped without one and every /api/guide request 500'd until it was created.
+ *
+ * Failure is logged, not fatal: a broken migration must not take the whole API
+ * down, and the runner is idempotent so the next boot retries. Set
+ * RUN_MIGRATIONS=false to skip (e.g. when a separate job owns the schema).
+ */
+if (process.env.RUN_MIGRATIONS !== 'false') {
+  try {
+    await runMigrations();
+  } catch (err: any) {
+    console.error('⚠️  Migrations failed — starting server anyway:', err?.message || err);
+  }
+}
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 
