@@ -1008,7 +1008,9 @@ router.put('/:courseId/lessons/reorder', authenticate, async (req: AuthRequest, 
 // youtube to any authenticated user; paid lessons require an active subscription
 // (or admin). Paid youtube ids are never included in any list/detail payload —
 // the player fetches them one lesson at a time through this endpoint.
-router.get('/:slug/lessons/:lessonId/video', authenticate, async (req: AuthRequest, res) => {
+// optionalAuth: บท "ดูฟรี" (is_preview) ดูได้โดยไม่ต้อง login — logic ข้างล่าง
+// อนุญาต preview ให้ทุกคนอยู่แล้ว แค่เดิม middleware บล็อก guest ที่ 401 ก่อนถึง
+router.get('/:slug/lessons/:lessonId/video', optionalAuth, async (req: AuthRequest, res) => {
   try {
     const { slug, lessonId } = req.params;
     const courseResult = await pool.query(`SELECT id FROM courses WHERE slug = $1 AND is_active = true`, [slug]);

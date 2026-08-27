@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
 import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
 import { api } from '@/lib/api';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -82,6 +83,7 @@ interface Enrollment {
 const CourseLearn = () => {
   const { slug, lessonId } = useParams<{ slug: string; lessonId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [course, setCourse] = useState<Course | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
@@ -144,8 +146,9 @@ const CourseLearn = () => {
 
   useEffect(() => {
     if (slug) loadCourse();
+    // user เปลี่ยน (token hydrate หลัง mount) → โหลดใหม่ให้ได้สิทธิ์/ความคืบหน้าจริง
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
+  }, [slug, user?.id]);
 
   useEffect(() => {
     if (course && lessonId) {
@@ -164,7 +167,9 @@ const CourseLearn = () => {
     try {
       setLoading(true);
       setLoadError(null);
-      const data = await api.getCourseFull(slug!);
+      // Guest ใช้ endpoint public (บทดูฟรียังได้ youtube_id, บทล็อกถูก mask ฝั่ง server) —
+      // ดูฟรีจึงไม่ต้อง login; บทล็อกโชว์ overlay ชวนซื้อ/สมัครเหมือนเดิม
+      const data = user ? await api.getCourseFull(slug!) : await api.getCourse(slug!);
       // hasAccess = active subscription or admin. Non-members are NOT redirected away —
       // they can still watch preview lessons; member-only lessons render a locked
       // overlay with a "subscribe" CTA instead of the video.

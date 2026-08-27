@@ -417,7 +417,8 @@ function AppRoutes() {
 
       {/* ---------- In-app course area ---------- */}
       <Route path="/app/my-courses" element={<ProtectedRoute><AppShell><MyCourses /></AppShell></ProtectedRoute>} />
-      <Route path="/app/courses/:slug/learn/:lessonId" element={<ProtectedRoute><CourseLearn /></ProtectedRoute>} />
+      {/* หน้าเรียนเปิด public — บท "ดูฟรี" ดูได้โดยไม่ต้อง login; บทล็อกโชว์ overlay ชวนซื้อ/สมัครแทน */}
+      <Route path="/app/courses/:slug/learn/:lessonId" element={<CourseLearn />} />
       {/* Old in-app detail paths now resolve to the single public detail page. */}
       <Route path="/app/courses/:slug" element={<RedirectToCourse />} />
       <Route path="/app/courses" element={<Navigate to="/courses" replace />} />
