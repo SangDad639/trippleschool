@@ -61,9 +61,10 @@ const CourseLearn = lazy(() => import("@/pages/CourseLearn"));
 const MyCourses = lazy(() => import("@/pages/MyCourses"));
 const AdminCourses = lazy(() => import("@/pages/AdminCourses"));
 const AdminArticles = lazy(() => import("@/pages/AdminArticles"));
+const AdminGuide = lazy(() => import("@/pages/AdminGuide"));
 const AdminEnrollments = lazy(() => import("@/pages/AdminEnrollments"));
 const AdminChats = lazy(() => import("@/pages/AdminChats"));
-// Hidden page (/guide) — no nav tab, fully public. Currently intentionally blank.
+// Hidden page (/guide) — no nav tab, fully public. Clips are admin-managed (/admin/guide).
 const Guide = lazy(() => import("@/pages/Guide"));
 
 // Login/Register page
@@ -405,6 +406,7 @@ function AppRoutes() {
       <Route path="/admin/banners/:id/edit" element={<ProtectedRoute><AdminBannerEditor /></ProtectedRoute>} />
       <Route path="/admin/courses" element={<ProtectedRoute><AdminCourses /></ProtectedRoute>} />
       <Route path="/admin/articles" element={<ProtectedRoute><AdminArticles /></ProtectedRoute>} />
+      <Route path="/admin/guide" element={<ProtectedRoute><AdminGuide /></ProtectedRoute>} />
       <Route path="/admin/enrollments" element={<ProtectedRoute><AdminEnrollments /></ProtectedRoute>} />
       <Route path="/admin/chats" element={<ProtectedRoute><AdminChats /></ProtectedRoute>} />
 

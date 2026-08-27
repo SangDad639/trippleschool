@@ -2851,6 +2851,30 @@ class ApiClient {
     return this.request(`/api/articles/${id}`, { method: 'DELETE' });
   }
 
+  // ============================================
+  // Guide clips (คลิปคู่มือหน้า /guide)
+  // ============================================
+  /** Public — active clips in display order. No auth: /guide is open to everyone. */
+  async getGuideClips(): Promise<GuideClipDto[]> {
+    return this.request('/api/guide/clips');
+  }
+  async getAdminGuideClips(): Promise<GuideClipDto[]> {
+    return this.request('/api/guide/clips/admin/all');
+  }
+  async createGuideClip(data: Partial<GuideClipDto>): Promise<GuideClipDto> {
+    return this.request('/api/guide/clips', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateGuideClip(id: number, data: Partial<GuideClipDto>): Promise<GuideClipDto> {
+    return this.request(`/api/guide/clips/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteGuideClip(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/guide/clips/${id}`, { method: 'DELETE' });
+  }
+  /** Persist the whole card order — ids in the order they should appear. */
+  async reorderGuideClips(ids: number[]): Promise<{ ok: boolean }> {
+    return this.request('/api/guide/clips/reorder', { method: 'POST', body: JSON.stringify({ ids }) });
+  }
+
   /** Pin (or unpin) the course shown on the home-page billboard. Unpinned = automatic (newest course). */
   async setCourseBillboard(courseId: number, pinned: boolean) {
     return this.request(`/api/courses/${courseId}/billboard`, {
@@ -3227,6 +3251,22 @@ export interface SubtitleSyncSummary {
 }
 
 /** บทความ (เมนู Content) — เนื้อหาอยู่ใน content_html (วางตรง) หรือ content_url (ไฟล์ HTML บน S3) */
+export interface GuideClipDto {
+  id: number;
+  title: string;
+  subtitle: string | null;
+  /** ลิงก์ YouTube ของคลิป */
+  url: string;
+  /** ภาพปกที่ใส่ทับเอง — null = ดึงจาก YouTube ตาม url */
+  thumbnail: string | null;
+  /** ปุ่มลิงก์ใต้การ์ด */
+  links: { label: string; url: string }[];
+  is_active: boolean;
+  display_order: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface ArticleDto {
   id: number;
   title: string;

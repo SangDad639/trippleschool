@@ -241,6 +241,7 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
                       <DropdownMenuItem onClick={() => navigate('/admin/affiliate')}>จ่ายค่าคอมมิชชั่น</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/admin/banners')}>จัดการแบนเนอร์</DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/admin/articles')}>จัดการบทความ</DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/admin/guide')}>จัดการคลิปคู่มือ</DropdownMenuItem>
                     </>
                   )}
                   <DropdownMenuSeparator />
