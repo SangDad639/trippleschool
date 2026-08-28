@@ -178,10 +178,11 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
           </Link>
 
           {/* Desktop nav — Netflix-style: active item white + bold.
-              ไล่ขนาดตามจอ: md=14px (tablet เบียด) → lg=16px → xl=18px
-              (จอ lg 1024 ตอน login มีชิป+ปุ่มขวาหลายตัว 18px จะล้น จึงขยับที่ xl)
+              7 ลิงก์ (Home/Tip/Course/Content/Ebook/Program/Pricing) + ชิป/ปุ่มฝั่งขวา
+              เบียดกันเกินไปถ้าโชว์ตั้งแต่ md (768) จึงเลื่อนไปโชว์เต็มที่ lg (1024) ขึ้นไป
+              และลดระยะห่าง/ขนาดตัวอักษรลงหนึ่งขั้นจากเดิม กันล้นชนชิป "เหลือ N วัน" ฝั่งขวา
               Tip/Course มีเมนูย่อยตอน hover: ลิสต์ทุกตัวด้วยชื่อย่อ (tag) */}
-          <nav className="hidden md:flex items-center gap-5 lg:gap-6 xl:gap-7 text-sm lg:text-base xl:text-lg">
+          <nav className="hidden lg:flex items-center gap-4 xl:gap-6 text-sm xl:text-base">
             {NAV_ITEMS.map((item) => {
               const hoverKind = HOVER_MENUS[item.to];
               const link = (
@@ -239,10 +240,10 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
             })}
           </nav>
 
-          {/* Mobile nav — the 5 items collapse into a dropdown */}
+          {/* Mobile/tablet nav — items collapse into a dropdown below lg (see nav breakpoint above) */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost" className="md:hidden text-gray-300 hover:text-white px-2" aria-label="เมนู">
+              <Button size="sm" variant="ghost" className="lg:hidden text-gray-300 hover:text-white px-2" aria-label="เมนู">
                 <Menu className="h-5 w-5" />
                 <span className="hidden sm:inline ml-1">เมนู</span>
                 <ChevronDown className="hidden sm:inline h-3.5 w-3.5 ml-0.5 opacity-70" />
