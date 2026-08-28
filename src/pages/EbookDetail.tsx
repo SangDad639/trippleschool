@@ -4,9 +4,9 @@ import { api, type EbookDto } from '@/lib/api';
 import PublicHeader from '@/components/PublicHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, BookMarked, Download, Loader2 } from 'lucide-react';
+import { ArrowLeft, BookMarked, BookOpen, Download, Loader2 } from 'lucide-react';
 
-// หน้ารายละเอียด Ebook /ebooks/:slug — ปก + คำอธิบาย + ปุ่มดาวน์โหลด
+// หน้ารายละเอียด Ebook /ebooks/:slug — ปก + คำอธิบาย + ปุ่มดาวน์โหลด + อ่านในเว็บ
 // (จังหวะเดียวกับ ProgramDetail แต่ตัดวิดีโอ/สกรีนช็อต/ฟีเจอร์/แถบชวนสมัครสมาชิกออก
 // เพราะ Ebook ดาวน์โหลดได้ฟรีทุกคน ไม่ต้องล็อกอิน)
 const EbookDetail = () => {
@@ -15,12 +15,14 @@ const EbookDetail = () => {
   const [ebook, setEbook] = useState<EbookDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [showReader, setShowReader] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
     let cancelled = false;
     setLoading(true);
     setNotFound(false);
+    setShowReader(false);
     window.scrollTo(0, 0);
     (async () => {
       try {
@@ -59,6 +61,11 @@ const EbookDetail = () => {
       </div>
     );
   }
+
+  const fileUrl = ebook.file_url ? api.mediaUrl(ebook.file_url) : '';
+  const downloadHref = fileUrl && ebook.file_name ? `${fileUrl}?name=${encodeURIComponent(ebook.file_name)}` : fileUrl;
+  const viewHref = fileUrl ? `${fileUrl}${fileUrl.includes('?') ? '&' : '?'}view=1` : '';
+  const isPdf = (ebook.file_name || ebook.file_url || '').toLowerCase().endsWith('.pdf');
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -102,16 +109,28 @@ const EbookDetail = () => {
                 <p className="text-gray-300 text-sm leading-relaxed mb-6 whitespace-pre-line">{ebook.description}</p>
               )}
 
-              <div className="mt-auto">
+              <div className="mt-auto flex flex-wrap gap-3">
                 {ebook.file_url ? (
-                  <Button asChild className="w-full sm:w-auto h-11 bg-purple-600 hover:bg-purple-700">
-                    <a href={api.mediaUrl(ebook.file_url)} download>
-                      <Download className="h-4 w-4 mr-2" />
-                      ดาวน์โหลด Ebook
-                    </a>
-                  </Button>
+                  <>
+                    <Button asChild className="flex-1 basis-48 h-11 bg-purple-600 hover:bg-purple-700">
+                      <a href={downloadHref} download>
+                        <Download className="h-4 w-4 mr-2" />
+                        ดาวน์โหลด Ebook
+                      </a>
+                    </Button>
+                    {isPdf && (
+                      <Button
+                        variant="outline"
+                        className="flex-1 basis-48 h-11 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+                        onClick={() => setShowReader((v) => !v)}
+                      >
+                        <BookOpen className="h-4 w-4 mr-2" />
+                        {showReader ? 'ซ่อนตัวอ่าน' : 'อ่านในเว็บ'}
+                      </Button>
+                    )}
+                  </>
                 ) : (
-                  <Button disabled className="w-full sm:w-auto h-11 bg-purple-600 disabled:opacity-60">
+                  <Button disabled className="flex-1 basis-48 h-11 bg-purple-600 disabled:opacity-60">
                     <Download className="h-4 w-4 mr-2" />
                     ยังไม่มีไฟล์ให้ดาวน์โหลด
                   </Button>
@@ -119,6 +138,12 @@ const EbookDetail = () => {
               </div>
             </div>
           </div>
+
+          {showReader && isPdf && (
+            <div className="border-t border-gray-800 bg-[#0d0d14]">
+              <iframe src={viewHref} title={`อ่าน ${ebook.title}`} className="w-full h-[80vh] bg-white" />
+            </div>
+          )}
         </div>
       </div>
     </div>

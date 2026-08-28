@@ -380,19 +380,24 @@ router.post('/upload-thumbnail', authenticate, thumbUpload.single('thumbnail'), 
   }
 });
 
-// ============ Public material proxy (unguessable key; forces download) ============
+// ============ Public material proxy (unguessable key; forces download by default) ============
 // Access control lives in the lesson payload: paid-lesson material URLs are never
 // sent to non-purchasers, so this proxy stays public like /thumbnails.
+// ?view=1 opts into Content-Disposition: inline so PDFs render in the browser
+// (e.g. the Ebook "read online" viewer) instead of downloading — default
+// behavior is unchanged so existing lesson-material download links still work.
 router.get('/materials/*', async (req: Request, res: Response) => {
   try {
     const key = (req.params as any)[0];
     const rawName = typeof req.query.name === 'string' ? req.query.name : '';
     const safeName = rawName.replace(/[\r\n"\\]/g, '').slice(0, 200);
+    const inline = req.query.view === '1';
     const obj = await getFile(key);
     if (obj.ContentType) res.setHeader('Content-Type', obj.ContentType);
+    const dispositionType = inline ? 'inline' : 'attachment';
     res.setHeader(
       'Content-Disposition',
-      safeName ? `attachment; filename*=UTF-8''${encodeURIComponent(safeName)}` : 'attachment'
+      safeName ? `${dispositionType}; filename*=UTF-8''${encodeURIComponent(safeName)}` : dispositionType
     );
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
     (obj.Body as any).pipe(res);
