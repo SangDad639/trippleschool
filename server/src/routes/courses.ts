@@ -555,6 +555,17 @@ router.get('/', async (req, res) => {
   }
 });
 
+/** เครื่องมือที่ใช้ในคอร์ส: กรองเป็น [{name, price}] เท่านั้น — ตัดแถวไม่มีชื่อ + จำกัดความยาว */
+function sanitizeCourseTools(input: unknown): { name: string; price: string }[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((t: any) => ({
+      name: typeof t?.name === 'string' ? t.name.trim().slice(0, 80) : '',
+      price: typeof t?.price === 'string' ? t.price.trim().slice(0, 60) : '',
+    }))
+    .filter((t) => t.name);
+}
+
 // ============ Admin: create course ============
 router.post('/', authenticate, async (req: AuthRequest, res) => {
   try {
@@ -563,7 +574,7 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-      content_type, tag_id, tag_name,
+      content_type, tag_id, tag_name, tools,
     } = req.body;
     if (!name || !slug) return res.status(400).json({ error: 'Name and slug are required' });
     const result = await pool.query(`
@@ -571,9 +582,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
         name, slug, description, short_description, thumbnail_url,
         instructor_name, instructor_avatar, difficulty, duration_hours,
         is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-        content_type, tag_id, tag_name
+        content_type, tag_id, tag_name, tools
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       RETURNING *
     `, [
       name, slug, description || null, short_description || null, thumbnail_url || null,
@@ -584,6 +595,7 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       content_type === 'tip' ? 'tip' : 'course',
       Number.isInteger(tag_id) ? tag_id : null,
       typeof tag_name === 'string' && tag_name.trim() ? tag_name.trim().slice(0, 40) : null,
+      JSON.stringify(sanitizeCourseTools(tools)),
     ]);
     const created = result.rows[0];
     // การปักคือ "ปรับชั่วคราว" — คอร์สใหม่ (ที่เข้าเกณฑ์ Billboard อัตโนมัติ: เป็น
@@ -610,9 +622,9 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, is_active, display_order, price, discount_price, learning_outcomes, requirements,
-      content_type, tag_id, tag_name,
+      content_type, tag_id, tag_name, tools,
     } = req.body;
-    // tag_id/tag_name ตั้งเฉพาะเมื่อส่งมา และรองรับส่ง null/'' = ล้างค่า (COALESCE ทำไม่ได้)
+    // tag_id/tag_name/tools ตั้งเฉพาะเมื่อส่งมา และรองรับส่ง null/'' = ล้างค่า (COALESCE ทำไม่ได้)
     const extraSets: string[] = [];
     const extraParams: any[] = [];
     if (tag_id !== undefined) {
@@ -622,6 +634,10 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
     if (tag_name !== undefined) {
       extraParams.push(typeof tag_name === 'string' && tag_name.trim() ? tag_name.trim().slice(0, 40) : null);
       extraSets.push(`tag_name = $${18 + extraParams.length}`);
+    }
+    if (tools !== undefined) {
+      extraParams.push(JSON.stringify(sanitizeCourseTools(tools)));
+      extraSets.push(`tools = $${18 + extraParams.length}::jsonb`);
     }
     const tagSet = extraSets.length ? `, ${extraSets.join(', ')}` : '';
     const result = await pool.query(`

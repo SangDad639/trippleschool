@@ -95,6 +95,13 @@ interface Course {
   content_type?: 'course' | 'tip';
   learning_outcomes?: string[];
   requirements?: string[];
+  tools?: CourseTool[];
+}
+
+/** เครื่องมือที่ใช้ในคอร์ส — price เป็นข้อความอิสระ (เช่น "฿250/เดือน", "ฟรี") */
+interface CourseTool {
+  name: string;
+  price: string;
 }
 
 interface Section {
@@ -154,6 +161,7 @@ const initialCourseForm = {
   tag_name: '',
   learning_outcomes: [] as string[],
   requirements: [] as string[],
+  tools: [] as CourseTool[],
 };
 
 const initialLessonForm = {
@@ -220,6 +228,64 @@ const BulletListEditor = ({
         <Button type="button" variant="outline" size="sm" onClick={add}>
           <Plus className="h-4 w-4 mr-1" />
           เพิ่มรายการ
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+// เครื่องมือที่ใช้ในคอร์ส — แถวละ 2 ช่อง (ชื่อ + ราคาเริ่มต้นแบบข้อความอิสระ)
+// ลูกค้าเห็นเป็นการ์ดบนหน้าคอร์ส พร้อมหมายเหตุตายตัว "คิดตามเครดิต/แพ็กเกจรายเดือน"
+const ToolsEditor = ({
+  items,
+  onChange,
+}: {
+  items: CourseTool[];
+  onChange: (items: CourseTool[]) => void;
+}) => {
+  const update = (idx: number, patch: Partial<CourseTool>) =>
+    onChange(items.map((t, i) => (i === idx ? { ...t, ...patch } : t)));
+  const remove = (idx: number) => onChange(items.filter((_, i) => i !== idx));
+  const add = () => onChange([...items, { name: '', price: '' }]);
+
+  return (
+    <div>
+      <Label>🛠️ เครื่องมือที่ใช้ในคอร์ส</Label>
+      <p className="text-gray-500 text-xs mt-0.5">
+        ลูกค้าจะเห็นบนหน้าคอร์ส พร้อมหมายเหตุ "ราคาเริ่มต้นคิดตามเครดิต / แพ็กเกจรายเดือน"
+      </p>
+      <div className="mt-2 space-y-2">
+        {items.length === 0 && (
+          <p className="text-gray-500 text-sm">ยังไม่มีเครื่องมือ — กดปุ่มด้านล่างเพื่อเพิ่ม</p>
+        )}
+        {items.map((tool, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <Input
+              value={tool.name}
+              onChange={(e) => update(idx, { name: e.target.value })}
+              placeholder="ชื่อเครื่องมือ เช่น CapCut"
+              className="flex-1"
+            />
+            <Input
+              value={tool.price}
+              onChange={(e) => update(idx, { price: e.target.value })}
+              placeholder="ราคาเริ่มต้น เช่น ฿250/เดือน หรือ ฟรี"
+              className="flex-1"
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="text-red-400 hover:text-red-300 flex-shrink-0"
+              onClick={() => remove(idx)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </div>
+        ))}
+        <Button type="button" variant="outline" size="sm" onClick={add}>
+          <Plus className="h-4 w-4 mr-1" />
+          เพิ่มเครื่องมือ
         </Button>
       </div>
     </div>
@@ -446,6 +512,7 @@ const AdminCourses = () => {
         tag_name: course.tag_name || '',
         learning_outcomes: Array.isArray(course.learning_outcomes) ? course.learning_outcomes : [],
         requirements: Array.isArray(course.requirements) ? course.requirements : [],
+        tools: Array.isArray(course.tools) ? course.tools : [],
       });
     } else {
       setEditingCourse(null);
@@ -1578,6 +1645,10 @@ const AdminCourses = () => {
                 items={courseForm.requirements}
                 onChange={(requirements) => setCourseForm({ ...courseForm, requirements })}
                 placeholder="เช่น มีคอมพิวเตอร์และอินเทอร์เน็ต"
+              />
+              <ToolsEditor
+                items={courseForm.tools}
+                onChange={(tools) => setCourseForm({ ...courseForm, tools })}
               />
               {/* Thumbnail Upload Section */}
               <div>

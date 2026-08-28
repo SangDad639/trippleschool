@@ -41,6 +41,7 @@ import {
   ShoppingCart,
   CheckCircle2,
   ListChecks,
+  Wrench,
   MessageSquare,
   RefreshCw,
   WifiOff,
@@ -88,6 +89,8 @@ interface Course {
   // SkillLane-style enrichment fields (see backend contract).
   learning_outcomes?: string[];
   requirements?: string[];
+  /** เครื่องมือที่ใช้ในคอร์ส — price เป็นข้อความอิสระ, ราคาคิดตามเครดิต/แพ็กเกจรายเดือน */
+  tools?: { name: string; price: string }[];
   enrollment_count?: string; // bigint serialized as string
   avg_rating?: number;
   review_count?: string; // bigint serialized as string
@@ -658,6 +661,34 @@ const CourseDetail = () => {
                   </li>
                 ))}
               </ul>
+            </CardContent>
+          </Card>
+        )}
+
+        {course.tools && course.tools.length > 0 && (
+          <Card className="mb-6">
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-white text-base flex items-center gap-2">
+                <Wrench className="h-4 w-4 text-purple-400" />เครื่องมือที่ใช้ในคอร์ส
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0 space-y-3">
+              <ul className="space-y-2">
+                {course.tools.map((tool, idx) => (
+                  <li key={idx} className="flex items-center justify-between gap-3 text-sm">
+                    <span className="flex items-start gap-2 text-gray-300 min-w-0">
+                      <span className="text-purple-400 mt-0.5">🛠️</span>
+                      <span>{tool.name}</span>
+                    </span>
+                    {tool.price && (
+                      <span className="text-[#FFB300] font-medium whitespace-nowrap">เริ่มต้น {tool.price}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-2.5 text-xs text-yellow-200/90">
+                ⚠️ หมายเหตุ: ราคาเริ่มต้นคิดตามเครดิต / แพ็กเกจรายเดือนของแต่ละเครื่องมือ
+              </div>
             </CardContent>
           </Card>
         )}
