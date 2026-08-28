@@ -38,6 +38,8 @@ import ArticlesCatalog from "@/pages/ArticlesCatalog";
 import ArticleDetail from "@/pages/ArticleDetail";
 import Programs from "@/pages/Programs";
 import ProgramDetail from "@/pages/ProgramDetail";
+import EbooksCatalog from "@/pages/EbooksCatalog";
+import EbookDetail from "@/pages/EbookDetail";
 import Pricing from "@/pages/Pricing";
 import CourseDetail from "@/pages/CourseDetail";
 // Lazy: heavy / logged-in / admin pages — split out of the initial bundle so
@@ -61,6 +63,7 @@ const CourseLearn = lazy(() => import("@/pages/CourseLearn"));
 const MyCourses = lazy(() => import("@/pages/MyCourses"));
 const AdminCourses = lazy(() => import("@/pages/AdminCourses"));
 const AdminArticles = lazy(() => import("@/pages/AdminArticles"));
+const AdminEbooks = lazy(() => import("@/pages/AdminEbooks"));
 const GuideGroup = lazy(() => import("@/pages/GuideGroup"));
 const AdminGuide = lazy(() => import("@/pages/AdminGuide"));
 const AdminEnrollments = lazy(() => import("@/pages/AdminEnrollments"));
@@ -373,6 +376,8 @@ function AppRoutes() {
       <Route path="/tips" element={<TipsCatalog />} />
       <Route path="/content" element={<ArticlesCatalog />} />
       <Route path="/content/:slug" element={<ArticleDetail />} />
+      <Route path="/ebooks" element={<EbooksCatalog />} />
+      <Route path="/ebooks/:slug" element={<EbookDetail />} />
       <Route path="/programs" element={<Programs />} />
       <Route path="/programs/:slug" element={<ProgramDetail />} />
       <Route path="/pricing" element={<Pricing />} />
@@ -407,6 +412,7 @@ function AppRoutes() {
       <Route path="/admin/banners/:id/edit" element={<ProtectedRoute><AdminBannerEditor /></ProtectedRoute>} />
       <Route path="/admin/courses" element={<ProtectedRoute><AdminCourses /></ProtectedRoute>} />
       <Route path="/admin/articles" element={<ProtectedRoute><AdminArticles /></ProtectedRoute>} />
+      <Route path="/admin/ebooks" element={<ProtectedRoute><AdminEbooks /></ProtectedRoute>} />
       <Route path="/admin/guide" element={<ProtectedRoute><AdminGuide /></ProtectedRoute>} />
       <Route path="/admin/enrollments" element={<ProtectedRoute><AdminEnrollments /></ProtectedRoute>} />
       <Route path="/admin/chats" element={<ProtectedRoute><AdminChats /></ProtectedRoute>} />

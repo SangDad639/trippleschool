@@ -20,6 +20,7 @@ const NAV_ITEMS = [
   { to: '/tips', label: 'Tip' },
   { to: '/courses', label: 'Course' },
   { to: '/content', label: 'Content' },
+  { to: '/ebooks', label: 'Ebook' },
   { to: '/programs', label: 'Program' },
   { to: '/pricing', label: 'Pricing' },
 ];

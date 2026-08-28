@@ -2852,6 +2852,29 @@ class ApiClient {
   }
 
   // ============================================
+  // Ebooks (ดาวน์โหลดฟรี — เมนู Ebook)
+  // ============================================
+  /** Public catalog — active ebooks. */
+  async getEbooks(): Promise<EbookDto[]> {
+    return this.request('/api/ebooks');
+  }
+  async getEbook(slug: string): Promise<EbookDto> {
+    return this.request(`/api/ebooks/${encodeURIComponent(slug)}`);
+  }
+  async getAdminEbooks(): Promise<EbookDto[]> {
+    return this.request('/api/ebooks/admin/all');
+  }
+  async createEbook(data: Partial<EbookDto>): Promise<EbookDto> {
+    return this.request('/api/ebooks', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateEbook(id: number, data: Partial<EbookDto>): Promise<EbookDto> {
+    return this.request(`/api/ebooks/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteEbook(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/ebooks/${id}`, { method: 'DELETE' });
+  }
+
+  // ============================================
   // Guide clips (คลิปคู่มือหน้า /guide)
   // ============================================
   /** Public — groups shown on /guide, newest arrangement first. */
@@ -3376,6 +3399,20 @@ export interface ArticleDto {
   /** admin list only */
   content_chars?: number;
   has_content_file?: boolean;
+}
+
+export interface EbookDto {
+  id: number;
+  title: string;
+  slug: string;
+  description: string | null;
+  cover_url: string | null;
+  file_url: string | null;
+  file_name: string | null;
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AgentKnowledgeDto {
