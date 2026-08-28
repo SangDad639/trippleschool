@@ -199,7 +199,11 @@ const EbookDetail = () => {
 
           {showReader && canView && (
             <div className="border-t border-gray-800 bg-[#0d0d14]">
-              <iframe src={viewHref} title={`อ่าน ${ebook.title}`} className="w-full h-[80vh] bg-white" />
+              {/* #toolbar=0 hides the browser's own PDF viewer chrome (incl. its
+                  built-in Download/Print buttons) — a UI-level deterrent only,
+                  not real DRM (Ctrl+S / dev tools still work), but removes the
+                  obvious one-click download affordance from the reader itself. */}
+              <iframe src={`${viewHref}#toolbar=0`} title={`อ่าน ${ebook.title}`} className="w-full h-[80vh] bg-white" />
             </div>
           )}
         </div>
