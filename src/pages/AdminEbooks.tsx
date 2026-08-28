@@ -51,11 +51,14 @@ const emptyForm = {
   file_url: '',
   file_name: '',
   is_active: true,
+  allow_download: true,
+  members_only: false,
 };
 
 // Admin CMS ของ Ebook (/admin/ebooks): ลิสต์ + dialog สร้าง/แก้ไข —
 // ปกใช้ upload-thumbnail ของคอร์ส (ได้ variants card/hero ฟรี), ไฟล์ PDF
-// ใช้ upload-material (S3) แบบเดียวกับเอกสารบทเรียน — ดาวน์โหลดสาธารณะ ไม่ต้องล็อกอิน
+// ใช้ upload-material (S3) แบบเดียวกับเอกสารบทเรียน — สาธารณะ/ดาวน์โหลดได้เป็นค่าเริ่มต้น
+// แต่แอดมินปิดดาวน์โหลด (view-only) หรือจำกัดเฉพาะสมาชิกได้ต่อเล่ม (บังคับจริงฝั่ง server)
 const AdminEbooks = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -104,6 +107,8 @@ const AdminEbooks = () => {
       file_url: e.file_url || '',
       file_name: e.file_name || '',
       is_active: e.is_active,
+      allow_download: e.allow_download,
+      members_only: e.members_only,
     });
     setSlugTouched(true);
     setDialogOpen(true);
@@ -162,6 +167,8 @@ const AdminEbooks = () => {
         file_url: form.file_url,
         file_name: form.file_name,
         is_active: form.is_active,
+        allow_download: form.allow_download,
+        members_only: form.members_only,
       };
       if (editing) {
         await api.updateEbook(editing.id, payload);
@@ -256,6 +263,8 @@ const AdminEbooks = () => {
                       {e.file_name && ` · 📄 ${e.file_name}`}
                     </p>
                   </div>
+                  {e.members_only && <Badge className="bg-[#FFB300]/15 text-[#FFB300] border border-[#FFB300]/30">สมาชิกเท่านั้น</Badge>}
+                  {!e.allow_download && <Badge variant="secondary">อ่านอย่างเดียว</Badge>}
                   <Badge variant={e.is_active ? 'default' : 'secondary'}>{e.is_active ? 'เผยแพร่' : 'ซ่อนอยู่'}</Badge>
                   <Button size="sm" variant="ghost" title="เปิดดูหน้าเว็บจริง" onClick={() => window.open(`/ebooks/${e.slug}`, '_blank')}>
                     <ExternalLink className="h-4 w-4" />
@@ -351,6 +360,29 @@ const AdminEbooks = () => {
                     </button>
                   </div>
                 )}
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-gray-800 bg-gray-900/40 p-3">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={form.allow_download}
+                  onCheckedChange={(c) => set({ allow_download: c === true })}
+                  id="ebook-allow-download"
+                />
+                <Label htmlFor="ebook-allow-download" className="cursor-pointer">
+                  อนุญาตให้ดาวน์โหลด (ไม่ติ๊ก = อ่านในเว็บได้อย่างเดียว ดาวน์โหลดไม่ได้)
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  checked={form.members_only}
+                  onCheckedChange={(c) => set({ members_only: c === true })}
+                  id="ebook-members-only"
+                />
+                <Label htmlFor="ebook-members-only" className="cursor-pointer">
+                  เฉพาะสมาชิกเท่านั้น (ไม่ติ๊ก = ใครก็ดูได้ ไม่ต้องล็อกอิน)
+                </Label>
               </div>
             </div>
 

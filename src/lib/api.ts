@@ -2873,6 +2873,23 @@ class ApiClient {
   async deleteEbook(id: number): Promise<{ ok: boolean }> {
     return this.request(`/api/ebooks/${id}`, { method: 'DELETE' });
   }
+  /**
+   * The only URL that ever serves ebook bytes — the server re-checks
+   * members_only/allow_download on every request. Public ebooks need no
+   * token at all. Members-only ones need `accessToken` (from
+   * getEbookAccessToken) — deliberately NOT the long-lived session token,
+   * since that would leak into browser download history on every ebook link.
+   */
+  ebookFileUrl(slug: string, mode: 'view' | 'download', accessToken?: string): string {
+    const base = this.mediaUrl(`/api/ebooks/${encodeURIComponent(slug)}/file`);
+    const params = new URLSearchParams({ mode });
+    if (accessToken) params.set('token', accessToken);
+    return `${base}?${params.toString()}`;
+  }
+  /** Short-lived (10min), single-ebook-scoped token for a members_only ebook's file. */
+  async getEbookAccessToken(slug: string): Promise<{ token: string }> {
+    return this.request(`/api/ebooks/${encodeURIComponent(slug)}/access-token`);
+  }
 
   // ============================================
   // Guide clips (คลิปคู่มือหน้า /guide)
@@ -3407,8 +3424,16 @@ export interface EbookDto {
   slug: string;
   description: string | null;
   cover_url: string | null;
-  file_url: string | null;
-  file_name: string | null;
+  /** Admin-only — omitted from public list/detail responses (use ebookFileUrl() to fetch bytes). */
+  file_url?: string | null;
+  file_name?: string | null;
+  /** Public responses only — whether a file exists / looks like a PDF (readable in-browser). */
+  has_file?: boolean;
+  is_pdf?: boolean;
+  allow_download: boolean;
+  members_only: boolean;
+  /** Public responses only — whether the current viewer passes members_only. */
+  entitled?: boolean;
   is_active: boolean;
   display_order: number;
   created_at: string;

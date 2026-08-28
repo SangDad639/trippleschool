@@ -106,6 +106,37 @@ export const authenticateQueryOrHeader = (req: AuthRequest, res: Response, next:
   }
 };
 
+/**
+ * Like `optionalAuth`, but also accepts the JWT via a `?token=` query param —
+ * for gated media proxies loaded through <a>/<iframe>, which can't set an
+ * Authorization header, where the resource may still be fully public (the
+ * route itself decides per-resource whether the anonymous fallback is ok).
+ */
+export const optionalAuthQueryOrHeader = (req: AuthRequest, _res: Response, next: NextFunction) => {
+  try {
+    const headerToken = req.headers.authorization?.replace('Bearer ', '');
+    const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
+    const token = headerToken || queryToken;
+    if (token) {
+      const decoded = jwt.verify(token, JWT_SECRET) as {
+        userId: number;
+        email: string;
+        isAdmin: boolean;
+        isSuperAdmin?: boolean;
+        isGuideAdmin?: boolean;
+      };
+      req.userId = decoded.userId;
+      req.userEmail = decoded.email;
+      req.isAdmin = decoded.isAdmin;
+      req.isSuperAdmin = !!decoded.isSuperAdmin;
+      req.isGuideAdmin = !!decoded.isGuideAdmin;
+    }
+  } catch {
+    // Invalid/expired token → treat as anonymous (do not reject).
+  }
+  next();
+};
+
 export const requireAdmin = (req: AuthRequest, res: Response, next: NextFunction) => {
   if (!req.isAdmin) {
     return res.status(403).json({ error: 'Admin access required' });
