@@ -732,7 +732,7 @@ class ApiClient {
     });
   }
 
-  async verifyAndApproveSlip(file: File, plan: 'monthly' | 'yearly'): Promise<{
+  async verifyAndApproveSlip(file: File, plan: 'monthly' | 'yearly', refcode?: string): Promise<{
     success: boolean;
     expiresAt?: string;
     plan?: string;
@@ -744,10 +744,16 @@ class ApiClient {
     const formData = new FormData();
     formData.append('slip', file);
     formData.append('plan', plan);
+    if (refcode) formData.append('refcode', refcode);
     return this.request('/api/subscription/v2/verify-and-approve', {
       method: 'POST',
       body: formData,
     });
+  }
+
+  // ตรวจโค้ดผู้แนะนำก่อน checkout — valid = ได้ส่วนลด discount_percent%
+  async validateRefcode(code: string): Promise<{ valid: boolean; discount_percent: number; reason?: string }> {
+    return this.request(`/api/affiliate/validate-code?code=${encodeURIComponent(code)}`);
   }
 
   /**
@@ -1466,6 +1472,17 @@ class ApiClient {
     return this.request('/api/affiliate/admin/announcement', {
       method: 'PUT',
       body: JSON.stringify({ announcement }),
+    });
+  }
+
+  // % ส่วนลดโค้ดผู้แนะนำตอน checkout (admin ตั้งค่า — มีผลทันทีกับการซื้อครั้งใหม่)
+  async getAdminRefcodeDiscount(): Promise<{ refcode_discount_percent: number }> {
+    return this.request('/api/affiliate/admin/refcode-discount');
+  }
+  async updateAdminRefcodeDiscount(percent: number): Promise<{ refcode_discount_percent: number }> {
+    return this.request('/api/affiliate/admin/refcode-discount', {
+      method: 'PUT',
+      body: JSON.stringify({ percent }),
     });
   }
 
@@ -3087,10 +3104,11 @@ class ApiClient {
   }
   // Enrollments — per-course purchase (slip → admin approval) + progress records.
   // Subscribers also get an auto 'approved' enrollment (source='subscription') for progress.
-  // POST a buy request for a course. Optional payment slip (image, ≤10MB).
-  async enrollCourse(courseId: number, slip?: File) {
+  // POST a buy request for a course. Optional payment slip (image, ≤10MB) + โค้ดผู้แนะนำ (ส่วนลด)
+  async enrollCourse(courseId: number, slip?: File, refcode?: string) {
     const formData = new FormData();
     if (slip) formData.append('slip', slip);
+    if (refcode) formData.append('refcode', refcode);
     return this.request(`/api/enrollments/${courseId}/enroll`, {
       method: 'POST',
       body: formData,

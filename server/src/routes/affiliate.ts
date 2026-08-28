@@ -6,6 +6,16 @@ import path from 'path';
 import fs from 'fs';
 import { getBucketName, uploadFile, getSignedFileUrl, getFile } from '../utils/s3.js';
 import * as tiersService from '../services/tiersService.js';
+import { checkRefcode } from '../services/refcode.js';
+import { rateLimit } from '../middleware/rateLimit.js';
+
+// กันไล่เดาโค้ดคนอื่น (oracle): 30 ครั้ง/นาที ต่อ user ก็เหลือเฟือสำหรับใช้งานจริง
+const validateCodeRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  keyBy: (req) => (req.userId != null ? `refvalidate:${req.userId}` : undefined),
+  message: 'ตรวจสอบโค้ดถี่เกินไป กรุณารอสักครู่แล้วลองใหม่',
+});
 
 // Configure multer for payment proof upload (images + PDF)
 const proofUpload = multer({
@@ -40,6 +50,21 @@ router.get('/announcement', async (req, res: Response) => {
   } catch (error) {
     console.error('Get announcement error:', error);
     res.status(500).json({ error: 'Failed to get announcement' });
+  }
+});
+
+/**
+ * GET /api/affiliate/validate-code?code=xxx
+ * ตรวจโค้ดผู้แนะนำก่อน checkout — คืน % ส่วนลดถ้าใช้ได้
+ * (reason: NOT_FOUND = ไม่มีโค้ดนี้, OWN_CODE = โค้ดของตัวเอง)
+ */
+router.get('/validate-code', authenticate, validateCodeRateLimit, async (req: AuthRequest, res: Response) => {
+  try {
+    const chk = await checkRefcode(String(req.query.code || ''), req.userId!);
+    res.json({ valid: chk.valid, discount_percent: chk.discountPercent, reason: chk.reason });
+  } catch (error) {
+    console.error('Validate refcode error:', error);
+    res.status(500).json({ error: 'Failed to validate code' });
   }
 });
 
@@ -524,6 +549,43 @@ router.put('/admin/announcement', authenticate, requireAdmin, async (req: AuthRe
   } catch (error) {
     console.error('Update announcement error:', error);
     res.status(500).json({ error: 'Failed to update announcement' });
+  }
+});
+
+/**
+ * GET /api/affiliate/admin/refcode-discount
+ * % ส่วนลดที่ผู้ซื้อได้เมื่อกรอกโค้ดผู้แนะนำตอน checkout (คอร์ส + subscription)
+ */
+router.get('/admin/refcode-discount', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await pool.query('SELECT refcode_discount_percent FROM affiliate_settings WHERE id = 1');
+    const v = result.rows[0]?.refcode_discount_percent;
+    res.json({ refcode_discount_percent: v != null ? parseFloat(v) : 5 });
+  } catch (error) {
+    console.error('Get refcode discount error:', error);
+    res.status(500).json({ error: 'Failed to get refcode discount' });
+  }
+});
+
+/**
+ * PUT /api/affiliate/admin/refcode-discount  body: { percent: number 0-100 }
+ * มีผลทันทีกับการ validate โค้ด/การซื้อครั้งใหม่ — รายการที่ส่งไปแล้ว snapshot ราคาไว้ ไม่กระทบ
+ */
+router.put('/admin/refcode-discount', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const pct = Number(req.body?.percent);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      return res.status(400).json({ error: 'ส่วนลดต้องเป็นตัวเลข 0-100 (%)' });
+    }
+    const rounded = Math.round(pct * 100) / 100;
+    await pool.query(
+      'UPDATE affiliate_settings SET refcode_discount_percent = $1, updated_at = NOW() WHERE id = 1',
+      [rounded]
+    );
+    res.json({ refcode_discount_percent: rounded });
+  } catch (error) {
+    console.error('Update refcode discount error:', error);
+    res.status(500).json({ error: 'Failed to update refcode discount' });
   }
 });
 

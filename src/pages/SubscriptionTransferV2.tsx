@@ -27,6 +27,10 @@ const SubscriptionTransferV2 = () => {
   const [verifying, setVerifying] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // โค้ดผู้แนะนำ — valid แล้วยอดโอนลด % (server ตรวจซ้ำและคาดหวังยอดลดตอน verify สลิป)
+  const [refCode, setRefCode] = useState(() => localStorage.getItem('ts_ref') || '');
+  const [refCheck, setRefCheck] = useState<{ valid: boolean; pct: number; reason?: string; code: string } | null>(null);
+  const [refChecking, setRefChecking] = useState(false);
 
   const isMonthly = selectedPlan === 'monthly';
 
@@ -51,11 +55,44 @@ const SubscriptionTransferV2 = () => {
   };
 
   // The number user transfers is the *vat-inclusive total*.
+  // โค้ด valid → ลด % จาก subtotal แล้วบวก VAT ใหม่ — สูตร round2 ต้องตรงกับ server เป๊ะ
   const planPricing = getPlanPricing(selectedPlan);
-  const price = String(planPricing.total);
-  const priceDisplay = `฿${planPricing.total.toLocaleString()}`;
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const refValid = refCheck?.valid ?? false;
+  const effSubtotal = refValid ? round2(planPricing.subtotal * (1 - refCheck!.pct / 100)) : planPricing.subtotal;
+  const effTotal = refValid ? round2(effSubtotal * (1 + VAT_RATE / 100)) : planPricing.total;
+  const effVat = round2(effTotal - effSubtotal);
+  const refDiscountAmt = round2(planPricing.subtotal - effSubtotal);
+  const price = String(effTotal);
+  const priceDisplay = `฿${effTotal.toLocaleString()}`;
   const subtotalDisplay = `฿${planPricing.subtotal.toLocaleString()}`;
-  const vatDisplay = `฿${planPricing.vat.toLocaleString()}`;
+  const vatDisplay = `฿${effVat.toLocaleString()}`;
+
+  const validateCode = async (raw: string, silent = false) => {
+    const code = raw.trim();
+    if (!code) { setRefCheck(null); return; }
+    try {
+      setRefChecking(true);
+      const r = await api.validateRefcode(code);
+      setRefCheck({ valid: r.valid, pct: r.discount_percent, reason: r.reason, code: code.toLowerCase() });
+      if (!silent) {
+        if (r.valid) toast.success(l(`ใช้โค้ดสำเร็จ 🎉 ลด ${r.discount_percent}%`, `Code applied 🎉 ${r.discount_percent}% off`));
+        else toast.error(r.reason === 'OWN_CODE' ? l('ใช้โค้ดของตัวเองไม่ได้', 'Cannot use your own code') : l('ไม่พบโค้ดนี้', 'Code not found'));
+      }
+    } catch {
+      if (!silent) toast.error(l('ตรวจสอบโค้ดไม่สำเร็จ ลองใหม่อีกครั้ง', 'Could not validate code, please retry'));
+    } finally {
+      setRefChecking(false);
+    }
+  };
+  const handleCheckRefCode = () => void validateCode(refCode);
+
+  // โค้ดที่ prefill จากลิงก์แนะนำ → validate อัตโนมัติ ให้ยอดโอนบนจอถูกตั้งแต่เข้าเพจ
+  // (ไม่งั้น user เห็นโค้ดอยู่ในช่อง เข้าใจว่านับแล้ว → โอนราคาเต็ม เสียส่วนลดเงียบๆ)
+  useEffect(() => {
+    if (refCode.trim()) void validateCode(refCode, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const BANK_ACCOUNT = '231-3-08816-5';
   const BANK_NAME = l('ธนาคารกสิกรไทย', 'Kasikorn Bank (KBank)');
@@ -131,6 +168,10 @@ const SubscriptionTransferV2 = () => {
       th: `จำนวนเงินในสลิปไม่ตรงกับแพ็กเกจที่เลือก\nกรุณาโอนจำนวน ${priceDisplay} แล้วอัปโหลดสลิปใหม่`,
       en: `The amount on the slip does not match the selected plan.\nPlease transfer exactly ${priceDisplay} and upload the new slip.`,
     },
+    INVALID_REFCODE: {
+      th: 'โค้ดผู้แนะนำไม่ถูกต้อง\nกรุณาตรวจสอบโค้ดหรือลบโค้ดออกแล้วลองใหม่',
+      en: 'Invalid referral code.\nPlease check the code or remove it and try again.',
+    },
     DUPLICATE_SLIP: {
       th: 'สลิปนี้เคยถูกใช้ยืนยันแล้ว ไม่สามารถใช้ซ้ำได้\nกรุณาโอนเงินใหม่แล้วใช้สลิปใหม่',
       en: 'This slip has already been used for verification.\nPlease make a new transfer and use the new slip.',
@@ -166,20 +207,29 @@ const SubscriptionTransferV2 = () => {
       toast.error(l('กรุณาเลือกไฟล์สลิป', 'Please select slip file'));
       return;
     }
+    // มีโค้ดในช่องแต่ยังไม่ validate (แตะช่องหลัง apply / reload หน้า) → ห้ามส่งเงียบๆ
+    // เพราะ server จะคาดหวังยอดเต็มทั้งที่ user โอนยอดลดไปแล้ว → INVALID_AMOUNT + สลิปเสี่ยงติด duplicate
+    const typed = refCode.trim().toLowerCase();
+    if (typed && !(refCheck?.valid && refCheck.code === typed)) {
+      setErrorMessage(l('คุณกรอกโค้ดไว้แต่ยังไม่ได้กด "ใช้โค้ด"\nกดใช้โค้ดเพื่อยืนยันยอดโอน หรือลบโค้ดออกจากช่องก่อน', 'You typed a code but haven\'t applied it.\nPress "Apply" to confirm the amount, or clear the code field.'));
+      return;
+    }
     setVerifying(true);
     setErrorMessage(null);
     try {
-      const result = await api.verifyAndApproveSlip(slipFile, selectedPlan);
+      const result = await api.verifyAndApproveSlip(slipFile, selectedPlan, refValid ? refCheck!.code : undefined);
       if (result.success) {
         await refreshUser();
         navigate(`/subscription/checkout-complete?plan=${selectedPlan}&amount=${price}`);
       } else {
         const rawCode = result.errorCode || '';
+        if (rawCode === 'INVALID_REFCODE') setRefCheck(null); // เคลียร์ ✅ ค้าง ไม่ให้ยอดลดโชว์ผิด
         const msg = errorMessages[rawCode] || errorMessages[rawCode.toLowerCase()] || errorMessages['INTERNAL_ERROR'];
         setErrorMessage(l(msg.th, msg.en));
       }
     } catch (err: any) {
       const rawCode = err?.errorCode || '';
+      if (rawCode === 'INVALID_REFCODE') setRefCheck(null);
       const msg = errorMessages[rawCode] || errorMessages[rawCode.toLowerCase()] || errorMessages['INTERNAL_ERROR'];
       setErrorMessage(l(msg.th, msg.en));
     } finally {
@@ -272,6 +322,35 @@ const SubscriptionTransferV2 = () => {
                 {copied === l('เลขบัญชี', 'Account number') ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               </Button>
             </div>
+            {/* โค้ดผู้แนะนำ = ส่วนลด + เจ้าของโค้ดได้ค่าคอม */}
+            <div className="pt-1.5 border-t border-green-500/20 space-y-1.5">
+              <p className="text-[10px] text-gray-500">{l('🎟️ โค้ดผู้แนะนำ (ถ้ามี)', '🎟️ Referral code (optional)')}</p>
+              <div className="flex gap-2">
+                <input
+                  value={refCode}
+                  onChange={(e) => { setRefCode(e.target.value); setRefCheck(null); }}
+                  placeholder={l('กรอกโค้ดเพื่อรับส่วนลด', 'Enter code for a discount')}
+                  disabled={verifying}
+                  className="flex-1 h-9 rounded-lg bg-gray-900/60 border border-gray-700 px-3 text-sm font-mono text-white placeholder:text-gray-600 focus:outline-none focus:border-green-500/50"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCheckRefCode}
+                  disabled={refChecking || !refCode.trim() || verifying}
+                  className="h-9 text-xs border-green-500/30 text-green-400 hover:bg-green-500/10"
+                >
+                  {refChecking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : l('ใช้โค้ด', 'Apply')}
+                </Button>
+              </div>
+              {refCheck?.valid && (
+                <p className="text-green-400 text-xs">✅ {l(`ใช้โค้ดแล้ว ลด ${refCheck.pct}%`, `Code applied — ${refCheck.pct}% off`)}</p>
+              )}
+              {refCheck && !refCheck.valid && (
+                <p className="text-red-400 text-xs">❌ {refCheck.reason === 'OWN_CODE' ? l('ใช้โค้ดของตัวเองไม่ได้', 'Cannot use your own code') : l('ไม่พบโค้ดนี้ ตรวจสอบอีกครั้ง', 'Code not found')}</p>
+              )}
+            </div>
+
             <div className="pt-1.5 border-t border-green-500/20">
               <p className="text-[10px] text-gray-500 mb-1.5">{l('จำนวนเงิน', 'Amount')}</p>
               <div className="space-y-1 text-sm">
@@ -279,6 +358,12 @@ const SubscriptionTransferV2 = () => {
                   <span>{l('ยอดก่อนภาษีมูลค่าเพิ่ม', 'Sub total')}</span>
                   <span>{subtotalDisplay}</span>
                 </div>
+                {refValid && refDiscountAmt > 0 && (
+                  <div className="flex items-center justify-between text-green-400">
+                    <span>{l(`ส่วนลดโค้ดผู้แนะนำ ${refCheck!.pct}%`, `Referral code ${refCheck!.pct}% off`)}</span>
+                    <span>-฿{refDiscountAmt.toLocaleString()}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between text-gray-400">
                   <span>{l(`ภาษีมูลค่าเพิ่ม ${VAT_RATE}%`, `VAT ${VAT_RATE}%`)}</span>
                   <span>{vatDisplay}</span>

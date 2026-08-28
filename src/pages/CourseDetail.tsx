@@ -10,6 +10,7 @@ import StarRating from '@/components/StarRating';
 import ReviewList, { type Review } from '@/components/ReviewList';
 import WriteReviewForm from '@/components/WriteReviewForm';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
@@ -125,6 +126,8 @@ interface Enrollment {
   completed_lessons: number[];
   last_lesson_id: number;
   rejection_reason?: string | null;
+  paid_amount?: number | string | null;
+  refcode?: string | null;
 }
 
 const difficultyColors: Record<string, string> = {
@@ -161,6 +164,10 @@ const CourseDetail = () => {
   const [slipPreview, setSlipPreview] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // โค้ดผู้แนะนำตอน checkout — valid แล้วราคาลด % (ตรวจกับ server ก่อนใช้)
+  const [refCode, setRefCode] = useState('');
+  const [refCheck, setRefCheck] = useState<{ valid: boolean; pct: number; reason?: string; code: string } | null>(null);
+  const [refChecking, setRefChecking] = useState(false);
 
   // Tip ที่เกาะคอร์สนี้ผ่าน tag เดียวกัน → แสดงเป็น tab ต่อจาก "พื้นฐาน"
   const [relatedTips, setRelatedTips] = useState<RelatedTip[]>([]);
@@ -284,6 +291,27 @@ const CourseDetail = () => {
     }
   };
 
+  const validateCode = async (raw: string, silent = false) => {
+    const code = raw.trim();
+    if (!code) { setRefCheck(null); return null; }
+    try {
+      setRefChecking(true);
+      const r = await api.validateRefcode(code);
+      const state = { valid: r.valid, pct: r.discount_percent, reason: r.reason, code: code.toLowerCase() };
+      setRefCheck(state);
+      if (!silent) {
+        if (r.valid) toast.success(`ใช้โค้ดสำเร็จ 🎉 ลด ${r.discount_percent}%`);
+        else toast.error(r.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : 'ไม่พบโค้ดนี้');
+      }
+      return state;
+    } catch {
+      if (!silent) toast.error('ตรวจสอบโค้ดไม่สำเร็จ ลองใหม่อีกครั้ง');
+      return null;
+    } finally {
+      setRefChecking(false);
+    }
+  };
+
   const openBuyDialog = () => {
     if (!isAuthenticated) {
       navigate('/login');
@@ -291,8 +319,25 @@ const CourseDetail = () => {
     }
     setSlipFile(null);
     setSlipPreview('');
+    // prefill: โค้ดที่เคยใช้กับคำสั่งซื้อนี้ (resubmit) มาก่อนโค้ดจากลิงก์แนะนำ
+    const prefill = enrollment?.refcode || localStorage.getItem('ts_ref') || '';
+    setRefCode(prefill);
+    setRefCheck(null);
     setBuyDialogOpen(true);
+    // auto-validate โค้ดที่ prefill — ให้ยอดโอนบนจอถูกตั้งแต่แรก ไม่ต้องรอกดใช้โค้ดเอง
+    if (prefill.trim()) void validateCode(prefill, true);
   };
+
+  // ยอดโอนจริง: โค้ด valid → คำนวณลดสด; ยังไม่ valid แต่คำสั่งซื้อเดิมบันทึกยอดลดไว้
+  // (resubmit สลิป) → ใช้ยอดที่บันทึก (server คงค่าเดิมเมื่อไม่ส่งโค้ด) — สูตร round2 ตรงกับ server
+  const storedPaid = enrollment && (enrollment.status === 'pending' || enrollment.status === 'rejected') && enrollment.paid_amount != null
+    ? Number(enrollment.paid_amount)
+    : null;
+  const effectiveBuyAmount = refCheck?.valid
+    ? Math.round(buyAmount * (1 - refCheck.pct / 100) * 100) / 100
+    : (storedPaid ?? buyAmount);
+
+  const handleCheckRefCode = () => void validateCode(refCode);
 
   const handleSlipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -311,18 +356,29 @@ const CourseDetail = () => {
 
   const handleConfirmBuy = async () => {
     if (!course) return;
-    if (!isFree && !slipFile) {
+    if (buyAmount > 0 && !slipFile) {
       toast.error('กรุณาอัปโหลดสลิปการโอนเงิน');
+      return;
+    }
+    // มีโค้ดในช่องแต่ยังไม่ validate (หรือแก้ข้อความหลัง validate) → ห้ามส่งเงียบๆ
+    // ไม่ auto-apply เพราะยอดบนจอ/ยอดที่โอนไปแล้วอาจไม่ตรงกับยอดหลังลด
+    const typed = refCode.trim().toLowerCase();
+    if (typed && !(refCheck?.valid && refCheck.code === typed)) {
+      toast.error('กดปุ่ม "ใช้โค้ด" เพื่อตรวจสอบโค้ดก่อน หรือลบโค้ดออกจากช่อง');
       return;
     }
     try {
       setSubmitting(true);
-      await api.enrollCourse(course.id, slipFile ?? undefined);
+      await api.enrollCourse(course.id, slipFile ?? undefined, refCheck?.valid ? refCheck.code : undefined);
       toast.success('ส่งคำขอแล้ว รอแอดมินอนุมัติ');
       setBuyDialogOpen(false);
       await loadCourse();
     } catch (error: any) {
       console.error('Failed to enroll:', error);
+      // โค้ดใช้ไม่ได้/สลับโค้ดไม่ได้ → เคลียร์สถานะ ✅ ค้าง ไม่ให้ราคาลดโชว์ผิดๆ
+      if (error?.errorCode === 'INVALID_REFCODE' || error?.errorCode === 'REFCODE_LOCKED') {
+        setRefCheck(null);
+      }
       toast.error(error?.message || 'ส่งคำขอไม่สำเร็จ');
     } finally {
       setSubmitting(false);
@@ -900,11 +956,52 @@ const CourseDetail = () => {
               <CoursePrice price={course.price} discountPrice={course.discount_price} size="sm" />
             </div>
 
-            {!isFree && (
+            {buyAmount > 0 && (
               <>
+                {/* โค้ดผู้แนะนำ = ส่วนลดตอนซื้อ + เจ้าของโค้ดได้ค่าคอม */}
+                <div className="space-y-1.5">
+                  <p className="text-gray-300 text-xs font-medium">🎟️ โค้ดผู้แนะนำ (ถ้ามี)</p>
+                  <div className="flex gap-2">
+                    <Input
+                      value={refCode}
+                      onChange={(e) => { setRefCode(e.target.value); setRefCheck(null); }}
+                      placeholder="กรอกโค้ดเพื่อรับส่วนลด"
+                      className="h-9 text-sm font-mono"
+                      disabled={submitting}
+                    />
+                    <Button
+                      variant="outline"
+                      onClick={handleCheckRefCode}
+                      disabled={refChecking || !refCode.trim() || submitting}
+                      className="h-9 text-xs shrink-0 border-purple-500/40 text-purple-300 hover:bg-purple-500/10"
+                    >
+                      {refChecking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'ใช้โค้ด'}
+                    </Button>
+                  </div>
+                  {refCheck?.valid && (
+                    <p className="text-green-400 text-xs">
+                      ✅ ใช้โค้ดแล้ว ลด {refCheck.pct}% (−฿{(buyAmount - effectiveBuyAmount).toLocaleString()})
+                    </p>
+                  )}
+                  {refCheck && !refCheck.valid && (
+                    <p className="text-red-400 text-xs">
+                      ❌ {refCheck.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : 'ไม่พบโค้ดนี้ ตรวจสอบอีกครั้ง'}
+                    </p>
+                  )}
+                </div>
+
                 <p className="text-gray-400 text-sm">
-                  โอนเงินจำนวน <span className="text-purple-400 font-semibold">฿{buyAmount.toLocaleString()}</span> แล้วอัปโหลดสลิปการโอนเงินเพื่อให้แอดมินตรวจสอบ
+                  โอนเงินจำนวน{' '}
+                  {effectiveBuyAmount !== buyAmount && (
+                    <span className="line-through text-gray-500 mr-1">฿{buyAmount.toLocaleString()}</span>
+                  )}
+                  <span className="text-purple-400 font-semibold">฿{effectiveBuyAmount.toLocaleString()}</span> แล้วอัปโหลดสลิปการโอนเงินเพื่อให้แอดมินตรวจสอบ
                 </p>
+                {storedPaid != null && !refCheck?.valid && enrollment?.refcode && (
+                  <p className="text-green-400/80 text-xs">
+                    🎟️ คำสั่งซื้อนี้ใช้โค้ด <span className="font-mono">{enrollment.refcode}</span> ไปแล้ว — ยอดโอนตามส่วนลดเดิม
+                  </p>
+                )}
 
                 <input
                   ref={fileInputRef}

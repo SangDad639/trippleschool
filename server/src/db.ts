@@ -447,7 +447,7 @@ pool.on('error', (err) => {
     await pool.query(`
       ALTER TABLE users ADD COLUMN IF NOT EXISTS refcode VARCHAR(20) UNIQUE;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS referrer_id INTEGER REFERENCES users(id) ON DELETE SET NULL;
-      ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_rate NUMERIC(10,2) DEFAULT 200.00;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS commission_rate NUMERIC(10,2) DEFAULT 5.00;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS wise_email VARCHAR(255);
       CREATE INDEX IF NOT EXISTS idx_users_refcode ON users(refcode);
       CREATE INDEX IF NOT EXISTS idx_users_referrer_id ON users(referrer_id);

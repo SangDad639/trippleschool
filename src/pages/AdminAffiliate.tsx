@@ -62,6 +62,9 @@ const AdminAffiliate = () => {
   const [loading, setLoading] = useState(true);
   const [announcement, setAnnouncement] = useState('');
   const [announcementSaving, setAnnouncementSaving] = useState(false);
+  // % ส่วนลดโค้ดผู้แนะนำตอน checkout — เก็บเป็น string ให้พิมพ์ทศนิยมได้ลื่น validate ตอน save
+  const [refDiscount, setRefDiscount] = useState('5');
+  const [refDiscountSaving, setRefDiscountSaving] = useState(false);
 
   // Tier settings (percentage-based)
   const [tier1Percent, setTier1Percent] = useState(10);
@@ -114,15 +117,17 @@ const AdminAffiliate = () => {
 
   const loadData = async () => {
     try {
-      const [announcementRes, tiersRes, transfersRes, pendingRes, transferredRes] = await Promise.all([
+      const [announcementRes, tiersRes, transfersRes, pendingRes, transferredRes, refDiscountRes] = await Promise.all([
         api.getAffiliateAnnouncement(),
         api.getAdminTiers(),
         api.getAdminTransfers(),
         api.getAdminPendingPayouts(),
         api.getAdminPendingPayouts('transferred'),
+        api.getAdminRefcodeDiscount().catch(() => ({ refcode_discount_percent: 5 })),
       ]);
 
       setAnnouncement(announcementRes.announcement || '');
+      setRefDiscount(String(refDiscountRes.refcode_discount_percent ?? 5));
       setTier1Percent(tiersRes.tier1_percent || 10);
       setTier2Percent(tiersRes.tier2_percent || 15);
       setTransfers(transfersRes.transfers || []);
@@ -145,6 +150,24 @@ const AdminAffiliate = () => {
       toast.error('Failed to save announcement');
     } finally {
       setAnnouncementSaving(false);
+    }
+  };
+
+  const handleSaveRefDiscount = async () => {
+    const pct = Number(refDiscount);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      toast.error('กรอกตัวเลข 0-100 (%)');
+      return;
+    }
+    setRefDiscountSaving(true);
+    try {
+      const r = await api.updateAdminRefcodeDiscount(pct);
+      setRefDiscount(String(r.refcode_discount_percent));
+      toast.success(`บันทึกแล้ว 🎟️ ส่วนลดโค้ด ${r.refcode_discount_percent}%`);
+    } catch (error: any) {
+      toast.error(error?.message || 'บันทึกไม่สำเร็จ');
+    } finally {
+      setRefDiscountSaving(false);
     }
   };
 
@@ -620,6 +643,50 @@ const AdminAffiliate = () => {
                 )}
                 Save
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* 🎟️ ส่วนลดโค้ดผู้แนะนำตอน checkout */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <span>🎟️</span>
+                ส่วนลดโค้ดผู้แนะนำ
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                ผู้ซื้อที่กรอกโค้ดผู้แนะนำตอนชำระเงิน (ซื้อคอร์สรายตัว และสมัครสมาชิก) จะได้ส่วนลดตาม % นี้
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={refDiscount}
+                  onChange={(e) => setRefDiscount(e.target.value)}
+                  className="w-28"
+                  disabled={refDiscountSaving}
+                />
+                <span className="text-sm text-muted-foreground">%</span>
+                <Button
+                  onClick={handleSaveRefDiscount}
+                  disabled={refDiscountSaving}
+                  className="bg-[#FFB300] hover:bg-[#FF9D00] text-black"
+                >
+                  {refDiscountSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  บันทึก
+                </Button>
+              </div>
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 text-xs text-yellow-200/90">
+                ⚠️ มีผลทันทีกับการซื้อครั้งใหม่ — รายการที่ส่งไปแล้วใช้ยอดที่บันทึกไว้เดิม
+                • ตั้ง 0 = โค้ดไม่ลดราคา แต่ยังผูกผู้แนะนำและจ่ายค่าคอมตามปกติ
+              </div>
             </CardContent>
           </Card>
 

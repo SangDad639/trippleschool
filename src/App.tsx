@@ -81,6 +81,11 @@ const AuthPage = () => {
   const refcode = searchParams.get('ref');
   const isLogin = location.pathname === "/login";
 
+  // เก็บโค้ดจากลิงก์แนะนำไว้ prefill ช่องโค้ดตอน checkout (ซื้อคอร์ส/สมัครสมาชิก)
+  useEffect(() => {
+    if (refcode) localStorage.setItem('ts_ref', refcode);
+  }, [refcode]);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");

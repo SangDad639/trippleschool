@@ -93,9 +93,6 @@ const Affiliate = () => {
   });
   const [bankSaving, setBankSaving] = useState(false);
 
-  const referralUrl = stats?.refcode
-    ? `${window.location.origin}/register?ref=${stats.refcode}`
-    : '';
 
   // Geo-detection on mount
   useEffect(() => {
@@ -148,9 +145,11 @@ const Affiliate = () => {
     }
   };
 
-  const handleCopyLink = async () => {
+  // flow ใหม่ใช้ "กรอกโค้ดตอนชำระเงิน" — คัดลอกเฉพาะตัวโค้ด ไม่ใช่ลิงก์ register
+  const handleCopyCode = async () => {
+    if (!stats?.refcode) return;
     try {
-      await navigator.clipboard.writeText(referralUrl);
+      await navigator.clipboard.writeText(stats.refcode);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (error) {
@@ -350,19 +349,20 @@ const Affiliate = () => {
                     {stats?.total_referrals ?? 0}
                   </div>
                 </div>
-                <div className="p-3 rounded-lg border border-border">
+                <div className="p-3 rounded-lg border border-border text-center">
                   <div className="text-xs text-muted-foreground mb-1">
-                    {language === 'th' ? 'ลิงก์แนะนำ' : 'Referral Link'}
+                    {language === 'th' ? '🎟️ โค้ดแนะนำของฉัน' : '🎟️ My Code'}
                   </div>
                   <button
-                    onClick={handleCopyLink}
-                    className="w-full flex items-center justify-between gap-2 group"
-                    disabled={!referralUrl}
+                    onClick={handleCopyCode}
+                    className="w-full flex items-center justify-center gap-2 group"
+                    disabled={!stats?.refcode}
+                    title={language === 'th' ? 'คัดลอกโค้ด' : 'Copy code'}
                   >
-                    <span className="text-xs font-mono truncate text-left">
-                      {referralUrl || '—'}
+                    <span className="text-2xl font-bold font-mono text-[#FFB300] tracking-wider">
+                      {stats?.refcode || '—'}
                     </span>
-                    {referralUrl && (
+                    {stats?.refcode && (
                       copied
                         ? <Check className="h-4 w-4 text-green-500 flex-shrink-0" />
                         : <Copy className="h-4 w-4 text-muted-foreground group-hover:text-foreground flex-shrink-0" />
@@ -370,6 +370,14 @@ const Affiliate = () => {
                   </button>
                 </div>
               </div>
+
+              {stats?.refcode && (
+                <p className="text-[11px] text-muted-foreground">
+                  {language === 'th'
+                    ? '💡 บอกเพื่อนกรอกโค้ดนี้ตอนชำระเงิน (ซื้อคอร์สหรือสมัครสมาชิก) — เพื่อนได้ส่วนลดทันที และคุณได้ค่าคอมมิชชั่นเมื่อการชำระได้รับอนุมัติ'
+                    : '💡 Have friends enter this code at checkout (course purchase or subscription) — they get an instant discount and you earn commission once the payment is approved.'}
+                </p>
+              )}
             </div>
           </div>
 

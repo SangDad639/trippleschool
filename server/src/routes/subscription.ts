@@ -11,6 +11,7 @@ import { verifySlipImage, ThunderError } from '../utils/thunderApi.js';
 import { PRICING, VAT_RATE, pricingFromPlan } from '../config/pricing.js';
 import * as plansService from '../services/plansService.js';
 import { maybePromoteOnPurchase } from '../services/tierAssignmentService.js';
+import { checkRefcode, bindReferrerIfEmpty, applyRefDiscount } from '../services/refcode.js';
 import * as taxInvoiceService from '../services/taxInvoiceService.js';
 import { getBucketName, getFile } from '../utils/s3.js';
 
@@ -361,8 +362,29 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
     }
 
     const plan = planRecord.slug; // canonical slug stored on the row
-    const expectedAmount = planRecord.total; // vat-inclusive total (e.g. 642, 3210)
     const days = planRecord.days;
+
+    // โค้ดผู้แนะนำ (optional): valid → ยอดโอนที่คาดหวังลด % (คิดจาก subtotal แล้วบวก VAT ใหม่)
+    // FE คำนวณสูตรเดียวกันเป๊ะเพื่อโชว์ยอดโอน — round2(subtotal×(1−pct)) → round2(×(1+VAT))
+    const rawRef = String(req.body.refcode || '').trim();
+    let refDiscountPct = 0;
+    let refReferrerId: number | null = null;
+    let appliedRef: string | null = null;
+    if (rawRef) {
+      const chk = await checkRefcode(rawRef, userId);
+      if (!chk.valid) {
+        const msg = chk.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : 'โค้ดผู้แนะนำไม่ถูกต้อง';
+        return res.status(400).json({ error: msg, errorCode: 'INVALID_REFCODE' });
+      }
+      refDiscountPct = chk.discountPercent;
+      refReferrerId = chk.referrerId;
+      appliedRef = rawRef.toLowerCase();
+    }
+    const effectiveSubtotal = refDiscountPct > 0 ? applyRefDiscount(planRecord.subtotal, refDiscountPct) : planRecord.subtotal;
+    const expectedAmount = refDiscountPct > 0
+      ? Math.round(effectiveSubtotal * (1 + VAT_RATE / 100) * 100) / 100
+      : planRecord.total; // vat-inclusive total (e.g. 642, 3210)
+    const effectiveVat = Math.round((expectedAmount - effectiveSubtotal) * 100) / 100;
 
     // 1. Upload slip to S3 first (so we have a record even if verify fails)
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
@@ -506,16 +528,17 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
     await client.query(
       `INSERT INTO subscription_extension_logs
          (user_id, admin_id, days_added, amount, slip_url, approval_method,
-          subtotal, vat_amount, vat_rate)
-       VALUES ($1, NULL, $2, $3, $4, 'autoapprove', $5, $6, $7)`,
+          subtotal, vat_amount, vat_rate, refcode)
+       VALUES ($1, NULL, $2, $3, $4, 'autoapprove', $5, $6, $7, $8)`,
       [
         userId,
         days,
-        String(planRecord.total),
+        String(expectedAmount),
         slipUrl,
-        planRecord.subtotal,
-        planRecord.vat,
+        effectiveSubtotal,
+        effectiveVat,
         VAT_RATE,
+        appliedRef,
       ]
     );
 
@@ -526,10 +549,21 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
     // decision. The user paid the vat-inclusive total but the commission is
     // calculated on the goods price only (VAT is remitted to Revenue Dept,
     // not paid out as commission).
-    let commissionCreated = false;
-    if (referrerId) {
+    // โค้ดที่กรอกตอน checkout ผูกผู้แนะนำครั้งแรก (โค้ด valid โค้ดแรกชนะ ไม่ทับของเดิม)
+    // → ค่าคอมเกิดตั้งแต่การจ่ายครั้งนี้เลย ฐาน = subtotal หลังหักส่วนลดโค้ด
+    let effectiveReferrerId = referrerId;
+    if (!effectiveReferrerId && refReferrerId) {
       try {
-        const subtotalCents = Math.round(planRecord.subtotal * 100);
+        await bindReferrerIfEmpty(userId, refReferrerId);
+        effectiveReferrerId = refReferrerId;
+      } catch (bindError) {
+        console.error('[autoapprove] Failed to bind referrer:', bindError);
+      }
+    }
+    let commissionCreated = false;
+    if (effectiveReferrerId) {
+      try {
+        const subtotalCents = Math.round(effectiveSubtotal * 100);
         await createAffiliateCommission(
           userId,
           // slip_id is unique-per-payment so timestamp suffix is fine here

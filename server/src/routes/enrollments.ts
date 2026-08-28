@@ -10,16 +10,41 @@ import pool from '../db.js';
 import { authenticate, AuthRequest } from '../middleware/auth.js';
 import { uploadFile, getFile } from '../utils/s3.js';
 import { createAffiliateCommission } from '../services/stripeService.js';
+import { checkRefcode, bindReferrerIfEmpty, applyRefDiscount } from '../services/refcode.js';
 
 const router = Router();
 
-/** Best-effort affiliate commission on course purchase (base = price actually paid). */
-async function createCourseCommission(enrollment: { id: number; user_id: number; course_id: number }): Promise<void> {
+/**
+ * ผูก referrer จากโค้ดที่บันทึกไว้บน enrollment — เรียกตอน admin อนุมัติเท่านั้น
+ * (จ่ายเงินจริงแล้ว) mirror pattern ฝั่ง subscription ที่ bind หลัง verify สลิปผ่าน
+ */
+async function bindReferrerFromEnrollment(enrollment: { user_id: number; refcode?: string | null }): Promise<void> {
+  if (!enrollment.refcode) return;
   try {
-    const cr = await pool.query(`SELECT price, discount_price FROM courses WHERE id = $1`, [enrollment.course_id]);
-    const c = cr.rows[0];
-    if (!c) return;
-    const paid = (c.discount_price != null ? c.discount_price : c.price) || 0;
+    const r = await pool.query(`SELECT id FROM users WHERE LOWER(refcode) = $1 LIMIT 1`, [enrollment.refcode]);
+    const ownerId = r.rows[0]?.id;
+    if (ownerId && Number(ownerId) !== Number(enrollment.user_id)) {
+      await bindReferrerIfEmpty(enrollment.user_id, Number(ownerId));
+    }
+  } catch (e) {
+    console.error('[Affiliate] bind referrer on approve failed:', e);
+  }
+}
+
+/** Best-effort affiliate commission on course purchase (base = price actually paid). */
+async function createCourseCommission(enrollment: { id: number; user_id: number; course_id: number; paid_amount?: number | string | null }): Promise<void> {
+  try {
+    // ฐานค่าคอม = ราคาที่จ่ายจริงตอน checkout (หลังส่วนลดโค้ด) ถ้ามีบันทึกไว้;
+    // แถวเก่าก่อน migration 044 ไม่มี paid_amount → fallback ราคาคอร์ส ณ ตอนอนุมัติ
+    let paid: number;
+    if (enrollment.paid_amount != null) {
+      paid = Number(enrollment.paid_amount);
+    } else {
+      const cr = await pool.query(`SELECT price, discount_price FROM courses WHERE id = $1`, [enrollment.course_id]);
+      const c = cr.rows[0];
+      if (!c) return;
+      paid = (c.discount_price != null ? c.discount_price : c.price) || 0;
+    }
     if (paid <= 0) return; // free course → no commission
     // Unique-per-enrollment id (idempotent on re-approve). planSlug omitted → referrer tier %.
     await createAffiliateCommission(enrollment.user_id, `course_${enrollment.id}`, Math.round(paid * 100), 'THB');
@@ -78,8 +103,26 @@ router.post('/:courseId/enroll', authenticate, uploadSlip, async (req: AuthReque
     const { courseId } = req.params;
     const userId = req.userId!;
 
-    const courseResult = await pool.query(`SELECT id FROM courses WHERE id = $1 AND is_active = true`, [courseId]);
+    const courseResult = await pool.query(`SELECT id, price, discount_price FROM courses WHERE id = $1 AND is_active = true`, [courseId]);
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
+    const courseRow = courseResult.rows[0];
+    const baseAmount = Number(courseRow.discount_price != null ? courseRow.discount_price : courseRow.price) || 0;
+
+    // โค้ดผู้แนะนำ (optional): valid → ราคาลด % + เก็บโค้ดลง enrollment
+    // ⚠️ ไม่ผูก referrer ตรงนี้ — ผูกตอน admin อนุมัติเท่านั้น (จ่ายเงินจริงแล้ว)
+    // ไม่งั้นยิง API เปล่าๆ ด้วยโค้ดก็ล็อก referrer ถาวรได้โดยไม่มีเงินเข้า
+    const rawRef = String(req.body?.refcode || '').trim();
+    let paidAmount = baseAmount;
+    let appliedRef: string | null = null;
+    if (rawRef && baseAmount > 0) {
+      const chk = await checkRefcode(rawRef, userId);
+      if (!chk.valid) {
+        const msg = chk.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : 'โค้ดผู้แนะนำไม่ถูกต้อง';
+        return res.status(400).json({ error: msg, errorCode: 'INVALID_REFCODE' });
+      }
+      paidAmount = applyRefDiscount(baseAmount, chk.discountPercent);
+      appliedRef = rawRef.toLowerCase();
+    }
 
     let slipUrl: string | null = null;
     if (req.file) {
@@ -94,17 +137,27 @@ router.post('/:courseId/enroll', authenticate, uploadSlip, async (req: AuthReque
     if (existing.rows.length > 0) {
       const row = existing.rows[0];
       if (row.status === 'approved') return res.status(400).json({ error: 'คุณซื้อคอร์สนี้แล้ว' });
+      // โค้ดแรกชนะ: คำสั่งซื้อที่เคยใช้โค้ด A แล้ว ห้ามสลับเป็นโค้ด B ตอน resubmit
+      // (กันบันทึก 🎟️ ใน admin ชี้คนละคนกับ referrer ที่จะได้ค่าคอมจริง)
+      if (appliedRef && row.refcode && row.refcode !== appliedRef) {
+        return res.status(400).json({
+          error: `คำสั่งซื้อนี้ใช้โค้ด ${row.refcode} ไปแล้ว เปลี่ยนโค้ดไม่ได้ — ลบโค้ดใหม่ออกแล้วส่งอีกครั้ง`,
+          errorCode: 'REFCODE_LOCKED',
+        });
+      }
       // pending or rejected → (re)submit slip, back to pending
+      // ราคา/โค้ด: อัปเดตเฉพาะเมื่อรอบนี้กรอกโค้ด (ไม่กรอก = คงของเดิม เผื่อโอนตามยอดลดไปแล้ว)
       await pool.query(
-        `UPDATE course_enrollments SET status='pending', rejection_reason=NULL, slip_url=COALESCE($2, slip_url), updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
-        [row.id, slipUrl]
+        `UPDATE course_enrollments SET status='pending', rejection_reason=NULL, slip_url=COALESCE($2, slip_url),
+           paid_amount=COALESCE($3, paid_amount, $5), refcode=COALESCE($4, refcode), updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
+        [row.id, slipUrl, appliedRef ? paidAmount : null, appliedRef, baseAmount]
       );
-      return res.json({ message: 'ส่งคำขอแล้ว รอการอนุมัติ', status: 'pending' });
+      return res.json({ message: 'ส่งคำขอแล้ว รอการอนุมัติ', status: 'pending', paid_amount: appliedRef ? paidAmount : (row.paid_amount ?? baseAmount) });
     }
 
     const result = await pool.query(
-      `INSERT INTO course_enrollments (user_id, course_id, status, slip_url) VALUES ($1, $2, 'pending', $3) RETURNING *`,
-      [userId, courseId, slipUrl]
+      `INSERT INTO course_enrollments (user_id, course_id, status, slip_url, paid_amount, refcode) VALUES ($1, $2, 'pending', $3, $4, $5) RETURNING *`,
+      [userId, courseId, slipUrl, paidAmount, appliedRef]
     );
     res.json({ message: 'ส่งคำขอแล้ว รอการอนุมัติ', enrollment: result.rows[0] });
   } catch (error) {
@@ -241,6 +294,7 @@ router.put('/admin/:id/approve', authenticate, async (req: AuthRequest, res: Res
       WHERE id=$2 AND status='pending' RETURNING *
     `, [req.userId, id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Enrollment not found or already processed' });
+    await bindReferrerFromEnrollment(result.rows[0]);
     await createCourseCommission(result.rows[0]);
     res.json({ message: 'Enrollment approved', enrollment: result.rows[0] });
   } catch (error) {
@@ -292,9 +346,12 @@ router.post('/admin/bulk-approve', authenticate, async (req: AuthRequest, res: R
     }
     const result = await pool.query(`
       UPDATE course_enrollments SET status='approved', approved_by=$1, approved_at=CURRENT_TIMESTAMP, rejection_reason=NULL, updated_at=CURRENT_TIMESTAMP
-      WHERE id = ANY($2) AND status='pending' RETURNING id, user_id, course_id
+      WHERE id = ANY($2) AND status='pending' RETURNING id, user_id, course_id, paid_amount, refcode
     `, [req.userId, enrollment_ids]);
-    for (const row of result.rows) await createCourseCommission(row);
+    for (const row of result.rows) {
+      await bindReferrerFromEnrollment(row);
+      await createCourseCommission(row);
+    }
     res.json({ message: `${result.rowCount} enrollments approved`, approved_ids: result.rows.map(r => r.id) });
   } catch (error) {
     console.error('Error bulk approving enrollments:', error);

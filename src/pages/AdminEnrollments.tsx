@@ -59,6 +59,8 @@ interface Enrollment {
   slip_url: string;
   price: number;
   discount_price: number | null;
+  paid_amount: number | string | null;
+  refcode: string | null;
   progress_percent: number;
   enrolled_at: string;
   approved_at: string;
@@ -250,8 +252,11 @@ const AdminEnrollments = () => {
   };
 
   const formatPrice = (e: Enrollment) => {
-    const effective = e.discount_price != null && e.discount_price < e.price ? e.discount_price : e.price;
-    if (effective === 0) return 'ฟรี';
+    // ยอดที่ต้องโอนจริง — ถ้าซื้อพร้อมโค้ดผู้แนะนำ paid_amount = ราคาหลังส่วนลด
+    const effective = e.paid_amount != null
+      ? Number(e.paid_amount)
+      : (e.discount_price != null && e.discount_price < e.price ? e.discount_price : e.price);
+    if (Number(effective) === 0) return 'ฟรี';
     return `฿${Number(effective).toLocaleString()}`;
   };
 
@@ -449,7 +454,12 @@ const AdminEnrollments = () => {
                         )}
                         <TableCell>{enrollment.user_email}</TableCell>
                         <TableCell className="text-muted-foreground">{enrollment.course_name}</TableCell>
-                        <TableCell className="text-muted-foreground">{formatPrice(enrollment)}</TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {formatPrice(enrollment)}
+                          {enrollment.refcode && (
+                            <span className="block text-[10px] text-green-500">🎟️ {enrollment.refcode}</span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           {enrollment.slip_url ? (
                             <Button
