@@ -20,6 +20,16 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -393,17 +403,29 @@ const AdminCourses = () => {
     }
   };
 
-  const handleDeleteTag = async (tag: TagDto) => {
+  // Confirm dialog กลางก่อนลบ (แทน confirm() ของ browser) — ใช้ร่วมทุกจุดลบในหน้านี้
+  const [confirmState, setConfirmState] = useState<{
+    title: string;
+    description?: string;
+    onConfirm: () => void;
+  } | null>(null);
+
+  const handleDeleteTag = (tag: TagDto) => {
     const used = tag.course_count || 0;
-    if (!confirm(`ลบ tag "${tag.name}"?${used ? `\n\nมีคอร์ส/ทิปใช้อยู่ ${used} รายการ — จะกลายเป็นไม่มี tag` : ''}`)) return;
-    try {
-      await api.deleteTag(tag.id);
-      toast.success('ลบ tag แล้ว');
-      loadTags();
-      loadCourses();
-    } catch (e: any) {
-      toast.error(e?.message || 'ลบไม่สำเร็จ');
-    }
+    setConfirmState({
+      title: `ลบ Tag "${tag.name}"?`,
+      description: used ? `มีคอร์ส/ทิปใช้อยู่ ${used} รายการ — จะกลายเป็นไม่มี tag` : undefined,
+      onConfirm: async () => {
+        try {
+          await api.deleteTag(tag.id);
+          toast.success('ลบ tag แล้ว');
+          loadTags();
+          loadCourses();
+        } catch (e: any) {
+          toast.error(e?.message || 'ลบไม่สำเร็จ');
+        }
+      },
+    });
   };
 
   // Preview of S3-stored html materials needs their text fetched first
@@ -545,16 +567,20 @@ const AdminCourses = () => {
     }
   };
 
-  const handleDeleteCourse = async (course: Course) => {
-    if (!confirm(`Are you sure you want to delete "${course.name}"?`)) return;
-
-    try {
-      await api.deleteCourse(course.id);
-      toast.success('Success: Course deleted successfully');
-      loadCourses();
-    } catch (error: any) {
-      toast.error(`Error: ${error.message}`);
-    }
+  const handleDeleteCourse = (course: Course) => {
+    setConfirmState({
+      title: `ลบคอร์ส "${course.name}"?`,
+      description: 'บทเรียนและเนื้อหาในคอร์สนี้จะถูกลบด้วย — การลบย้อนกลับไม่ได้',
+      onConfirm: async () => {
+        try {
+          await api.deleteCourse(course.id);
+          toast.success('ลบคอร์สแล้ว');
+          loadCourses();
+        } catch (error: any) {
+          toast.error(`Error: ${error.message}`);
+        }
+      },
+    });
   };
 
   const handleToggleCourseActive = async (course: Course) => {
@@ -720,18 +746,23 @@ const AdminCourses = () => {
     }
   };
 
-  const handleDeleteSubtitle = async (lessonId: number, title: string) => {
-    if (!confirm(`ลบซับของ "${title}"?`)) return;
-    setSubBusy(lessonId);
-    try {
-      await api.agentChatDeleteSubtitle(lessonId);
-      toast.success('ลบซับแล้ว');
-      if (subDialogCourse) await loadSubLessons(subDialogCourse.id);
-    } catch (error: any) {
-      toast.error(error?.message || 'ลบซับไม่สำเร็จ');
-    } finally {
-      setSubBusy(null);
-    }
+  const handleDeleteSubtitle = (lessonId: number, title: string) => {
+    setConfirmState({
+      title: `ลบซับของ "${title}"?`,
+      description: 'ผู้ช่วยประจำคอร์สจะไม่รู้เนื้อหาบทนี้จนกว่าจะดึงซับใหม่',
+      onConfirm: async () => {
+        setSubBusy(lessonId);
+        try {
+          await api.agentChatDeleteSubtitle(lessonId);
+          toast.success('ลบซับแล้ว');
+          if (subDialogCourse) await loadSubLessons(subDialogCourse.id);
+        } catch (error: any) {
+          toast.error(error?.message || 'ลบซับไม่สำเร็จ');
+        } finally {
+          setSubBusy(null);
+        }
+      },
+    });
   };
 
   // ปัก/ถอนคอร์สแนะนำ — คุมแถว "คอร์สแนะนำ" และ Billboard หน้าแรก
@@ -993,17 +1024,21 @@ const AdminCourses = () => {
     }
   };
 
-  const handleDeleteLesson = async (lesson: Lesson) => {
-    if (!confirm(`Are you sure you want to delete "${lesson.title}"?`)) return;
-
-    try {
-      await api.deleteLesson(lesson.id);
-      toast.success('Success: Lesson deleted successfully');
-      loadCourseLessons(lesson.course_id);
-      loadCourses();
-    } catch (error: any) {
-      toast.error(`Error: ${error.message}`);
-    }
+  const handleDeleteLesson = (lesson: Lesson) => {
+    setConfirmState({
+      title: `ลบบทเรียน "${lesson.title}"?`,
+      description: 'วิดีโอ/เอกสารประกอบของบทนี้จะหายจากคอร์ส — การลบย้อนกลับไม่ได้',
+      onConfirm: async () => {
+        try {
+          await api.deleteLesson(lesson.id);
+          toast.success('ลบบทเรียนแล้ว');
+          loadCourseLessons(lesson.course_id);
+          loadCourses();
+        } catch (error: any) {
+          toast.error(`Error: ${error.message}`);
+        }
+      },
+    });
   };
 
   const handleMoveLesson = async (course: Course, lesson: Lesson, direction: 'up' | 'down') => {
@@ -1067,17 +1102,21 @@ const AdminCourses = () => {
     }
   };
 
-  const handleDeleteSection = async (section: Section) => {
-    if (!confirm(`Are you sure you want to delete section "${section.title}"? Lessons in this section will become unassigned.`)) return;
-
-    try {
-      await api.deleteSection(section.id);
-      toast.success('Success: Section deleted successfully');
-      loadCourseSections(section.course_id);
-      loadCourseLessons(section.course_id);
-    } catch (error: any) {
-      toast.error(`Error: ${error.message}`);
-    }
+  const handleDeleteSection = (section: Section) => {
+    setConfirmState({
+      title: `ลบหมวด "${section.title}"?`,
+      description: 'บทเรียนในหมวดนี้จะไม่ถูกลบ แต่จะกลายเป็น "ไม่มีหมวด"',
+      onConfirm: async () => {
+        try {
+          await api.deleteSection(section.id);
+          toast.success('ลบหมวดแล้ว');
+          loadCourseSections(section.course_id);
+          loadCourseLessons(section.course_id);
+        } catch (error: any) {
+          toast.error(`Error: ${error.message}`);
+        }
+      },
+    });
   };
 
   const handleMoveSection = async (course: Course, section: Section, direction: 'up' | 'down') => {
@@ -2226,6 +2265,32 @@ const AdminCourses = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Confirm ก่อนลบ — dialog กลางใช้ร่วมทุกจุดลบ (คอร์ส/บทเรียน/หมวด/tag/ซับ) */}
+        <AlertDialog open={!!confirmState} onOpenChange={(open) => { if (!open) setConfirmState(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle className="flex items-center gap-2">
+                <Trash2 className="h-5 w-5 text-red-400" />
+                {confirmState?.title}
+              </AlertDialogTitle>
+              {confirmState?.description && (
+                <AlertDialogDescription className="whitespace-pre-line">
+                  {confirmState.description}
+                </AlertDialogDescription>
+              )}
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-red-600 hover:bg-red-700 text-white"
+                onClick={() => { confirmState?.onConfirm(); setConfirmState(null); }}
+              >
+                🗑️ ลบ
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         {/* ซับไตเติลบอท Dialog — ความรู้ของผู้ช่วยประจำคอร์ส */}
         <Dialog open={!!subDialogCourse} onOpenChange={(o) => !o && setSubDialogCourse(null)}>
