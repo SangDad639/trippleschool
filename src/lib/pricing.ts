@@ -31,6 +31,16 @@ export function planFromDays(days: number): PlanType {
   return days >= 365 ? 'yearly' : 'monthly';
 }
 
+/**
+ * ราคา/เดือนของยอดรายปี ปัดลงจำนวนเต็ม (สไตล์ TradingView: "฿245 /เดือน")
+ * ยอดจ่ายจริงต้องระบุคู่กันในบรรทัด "ชำระเป็นรายปี ฿X" เสมอ
+ */
+export const perMonthOfYearly = (yearlySubtotal: number) => Math.floor(yearlySubtotal / 12);
+
+/** เงินที่ประหยัดต่อปีเมื่อจ่ายรายปี เทียบกับจ่ายรายเดือน 12 เดือน */
+export const yearlySavings = (monthlySubtotal: number, yearlySubtotal: number) =>
+  Math.max(0, Math.round(monthlySubtotal * 12 - yearlySubtotal));
+
 export function pricingFromPlan(plan: PlanType | string | null | undefined): PlanPricing {
   return plan === 'yearly' ? PRICING.yearly : PRICING.monthly;
 }

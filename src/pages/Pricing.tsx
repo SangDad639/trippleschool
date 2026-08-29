@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import PublicHeader from '@/components/PublicHeader';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
-import { PRICING } from '@/lib/pricing';
+import { PRICING, perMonthOfYearly, yearlySavings } from '@/lib/pricing';
 import { Calendar, Crown, Check, X, Sparkles, ArrowRight, ShoppingCart } from 'lucide-react';
 
 type ApiPlan = Awaited<ReturnType<typeof api.getSubscriptionPlans>>['plans'][number];
@@ -199,14 +199,19 @@ const Pricing = () => {
               </div>
             </div>
 
+            {/* สไตล์ TradingView: ตัวใหญ่ = ราคา/เดือน, ยอดจ่ายจริงระบุบรรทัด "ชำระเป็นรายปี" */}
             <div className="flex items-baseline gap-1 flex-wrap mb-1">
-              <span className="text-lg text-gray-500 line-through mr-1">฿{fmt(yearly.originalPrice)}</span>
+              <span className="text-lg text-gray-500 line-through mr-1">฿{fmt(perMonthOfYearly(yearly.originalPrice))}</span>
               <span className="text-4xl font-bold bg-gradient-to-r from-[#FFD700] via-[#FFB300] to-[#FFA500] bg-clip-text text-transparent">
-                ฿{fmt(yearly.subtotal)}
+                ฿{fmt(perMonthOfYearly(yearly.subtotal))}
               </span>
-              <span className="text-muted-foreground">/ปี</span>
+              <span className="text-muted-foreground">/เดือน</span>
               <span className="ml-2 px-2 py-1 rounded-md bg-red-500/20 text-red-400 text-sm font-medium">-50%</span>
             </div>
+            <p className="text-sm text-gray-300 mb-1">ชำระเป็นรายปี ฿{fmt(yearly.subtotal)}</p>
+            <p className="text-xs text-green-400">
+              💰 ประหยัด ฿{fmt(yearlySavings(monthly.subtotal, yearly.subtotal))} ต่อปี เทียบจ่ายรายเดือน
+            </p>
 
             <Button
               onClick={() => goCheckout('yearly')}

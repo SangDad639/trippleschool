@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { useState, useRef, useEffect } from 'react';
 import { api } from '@/lib/api';
-import { PRICING, VAT_RATE } from '@/lib/pricing';
+import { PRICING, VAT_RATE, perMonthOfYearly } from '@/lib/pricing';
 
 const SubscriptionTransferV2 = () => {
   const navigate = useNavigate();
@@ -283,9 +283,13 @@ const SubscriptionTransferV2 = () => {
             }`}
           >
             {l('รายปี', 'Yearly')}
+            {/* สไตล์ TradingView: โชว์ /เดือน (ปีหาร 12) + ยอดจริงบรรทัดล่าง — ยอดโอนจริงดูที่สรุปด้านล่าง */}
             <span className="block text-sm font-normal mt-1 opacity-80">
-              <span className="line-through opacity-60 mr-1">฿{(getPlanPricing('yearly').subtotal * 2).toLocaleString()}</span>
-              ฿{getPlanPricing('yearly').subtotal.toLocaleString()}/{l('ปี', 'yr')}
+              <span className="line-through opacity-60 mr-1">฿{perMonthOfYearly(getPlanPricing('yearly').subtotal * 2).toLocaleString()}</span>
+              ฿{perMonthOfYearly(getPlanPricing('yearly').subtotal).toLocaleString()}/{l('เดือน', 'mo')}
+            </span>
+            <span className="block text-[11px] font-normal opacity-70">
+              {l('ชำระเป็นรายปี', 'Billed annually')} ฿{getPlanPricing('yearly').subtotal.toLocaleString()}
             </span>
             <span className="absolute -top-2 -right-1 px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-bold">-50%</span>
           </button>

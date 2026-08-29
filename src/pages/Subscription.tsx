@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useSubscription } from '@/contexts/SubscriptionContext';
 import { useAuth } from '@/contexts/AuthContext';
-import { PRICING } from '@/lib/pricing';
+import { PRICING, perMonthOfYearly, yearlySavings } from '@/lib/pricing';
 import { baseFeatures, yearlyBonusFeatures } from '@/lib/planFeatures';
 import { api } from '@/lib/api';
 import { useLanguage } from '@/contexts/LanguageContext';
@@ -119,25 +119,39 @@ const Subscription = () => {
     popular?: boolean;
     savings?: string;
     originalPrice?: string;
+    /** แพลนรายปี (สไตล์ TradingView): ราคาใหญ่ = /เดือน + 2 บรรทัดนี้กำกับยอดจริง */
+    billedYearly?: string;
+    savingsNote?: string;
   };
   const plans: BuyViewPlan[] = apiPlans
     ? (() => {
         const longestDays = Math.max(...apiPlans.map((p) => p.days));
+        const monthlySub = apiPlans.find((x) => x.days === 30)?.subtotal ?? PRICING.monthly.subtotal;
         return apiPlans.map((p) => {
           const isLongest = p.days === longestDays && apiPlans.length > 1;
+          // แพลนรายปีโชว์แบบ ฿/เดือน (ปีหาร 12) + บรรทัด "ชำระเป็นรายปี" + ประหยัดเทียบรายเดือน
+          const isYearlyStyle = p.days >= 365;
           return {
             id: p.slug,
             name: p.name,
-            price: `฿${p.subtotal.toLocaleString()}`,
+            price: isYearlyStyle
+              ? `฿${perMonthOfYearly(p.subtotal).toLocaleString()}`
+              : `฿${p.subtotal.toLocaleString()}`,
             // 50% launch discount → show pre-discount (subtotal × 2) struck-through.
-            originalPrice: `฿${(p.subtotal * 2).toLocaleString()}`,
-            period: p.days === 30 ? '/month' : p.days === 365 ? '/year' : `/${p.days}d`,
+            originalPrice: isYearlyStyle
+              ? `฿${perMonthOfYearly(p.subtotal * 2).toLocaleString()}`
+              : `฿${(p.subtotal * 2).toLocaleString()}`,
+            period: p.days === 30 ? '/month' : isYearlyStyle ? '/เดือน' : `/${p.days}d`,
             description: p.description || '',
             // Longest plan gets the bonus-features list (same convention as Landing).
             features: isLongest ? [...baseFeatures, ...yearlyBonusFeatures] : baseFeatures,
             icon: isLongest ? Crown : Calendar,
             popular: isLongest,
             savings: '-50%',
+            billedYearly: isYearlyStyle ? `ชำระเป็นรายปี ฿${p.subtotal.toLocaleString()}` : undefined,
+            savingsNote: isYearlyStyle
+              ? `💰 ประหยัด ฿${yearlySavings(monthlySub, p.subtotal).toLocaleString()} ต่อปี เทียบจ่ายรายเดือน`
+              : undefined,
           };
         });
       })()
@@ -156,14 +170,16 @@ const Subscription = () => {
         {
           id: 'yearly',
           name: t('subscription.yearly'),
-          price: `฿${PRICING.yearly.subtotal.toLocaleString()}`,
-          originalPrice: `฿${(PRICING.yearly.subtotal * 2).toLocaleString()}`,
-          period: '/year',
+          price: `฿${perMonthOfYearly(PRICING.yearly.subtotal).toLocaleString()}`,
+          originalPrice: `฿${perMonthOfYearly(PRICING.yearly.subtotal * 2).toLocaleString()}`,
+          period: '/เดือน',
           description: t('landing.yearlyDesc'),
           features: [...baseFeatures, ...yearlyBonusFeatures],
           icon: Crown,
           popular: true,
           savings: '-50%',
+          billedYearly: `ชำระเป็นรายปี ฿${PRICING.yearly.subtotal.toLocaleString()}`,
+          savingsNote: `💰 ประหยัด ฿${yearlySavings(PRICING.monthly.subtotal, PRICING.yearly.subtotal).toLocaleString()} ต่อปี เทียบจ่ายรายเดือน`,
         },
       ];
 
@@ -304,16 +320,21 @@ const Subscription = () => {
                       </div>
                       <div>
                         <h2 className="text-xl font-bold">{t('subscription.yearly')}</h2>
-                        <p className="text-sm text-muted-foreground">{t('subscription.save140annually')}</p>
+                        {/* คำนวณจากราคาจริง (เดิม hardcode ฿4,200 ใน translations — เลขผิด) */}
+                        <p className="text-sm text-muted-foreground">
+                          💰 ประหยัด ฿{yearlySavings(getPlanPricing('monthly').subtotal, getPlanPricing('yearly').subtotal).toLocaleString()} ต่อปี เทียบจ่ายรายเดือน
+                        </p>
                       </div>
                     </div>
+                    {/* สไตล์ TradingView: ตัวใหญ่ = /เดือน, ยอดจริงบรรทัด "ชำระเป็นรายปี" */}
                     <div className="flex items-baseline gap-1 flex-wrap">
-                      <span className="text-lg text-gray-500 line-through mr-1">฿{(getPlanPricing('yearly').subtotal * 2).toLocaleString()}</span>
-                      <span className="text-4xl font-bold">฿{getPlanPricing('yearly').subtotal.toLocaleString()}</span>
+                      <span className="text-lg text-gray-500 line-through mr-1">฿{perMonthOfYearly(getPlanPricing('yearly').subtotal * 2).toLocaleString()}</span>
+                      <span className="text-4xl font-bold">฿{perMonthOfYearly(getPlanPricing('yearly').subtotal).toLocaleString()}</span>
                       <span className="text-xs text-gray-500 ml-0.5">THB</span>
-                      <span className="text-muted-foreground">/year</span>
+                      <span className="text-muted-foreground">/เดือน</span>
                       <span className="ml-2 px-2 py-1 rounded-md bg-red-500/20 text-red-400 text-xs font-medium">-50%</span>
                     </div>
+                    <p className="text-sm text-gray-300 -mt-2">ชำระเป็นรายปี ฿{getPlanPricing('yearly').subtotal.toLocaleString()}</p>
                     {currentPlan !== 'yearly' && (
                       <Button
                         onClick={() => handleChangePlan('yearly')}
@@ -449,6 +470,13 @@ const Subscription = () => {
                           </span>
                         )}
                       </div>
+
+                      {plan.billedYearly && (
+                        <div className="-mt-3 space-y-0.5">
+                          <p className="text-sm text-gray-300">{plan.billedYearly}</p>
+                          {plan.savingsNote && <p className="text-xs text-green-400">{plan.savingsNote}</p>}
+                        </div>
+                      )}
 
                       <ul className="space-y-2">
                         {plan.features.map((feature, i) => (
