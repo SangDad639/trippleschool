@@ -76,7 +76,7 @@ const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statu
           </div>
           {!hidePrice && (
             <div className="mt-1">
-              <CoursePrice price={course.price} discountPrice={course.discount_price} size="sm" />
+              <CoursePrice price={course.price} discountPrice={course.discount_price} isFree={course.is_free === true} size="sm" />
             </div>
           )}
         </div>

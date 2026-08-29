@@ -68,6 +68,8 @@ interface Course {
   slug: string;
   description: string;
   price?: number;
+  /** คอร์สฟรี (flag admin ติ๊ก): ทุกบทดูได้ไม่ต้อง login */
+  is_free?: boolean;
   lessons: Lesson[];
   sections?: Section[];
   unassigned_lessons?: Lesson[];
@@ -101,6 +103,8 @@ const CourseLearn = () => {
   // Load failures stay on the page (with a retry) instead of bouncing the user
   // to /courses — a single flaky mobile request used to look like a logout.
   const [loadError, setLoadError] = useState<{ expired: boolean } | null>(null);
+  // token ตายแต่ fallback public สำเร็จ → ดูแบบ guest ได้ + banner บอกให้ login ใหม่
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => {
     const lesson = currentLesson;
@@ -168,14 +172,15 @@ const CourseLearn = () => {
     try {
       setLoading(true);
       setLoadError(null);
+      setSessionExpired(false);
       // Guest ใช้ endpoint public (บทดูฟรียังได้ youtube_id, บทล็อกถูก mask ฝั่ง server) —
       // ดูฟรีจึงไม่ต้อง login; บทล็อกโชว์ overlay ชวนซื้อ/สมัครเหมือนเดิม
       const data = user ? await api.getCourseFull(slug!) : await api.getCourse(slug!);
       // hasAccess = active subscription or admin. Non-members are NOT redirected away —
       // they can still watch preview lessons; member-only lessons render a locked
       // overlay with a "subscribe" CTA instead of the video.
-      // คอร์สฟรี (ราคา 0) = ทุกคนดูได้ทุกบท (server เปิด youtube_id ให้แล้ว)
-      const access = !!data.isEnrolled || Number(data.price) === 0;
+      // คอร์สฟรี (flag is_free) = ทุกคนดูได้ทุกบท (server เปิด youtube_id ให้แล้ว)
+      const access = !!data.isEnrolled || data.is_free === true;
       setHasAccess(access);
       setCourse(data);
       // data.enrollment is the progress row (or null for non-members). When null we
@@ -183,6 +188,21 @@ const CourseLearn = () => {
       setEnrollment(data.enrollment ?? null);
     } catch (error) {
       console.error('Failed to load course:', error);
+      // เฉพาะ token ตาย (401) → ลอง public view (คอร์สฟรี/บท preview ยังดูได้แบบ guest)
+      // + banner บอกให้ login ใหม่; error อื่น (5xx/timeout) คงจอ "ลองใหม่" เดิม
+      // ไม่ fallback กว้างๆ เพราะสมาชิกที่ /full ล้มชั่วคราวจะถูกลดชั้นเป็น guest เงียบๆ
+      if (user && (error as any)?.status === 401) {
+        try {
+          const data = await api.getCourse(slug!);
+          setHasAccess(data.is_free === true);
+          setCourse(data);
+          setEnrollment(null);
+          setSessionExpired(true);
+          return;
+        } catch (fallbackError) {
+          console.error('Public fallback also failed:', fallbackError);
+        }
+      }
       setLoadError({ expired: (error as any)?.status === 401 });
     } finally {
       setLoading(false);
@@ -329,6 +349,15 @@ const CourseLearn = () => {
         {/* Main Content */}
         <div className={`flex-1 ${sidebarOpen ? 'lg:mr-[320px]' : ''} transition-all duration-300`}>
           <div className="p-4 lg:p-6 max-w-5xl mx-auto">
+            {/* token ตาย → ดูแบบ guest ได้ แต่บอกชัดว่าสิทธิ์/ความคืบหน้ารอ login ใหม่ */}
+            {sessionExpired && (
+              <div className="mb-3 bg-yellow-500/15 border border-yellow-500/30 rounded-lg px-3 py-2.5 flex items-center justify-between gap-3 text-sm text-yellow-200">
+                <span>⚠️ เซสชันหมดอายุ — กำลังแสดงแบบผู้เยี่ยมชม สิทธิ์/ความคืบหน้าจะกลับมาหลังเข้าสู่ระบบใหม่</span>
+                <Button size="sm" onClick={() => navigate('/login')} className="h-7 text-xs bg-yellow-500 hover:bg-yellow-400 text-black shrink-0">
+                  เข้าสู่ระบบใหม่
+                </Button>
+              </div>
+            )}
             <div className="flex items-center justify-between mb-3">
               <Button variant="ghost" onClick={() => navigate(`/courses/${slug}`)} className="text-gray-400 hover:text-white h-8">
                 <ArrowLeft className="h-4 w-4 mr-2" />กลับไปหน้าคอร์ส

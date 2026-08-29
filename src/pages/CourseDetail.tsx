@@ -86,6 +86,8 @@ interface Course {
   price: number;
   discount_price: number | null;
   lesson_count?: number;
+  /** คอร์สฟรี (flag admin ติ๊ก): ทุกบทดูได้ไม่ต้อง login — ไม่ผูกกับราคา */
+  is_free?: boolean;
   // SkillLane-style enrichment fields (see backend contract).
   learning_outcomes?: string[];
   requirements?: string[];
@@ -160,6 +162,9 @@ const CourseDetail = () => {
   // Load failures stay on the page (with a retry) instead of bouncing the user
   // to /courses — a single flaky mobile request used to look like a logout.
   const [loadError, setLoadError] = useState<{ expired: boolean } | null>(null);
+  // token ตายแต่ fallback public สำเร็จ → โชว์เนื้อหาแบบ guest + banner บอกให้ login ใหม่
+  // (ไม่บล็อกทั้งจอ — คนซื้อแล้วจะได้รู้ว่าทำไมเห็นปุ่มซื้อ ไม่งงว่าสิทธิ์หาย)
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // Slip-upload (buy) dialog state
   const [buyDialogOpen, setBuyDialogOpen] = useState(false);
@@ -241,6 +246,7 @@ const CourseDetail = () => {
     try {
       setLoading(true);
       setLoadError(null);
+      setSessionExpired(false);
       if (isAuthenticated) {
         const data = await api.getCourseFull(slug!);
         setCourse(data);
@@ -255,15 +261,15 @@ const CourseDetail = () => {
     } catch (error) {
       console.error('Failed to load course:', error);
       const status = (error as any)?.status;
-      // 401 = the session really is dead; anything else is treated as
-      // transient, and for members we still try the public view so the page
-      // shows the course instead of an error (access state just won't show).
-      if (isAuthenticated && status !== 401) {
+      // Fallback ไป public view เสมอ (รวม 401 = token ตาย) — คอร์สฟรี/บท preview
+      // guest ล้วนยังดูได้ ไม่ควรตันที่จอ "เซสชันหมดอายุ" ทั้งหน้า; แค่สถานะสิทธิ์หายไป
+      if (isAuthenticated) {
         try {
           const data = await api.getCourse(slug!);
           setCourse(data);
           setEnrollment(null);
           setHasAccess(false);
+          if (status === 401) setSessionExpired(true);
           return;
         } catch (fallbackError) {
           console.error('Public fallback also failed:', fallbackError);
@@ -275,8 +281,10 @@ const CourseDetail = () => {
     }
   };
 
-  const isFree = course ? course.price === 0 : false;
-  const buyAmount = course ? (course.discount_price ?? course.price) : 0;
+  // ฟรีตาม flag is_free (admin ติ๊ก) — ไม่ผูกกับราคาแล้ว
+  const isFree = course?.is_free === true;
+  // คอร์สฟรี = ไม่มียอดโอน (แม้ตั้งราคาไว้) → dialog ลงทะเบียนฟรีซ่อนช่องโค้ด/สลิป/ยอดโอนเอง
+  const buyAmount = isFree ? 0 : (course ? (course.discount_price ?? course.price) : 0);
   const status = enrollment?.status ?? null;
 
   const handleStartLearning = () => {
@@ -453,6 +461,18 @@ const CourseDetail = () => {
     <div className="min-h-screen bg-background text-foreground overflow-x-clip">
       <PublicHeader overlay />
 
+      {/* token ตาย → โชว์เนื้อหาแบบ guest ได้ แต่ต้องบอกชัดว่าสิทธิ์ที่ซื้อไว้แค่มองไม่เห็น */}
+      {sessionExpired && (
+        <div className="relative z-20 bg-yellow-500/15 border-b border-yellow-500/30 px-4 py-2.5">
+          <div className="max-w-6xl mx-auto flex items-center justify-between gap-3 text-sm text-yellow-200">
+            <span>⚠️ เซสชันหมดอายุ — กำลังแสดงแบบผู้เยี่ยมชม สิทธิ์/ความคืบหน้าของคุณจะกลับมาหลังเข้าสู่ระบบใหม่</span>
+            <Button size="sm" onClick={() => navigate('/login')} className="h-7 text-xs bg-yellow-500 hover:bg-yellow-400 text-black shrink-0">
+              เข้าสู่ระบบใหม่
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Netflix-style backdrop hero */}
       <section className="relative h-[56vh] min-h-[440px] w-full overflow-hidden">
         {course.thumbnail_url ? (
@@ -536,7 +556,7 @@ const CourseDetail = () => {
                 )}
 
                 <div className="mb-3">
-                  <CoursePrice price={course.price} discountPrice={course.discount_price} size="lg" />
+                  <CoursePrice price={course.price} discountPrice={course.discount_price} isFree={course.is_free === true} size="lg" />
                 </div>
 
                 <div className="max-w-sm">
@@ -923,10 +943,10 @@ const CourseDetail = () => {
                         ) : (
                           (() => {
                             const tc = data.course;
-                            // สิทธิ์/ความคืบหน้า/ปลายทาง = ของ tip เอง ไม่ใช่คอร์สแม่
+                            // สิทธิ์/ความคืบหน้า/ปลายทาง = ของ tip เอง ไม่ใช่คอร์สแม่ (ฟรีตาม flag is_free)
                             const tipCtx: LessonRowCtx = {
                               slug: tc.slug,
-                              hasAccess: !!(tc.isEnrolled || tc.hasAccess) || Number(tc.price) === 0,
+                              hasAccess: !!(tc.isEnrolled || tc.hasAccess) || tc.is_free === true,
                               enrollment: tc.enrollment ?? null,
                             };
                             const tipLessons = tc.lessons || [];
@@ -984,7 +1004,7 @@ const CourseDetail = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between rounded-md bg-gray-800/50 px-3 py-2.5">
               <span className="text-white text-sm font-medium">{course.name}</span>
-              <CoursePrice price={course.price} discountPrice={course.discount_price} size="sm" />
+              <CoursePrice price={course.price} discountPrice={course.discount_price} isFree={course.is_free === true} size="sm" />
             </div>
 
             {buyAmount > 0 && (

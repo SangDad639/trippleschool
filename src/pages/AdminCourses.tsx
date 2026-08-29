@@ -88,6 +88,8 @@ interface Course {
   duration_hours: number;
   total_lessons: number;
   is_featured: boolean;
+  /** คอร์สฟรี: ทุกบทดูได้ไม่ต้อง login — flag ชัดเจน ไม่ผูกกับราคา */
+  is_free?: boolean;
   /** ปักขึ้น Billboard หน้าแรกเอง (ได้ครั้งละ 1 คอร์ส); ไม่ปัก = ใช้คอร์สล่าสุดอัตโนมัติ */
   is_billboard?: boolean;
   /** ชื่อย่อขึ้นเมนู header (join จากตาราง tags) */
@@ -163,6 +165,7 @@ const initialCourseForm = {
   difficulty: 'beginner',
   duration_hours: 0,
   is_featured: false,
+  is_free: false,
   display_order: 0,
   price: 0,
   discount_price: null as number | null,
@@ -526,6 +529,7 @@ const AdminCourses = () => {
         difficulty: course.difficulty || 'beginner',
         duration_hours: course.duration_hours || 0,
         is_featured: course.is_featured,
+        is_free: course.is_free === true,
         display_order: course.display_order || 0,
         price: course.price || 0,
         discount_price: course.discount_price,
@@ -1281,6 +1285,9 @@ const AdminCourses = () => {
                         {course.content_type === 'tip' && (
                           <Badge className="bg-sky-500/15 text-sky-400 border border-sky-500/30">💡 Tip</Badge>
                         )}
+                        {course.is_free && (
+                          <Badge className="bg-green-500/15 text-green-400 border border-green-500/30">🆓 ฟรี</Badge>
+                        )}
                         {/* tag ที่ขึ้นเมนู header — ไม่มี = เตือนให้ไปตั้ง */}
                         {course.tag ? (
                           <Badge variant="outline" className="text-gray-300 border-gray-600">🏷️ {course.tag}</Badge>
@@ -1882,6 +1889,20 @@ const AdminCourses = () => {
                   onCheckedChange={(checked) => setCourseForm({ ...courseForm, is_featured: checked === true })}
                 />
                 <Label>คอร์สแนะนำ (Featured)</Label>
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={courseForm.is_free}
+                    onCheckedChange={(checked) => setCourseForm({ ...courseForm, is_free: checked === true })}
+                  />
+                  <Label>🆓 เปิดให้เรียนฟรี</Label>
+                </div>
+                {courseForm.is_free && Number(courseForm.price) > 0 && (
+                  <p className="text-yellow-400 text-xs pl-6">
+                    ⚠️ คอร์สนี้ตั้งราคาไว้ ฿{Number(courseForm.price).toLocaleString()} — แนะนำตั้งราคาเป็น 0 ให้ป้ายราคาบนเว็บตรงกับสิทธิ์ฟรี
+                  </p>
+                )}
               </div>
             </div>
             <DialogFooter>

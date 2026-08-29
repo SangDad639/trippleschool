@@ -103,10 +103,15 @@ router.post('/:courseId/enroll', authenticate, uploadSlip, async (req: AuthReque
     const { courseId } = req.params;
     const userId = req.userId!;
 
-    const courseResult = await pool.query(`SELECT id, price, discount_price FROM courses WHERE id = $1 AND is_active = true`, [courseId]);
+    const courseResult = await pool.query(`SELECT id, price, discount_price, is_free FROM courses WHERE id = $1 AND is_active = true`, [courseId]);
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const courseRow = courseResult.rows[0];
-    const baseAmount = Number(courseRow.discount_price != null ? courseRow.discount_price : courseRow.price) || 0;
+    // คอร์สฟรี (flag is_free): ลงทะเบียน = เก็บ progress เท่านั้น — ไม่มีเงิน ไม่มีโค้ด ไม่มีฐานค่าคอม
+    // (flag ไม่ผูกราคา — คอร์ส is_free ที่ตั้งราคาไว้ก็ต้องไม่บันทึก paid_amount เต็มราคา)
+    const isFreeEnroll = courseRow.is_free === true;
+    const baseAmount = isFreeEnroll
+      ? 0
+      : Number(courseRow.discount_price != null ? courseRow.discount_price : courseRow.price) || 0;
 
     // โค้ดผู้แนะนำ (optional): valid → ราคาลด % + เก็บโค้ดลง enrollment
     // ⚠️ ไม่ผูก referrer ตรงนี้ — ผูกตอน admin อนุมัติเท่านั้น (จ่ายเงินจริงแล้ว)

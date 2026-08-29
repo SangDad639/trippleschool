@@ -316,7 +316,7 @@ async function buildCourseContext(
     const c = (
       await pool.query(
         `SELECT id, slug, name, description, short_description, difficulty, duration_hours,
-                total_lessons, price, discount_price
+                total_lessons, price, discount_price, is_free
          FROM courses WHERE id = $1`,
         [courseId]
       )
@@ -336,9 +336,13 @@ async function buildCourseContext(
         )
       ).rows as Array<{ title: string; mode: string; lessons: string[] }>;
       const price = c.discount_price ?? c.price;
+      // "ฟรี" ตาม flag is_free เท่านั้น (สิทธิ์จริงใช้ flag ไม่ใช่ราคา 0) — กันบอทบอกฟรีทั้งที่บทล็อก
+      const priceText = c.is_free === true
+        ? 'ฟรี (เข้าเรียนได้เลย ไม่ต้องซื้อ/สมัคร)'
+        : `฿${Number(price).toLocaleString()}`;
       const lines = [
         `ข้อมูลคอร์สนี้: ${c.name} (/courses/${c.slug})`,
-        `ระดับ: ${c.difficulty} | ${c.total_lessons || 0} บทเรียน | ${c.duration_hours || 0} ชม. | ราคาซื้อแยก: ${price > 0 ? `฿${Number(price).toLocaleString()}` : 'ฟรี'} (สมาชิกเรียนได้เลย)`,
+        `ระดับ: ${c.difficulty} | ${c.total_lessons || 0} บทเรียน | ${c.duration_hours || 0} ชม. | ราคาซื้อแยก: ${priceText} (สมาชิกเรียนได้เลย)`,
         `คำอธิบาย: ${(c.description || c.short_description || '-').slice(0, 1800)}`,
       ];
       for (const s of sections) {

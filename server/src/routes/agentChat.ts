@@ -203,9 +203,15 @@ function tallySync(results: SyncResult[]) {
 const LESSON_SYNC_COLUMNS = `id, title, youtube_id`;
 const ACTIVE_LESSONS_WITH_VIDEO = `is_active = true AND youtube_id IS NOT NULL AND youtube_id <> ''`;
 
-/** Course access = admin || active subscription || approved purchase (same gate as courses.ts). */
+/** Course access = admin || คอร์สฟรี (is_free) || active subscription || approved purchase (same gate as courses.ts). */
 async function hasCourseAccess(req: AuthRequest, courseId: number): Promise<boolean> {
   if (req.isAdmin) return true;
+  // คอร์สฟรีดูวิดีโอได้ทุกบทอยู่แล้ว — บอทต้องตอบเชิงลึกจากซับได้เท่ากัน
+  const free = await pool.query(
+    `SELECT 1 FROM courses WHERE id = $1 AND is_free = true AND is_active = true LIMIT 1`,
+    [courseId]
+  );
+  if (free.rows.length > 0) return true;
   if (!req.userId) return false;
   if (await hasActiveSubscription(req.userId)) return true;
   const r = await pool.query(

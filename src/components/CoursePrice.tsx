@@ -2,13 +2,17 @@
 // the course detail page (CourseDetail.tsx) so the styling stays consistent.
 //
 // Rules:
-//   - price === 0            → "ฟรี" (green)
+//   - isFree flag ส่งมา → flag ชนะราคาเสมอ (สิทธิ์เข้าเรียนใช้ courses.is_free ไม่ใช่ราคา
+//     — ป้าย "ฟรี" ต้องตรงกับสิทธิ์จริง ไม่ใช่ตรงกับราคา 0 ที่บทอาจล็อกอยู่)
+//   - ไม่ส่ง flag (caller เก่า) → fallback เกณฑ์ราคาเดิม: effective === 0 → "ฟรี"
 //   - discount_price < price → discounted price + strikethrough original
 //   - otherwise              → plain price
 
 interface CoursePriceProps {
   price: number;
   discountPrice?: number | null;
+  /** courses.is_free — ส่งมาเมื่อไรป้าย "ฟรี" ตามนี้เท่านั้น */
+  isFree?: boolean;
   /** 'sm' for the catalog card, 'lg' for the detail page CTA block. */
   size?: 'sm' | 'lg';
   className?: string;
@@ -16,10 +20,10 @@ interface CoursePriceProps {
 
 const fmt = (n: number) => `฿${Number(n).toLocaleString()}`;
 
-const CoursePrice = ({ price, discountPrice, size = 'sm', className = '' }: CoursePriceProps) => {
+const CoursePrice = ({ price, discountPrice, isFree: isFreeFlag, size = 'sm', className = '' }: CoursePriceProps) => {
   const hasDiscount = discountPrice != null && discountPrice < price;
   const effective = hasDiscount ? discountPrice! : price;
-  const isFree = effective === 0;
+  const isFree = isFreeFlag !== undefined ? isFreeFlag : effective === 0;
 
   const mainCls = size === 'lg' ? 'text-2xl font-bold' : 'text-sm font-bold';
   const strikeCls = size === 'lg' ? 'text-sm' : 'text-xs';

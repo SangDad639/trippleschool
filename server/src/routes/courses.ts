@@ -31,15 +31,16 @@ async function hasSubscriptionOrEnrollment(userId: number | undefined, courseId:
   return hasApprovedEnrollment(userId, courseId);
 }
 
-/** คอร์สฟรี (ราคา 0) = ทุกคนดูได้ทุกบท ไม่ต้อง login/ซื้อ/สมัคร */
-function isFreeCourse(course: { price?: number | string | null } | undefined | null): boolean {
-  return !!course && Number(course.price) === 0;
+/** คอร์สฟรี = flag is_free (admin ติ๊กเอง) → ทุกคนดูได้ทุกบท ไม่ต้อง login/ซื้อ/สมัคร — ไม่ผูกกับราคา */
+function isFreeCourse(course: { is_free?: boolean | null } | undefined | null): boolean {
+  return !!course && course.is_free === true;
 }
 
-/** price ของคอร์ส (ใช้ใน gate ที่ยังไม่ได้ SELECT คอร์สมาก่อน) — null = ไม่พบคอร์ส */
-async function getCoursePrice(courseId: number): Promise<number | null> {
-  const r = await pool.query(`SELECT price FROM courses WHERE id = $1`, [courseId]);
-  return r.rows.length ? Number(r.rows[0].price) : null;
+/** เช็ค flag ฟรีจาก id (ใช้ใน gate ที่ยังไม่ได้ SELECT คอร์สมาก่อน) — คอร์สปิด (inactive) ไม่นับฟรี */
+async function isCourseFreeById(courseId: number): Promise<boolean> {
+  if (!Number.isFinite(courseId)) return false;
+  const r = await pool.query(`SELECT is_free FROM courses WHERE id = $1 AND is_active = true`, [courseId]);
+  return r.rows[0]?.is_free === true;
 }
 
 const thumbUpload = multer({
@@ -391,9 +392,12 @@ router.get('/materials/*', async (req: Request, res: Response) => {
     const key = (req.params as any)[0];
     const rawName = typeof req.query.name === 'string' ? req.query.name : '';
     const safeName = rawName.replace(/[\r\n"\\]/g, '').slice(0, 200);
-    const inline = req.query.view === '1';
     const obj = await getFile(key);
     if (obj.ContentType) res.setHeader('Content-Type', obj.ContentType);
+    // ?view=1 (ebook อ่านในเบราว์เซอร์) อนุญาตเฉพาะไฟล์ที่ไม่ใช่ HTML — HTML ต้อง
+    // ดาวน์โหลดเสมอ ไม่งั้นถูกสั่ง render บน origin ของ API (ข้าม sanitize ฝั่งเว็บ)
+    const isHtml = (obj.ContentType || '').toLowerCase().includes('text/html') || key.toLowerCase().endsWith('.html');
+    const inline = req.query.view === '1' && !isHtml;
     const dispositionType = inline ? 'inline' : 'attachment';
     res.setHeader(
       'Content-Disposition',
@@ -574,7 +578,7 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-      content_type, tag_id, tag_name, tools,
+      content_type, tag_id, tag_name, tools, is_free,
     } = req.body;
     if (!name || !slug) return res.status(400).json({ error: 'Name and slug are required' });
     const result = await pool.query(`
@@ -582,9 +586,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
         name, slug, description, short_description, thumbnail_url,
         instructor_name, instructor_avatar, difficulty, duration_hours,
         is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-        content_type, tag_id, tag_name, tools
+        content_type, tag_id, tag_name, tools, is_free
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       RETURNING *
     `, [
       name, slug, description || null, short_description || null, thumbnail_url || null,
@@ -596,6 +600,7 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       Number.isInteger(tag_id) ? tag_id : null,
       typeof tag_name === 'string' && tag_name.trim() ? tag_name.trim().slice(0, 40) : null,
       JSON.stringify(sanitizeCourseTools(tools)),
+      is_free === true,
     ]);
     const created = result.rows[0];
     // การปักคือ "ปรับชั่วคราว" — คอร์สใหม่ (ที่เข้าเกณฑ์ Billboard อัตโนมัติ: เป็น
@@ -622,9 +627,9 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, is_active, display_order, price, discount_price, learning_outcomes, requirements,
-      content_type, tag_id, tag_name, tools,
+      content_type, tag_id, tag_name, tools, is_free,
     } = req.body;
-    // tag_id/tag_name/tools ตั้งเฉพาะเมื่อส่งมา และรองรับส่ง null/'' = ล้างค่า (COALESCE ทำไม่ได้)
+    // tag_id/tag_name/tools/is_free ตั้งเฉพาะเมื่อส่งมา และรองรับส่ง null/'' = ล้างค่า (COALESCE ทำไม่ได้)
     const extraSets: string[] = [];
     const extraParams: any[] = [];
     if (tag_id !== undefined) {
@@ -638,6 +643,10 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
     if (tools !== undefined) {
       extraParams.push(JSON.stringify(sanitizeCourseTools(tools)));
       extraSets.push(`tools = $${18 + extraParams.length}::jsonb`);
+    }
+    if (is_free !== undefined) {
+      extraParams.push(is_free === true);
+      extraSets.push(`is_free = $${18 + extraParams.length}`);
     }
     const tagSet = extraSets.length ? `, ${extraSets.join(', ')}` : '';
     const result = await pool.query(`
@@ -737,9 +746,9 @@ router.get('/:courseId/sections', optionalAuth, async (req: AuthRequest, res) =>
     const { courseId } = req.params;
     // Reveal paid-lesson youtube_id only to admins / enrolled owners. Anonymous
     // or non-owner callers get it masked (preview lessons stay visible).
-    // คอร์สฟรี (ราคา 0) = เปิดหมด
+    // คอร์สฟรี (flag is_free) = เปิดหมด
     const hasAccess = !!req.isAdmin ||
-      (await getCoursePrice(Number(courseId))) === 0 ||
+      (await isCourseFreeById(Number(courseId))) ||
       (await hasSubscriptionOrEnrollment(req.userId, Number(courseId)));
     const sectionsResult = await pool.query(`
       SELECT * FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
@@ -882,9 +891,9 @@ router.get('/:courseId/lessons', optionalAuth, async (req: AuthRequest, res) => 
   try {
     const { courseId } = req.params;
     // Reveal paid-lesson youtube_id/youtube_url only to admins / enrolled owners.
-    // คอร์สฟรี (ราคา 0) = เปิดหมด
+    // คอร์สฟรี (flag is_free) = เปิดหมด
     const hasAccess = !!req.isAdmin ||
-      (await getCoursePrice(Number(courseId))) === 0 ||
+      (await isCourseFreeById(Number(courseId))) ||
       (await hasSubscriptionOrEnrollment(req.userId, Number(courseId)));
     const result = await pool.query(`
       SELECT id, course_id, section_id, title, description, youtube_url, youtube_id,
@@ -892,9 +901,14 @@ router.get('/:courseId/lessons', optionalAuth, async (req: AuthRequest, res) => 
              ${materialsMetaSql('materials')} AS materials
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [courseId]);
-    const lessons = result.rows.map((l) =>
-      hasAccess || l.is_preview ? l : { ...l, youtube_id: null, youtube_url: null }
-    );
+    // บทที่ล็อกต้องล้าง materials ด้วย (ลิงก์เอกสาร = เนื้อหาขายเช่นกัน) — ให้เหมือน /:slug/full;
+    // แถวที่เข้าถึงได้และไม่ใช่ admin เห็นเฉพาะเอกสารที่เปิดใช้ (enabled !== false)
+    const lessons = result.rows.map((l) => {
+      if (!(hasAccess || l.is_preview)) return { ...l, youtube_id: null, youtube_url: null, materials: [] };
+      if (req.isAdmin) return l;
+      const mats = Array.isArray(l.materials) ? l.materials.filter((m: any) => m?.enabled !== false) : [];
+      return { ...l, materials: mats };
+    });
     res.json(lessons);
   } catch (error) {
     console.error('Error fetching lessons:', error);
@@ -915,7 +929,7 @@ router.get('/lessons/:lessonId/materials', optionalAuth, async (req: AuthRequest
     if (!lesson) return res.status(404).json({ error: 'Lesson not found' });
     const hasAccess =
       lesson.is_preview || !!req.isAdmin ||
-      (await getCoursePrice(lesson.course_id)) === 0 ||
+      (await isCourseFreeById(lesson.course_id)) ||
       (await hasSubscriptionOrEnrollment(req.userId, lesson.course_id));
     if (!hasAccess) return res.status(403).json({ error: 'ต้องซื้อคอร์สหรือเป็นสมาชิกก่อน' });
     const all = Array.isArray(lesson.materials) ? lesson.materials : [];
@@ -1053,7 +1067,7 @@ router.put('/:courseId/lessons/reorder', authenticate, async (req: AuthRequest, 
 router.get('/:slug/lessons/:lessonId/video', optionalAuth, async (req: AuthRequest, res) => {
   try {
     const { slug, lessonId } = req.params;
-    const courseResult = await pool.query(`SELECT id, price FROM courses WHERE slug = $1 AND is_active = true`, [slug]);
+    const courseResult = await pool.query(`SELECT id, is_free FROM courses WHERE slug = $1 AND is_active = true`, [slug]);
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const courseId = courseResult.rows[0].id;
     const lessonResult = await pool.query(
@@ -1108,8 +1122,12 @@ router.post('/:courseId/reviews', authenticate, async (req: AuthRequest, res) =>
     const { rating, comment } = req.body;
     const r = parseInt(rating, 10);
     if (!(r >= 1 && r <= 5)) return res.status(400).json({ error: 'rating must be 1..5' });
-    if (!(await hasApprovedEnrollment(userId, Number(courseId)))) {
-      return res.status(403).json({ error: 'ต้องซื้อคอร์สนี้ก่อนจึงจะรีวิวได้' });
+    // รีวิวได้ถ้าเข้าเรียนได้จริง: ซื้อแล้ว / สมาชิก active / คอร์สฟรี — ให้ตรงกับฟอร์มที่ FE โชว์
+    const canReview =
+      (await hasSubscriptionOrEnrollment(userId, Number(courseId))) ||
+      (await isCourseFreeById(Number(courseId)));
+    if (!canReview) {
+      return res.status(403).json({ error: 'ต้องซื้อคอร์สนี้หรือเป็นสมาชิกก่อนจึงจะรีวิวได้' });
     }
     const result = await pool.query(`
       INSERT INTO course_reviews (course_id, user_id, rating, comment)
