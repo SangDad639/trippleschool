@@ -88,6 +88,9 @@ interface Course {
   lesson_count?: number;
   /** คอร์สฟรี (flag admin ติ๊ก): ทุกบทดูได้ไม่ต้อง login — ไม่ผูกกับราคา */
   is_free?: boolean;
+  /** บทล่าสุด = ตัวที่ปกคอร์สใช้ภาพอยู่ → เข้ามาจากการ์ดแล้วเลื่อนไปหาให้เลย */
+  latest_lesson_id?: number | null;
+  cover_rev?: string | null;
   // SkillLane-style enrichment fields (see backend contract).
   learning_outcomes?: string[];
   requirements?: string[];
@@ -177,6 +180,10 @@ const CourseDetail = () => {
   const [refCheck, setRefCheck] = useState<{ valid: boolean; pct: number; reason?: string; code: string } | null>(null);
   const [refChecking, setRefChecking] = useState(false);
 
+  // มาจากการ์ดที่โชว์ปกคลิปล่าสุด (?ep=latest) → เลื่อนไปที่แถวของคลิปนั้นแล้วไฮไลต์ไว้
+  // ไม่งั้นผู้ใช้ต้องไล่เลื่อนหาเองในคอร์สที่มี 20 บท
+  const [highlightLessonId, setHighlightLessonId] = useState<number | null>(null);
+
   // Tip ที่เกาะคอร์สนี้ผ่าน tag เดียวกัน → แสดงเป็น tab ต่อจาก "พื้นฐาน"
   const [relatedTips, setRelatedTips] = useState<RelatedTip[]>([]);
   const [tipData, setTipData] = useState<Record<number, TipTabData>>({});
@@ -205,6 +212,26 @@ const CourseDetail = () => {
       console.error('Failed to load reviews:', error);
     }
   };
+
+  // ?ep=latest (มาจากการ์ด) หรือ ?ep=<id> → เลื่อนไปที่บทนั้น + ไฮไลต์ 3 วินาที
+  useEffect(() => {
+    if (!course) return;
+    const ep = new URLSearchParams(window.location.search).get('ep');
+    if (!ep) return;
+    const targetId = ep === 'latest'
+      ? course.latest_lesson_id ?? course.lessons?.[course.lessons.length - 1]?.id
+      : Number(ep);
+    if (!targetId) return;
+    setHighlightLessonId(targetId);
+    // รอ DOM วาดแถวบทเรียนเสร็จก่อน (accordion/tab render หลัง course พร้อม)
+    const t = setTimeout(() => {
+      const el = document.getElementById(`lesson-${targetId}`);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 350);
+    const clear = setTimeout(() => setHighlightLessonId(null), 4000);
+    return () => { clearTimeout(t); clearTimeout(clear); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [course?.id]);
 
   // หา Tip ที่เกาะคอร์สนี้ (tag_id เดียวกัน) — เฉพาะหน้าที่เป็น course และมี tag
   useEffect(() => {
@@ -477,13 +504,15 @@ const CourseDetail = () => {
           มือถือ: ปล่อยให้สูงตามเนื้อหา (h-auto) — เดิมตรึง 56vh แล้ววางเนื้อหาแบบ absolute
           ทำให้หัวคอร์ส/ปุ่ม "คอร์สทั้งหมด" ทะลุขึ้นไปโดนตัดใต้ header; เดสก์ท็อปคงเดิม */}
       <section className="relative h-auto min-h-[56vh] md:h-[56vh] md:min-h-[440px] w-full overflow-hidden">
-        {course.thumbnail_url ? (
-          <img src={api.mediaUrl(course.thumbnail_url, 'hero')} alt={course.name} className="absolute inset-0 w-full h-full object-cover" />
-        ) : (
-          <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
-            <BookOpen className="h-20 w-20 text-gray-600" />
-          </div>
-        )}
+        <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
+          <BookOpen className="h-20 w-20 text-gray-600" />
+        </div>
+        <img
+          src={api.courseCoverUrl(course, 'hero')}
+          alt={course.name}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          className="absolute inset-0 w-full h-full object-cover"
+        />
         <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/40" />
 
@@ -740,10 +769,17 @@ const CourseDetail = () => {
               const renderLessonRow = (lesson: Lesson, index: number, ctx: LessonRowCtx = rowCtx) => {
                 const isCompleted = ctx.enrollment?.completed_lessons?.includes(lesson.id);
                 const locked = !lesson.is_preview && !ctx.hasAccess;
+                const isLatest = lesson.id === course.latest_lesson_id;
+                const isHighlighted = lesson.id === highlightLessonId;
                 return (
                   <div
                     key={lesson.id}
-                    className="group flex gap-3 p-2 rounded-lg transition-colors bg-gray-800/40 hover:bg-gray-800 cursor-pointer"
+                    id={`lesson-${lesson.id}`}
+                    className={`group flex gap-3 p-2 rounded-lg transition-all cursor-pointer ${
+                      isHighlighted
+                        ? 'bg-purple-500/20 ring-2 ring-purple-400 shadow-lg shadow-purple-500/20'
+                        : 'bg-gray-800/40 hover:bg-gray-800'
+                    }`}
                     onClick={() => navigate(`/app/courses/${ctx.slug}/learn/${lesson.id}`)}
                   >
                     {/* Cover */}
@@ -780,6 +816,12 @@ const CourseDetail = () => {
                     <div className="flex-1 min-w-0 py-0.5 flex flex-col">
                       <h4 className="text-white text-sm font-medium leading-snug line-clamp-2">
                         <span className="text-purple-400 font-semibold mr-1.5">EP.{index + 1}</span>
+                        {/* บทล่าสุด = ตัวที่ปกคอร์สใช้ภาพอยู่ ทำป้ายให้หาเจอง่ายแม้ไม่ได้มาจากการ์ด */}
+                        {isLatest && (
+                          <Badge className="mr-1.5 bg-purple-500/20 text-purple-300 border border-purple-400/40 text-[10px] px-1.5 py-0 align-middle">
+                            ล่าสุด
+                          </Badge>
+                        )}
                         {lesson.title}
                       </h4>
                       {lesson.description && (

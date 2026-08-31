@@ -35,25 +35,26 @@ const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statu
   const width = variant === 'rail' ? 'w-[230px] md:w-[270px] flex-none snap-start' : 'w-full';
   // fill = stretch to the wrapper's height (mosaic hero cell) instead of the
   // fixed 16:9 — the wrapper's grid row-span decides how tall this card is.
-  const shape = fill ? 'h-full min-h-[200px]' : 'aspect-video';
+  // fill = ยืดเต็ม cell ของ mosaic — แต่ mosaic มีเฉพาะ lg+ ต่ำกว่านั้นต้องเป็น 16:9
+  // เหมือนใบอื่น ไม่งั้นการ์ดใบแรกบนมือถือกลายเป็นเกือบจัตุรัส + เว้นช่องว่างข้างๆ
+  const shape = fill ? 'aspect-video lg:aspect-auto lg:h-full lg:min-h-[200px]' : 'aspect-video';
 
   return (
     <div
       onClick={onClick}
       className={`${width} ${shape} relative rounded-md overflow-hidden bg-gray-800 cursor-pointer group/card transition-transform duration-300 hover:scale-105 hover:z-10 hover:shadow-2xl hover:shadow-black/60`}
     >
-      {course.thumbnail_url ? (
-        <img
-          src={api.mediaUrl(course.thumbnail_url, 'card')}
-          alt={course.name}
-          loading="lazy"
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-      ) : (
-        <div className="absolute inset-0 flex items-center justify-center">
-          <BookOpen className="h-10 w-10 text-gray-600" />
-        </div>
-      )}
+      {/* ไอคอนสำรองอยู่ใต้รูปเสมอ — รูปพัง/ไม่มีปก จะซ่อนตัวเองแล้วเผยไอคอนนี้ */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <BookOpen className="h-10 w-10 text-gray-600" />
+      </div>
+      <img
+        src={api.courseCoverUrl(course, 'card')}
+        alt={course.name}
+        loading="lazy"
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        className="absolute inset-0 w-full h-full object-cover"
+      />
 
       {/* Permanent bottom gradient + title
           มือถือ: การ์ดสูงแค่ ~90px — ลด padding บน + ชื่อบรรทัดเดียว ไม่ให้ทับรูปทั้งใบ */}

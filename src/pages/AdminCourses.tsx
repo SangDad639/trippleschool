@@ -828,9 +828,9 @@ const AdminCourses = () => {
       return;
     }
 
-    // Validate file size (15MB max)
-    if (file.size > 15 * 1024 * 1024) {
-      toast.error('Error: ไฟล์ต้องมีขนาดไม่เกิน 15MB');
+    // Validate file size (ตรงกับเพดานเซิร์ฟเวอร์ multer 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Error: ไฟล์ต้องมีขนาดไม่เกิน 5MB');
       return;
     }
 
@@ -1256,17 +1256,16 @@ const AdminCourses = () => {
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 w-full mr-2 sm:mr-4 min-w-0">
                       <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                        {course.thumbnail_url ? (
+                        {/* ปกที่แสดงจริง = ภาพวิดีโอล่าสุด (เซิร์ฟเวอร์เลือกให้) ไม่ใช่ไฟล์ที่อัปไว้ */}
+                        <div className="relative w-16 h-10 rounded bg-gray-700 flex items-center justify-center shrink-0 overflow-hidden">
+                          <BookOpen className="h-5 w-5 text-gray-500" />
                           <img
-                            src={api.mediaUrl(course.thumbnail_url, 'card')}
+                            src={api.courseCoverUrl(course, 'card')}
                             alt={course.name}
-                            className="w-16 h-10 rounded object-cover shrink-0"
+                            onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            className="absolute inset-0 w-full h-full object-cover"
                           />
-                        ) : (
-                          <div className="w-16 h-10 rounded bg-gray-700 flex items-center justify-center shrink-0">
-                            <BookOpen className="h-5 w-5 text-gray-500" />
-                          </div>
-                        )}
+                        </div>
                         <div className="text-left min-w-0">
                           <h3 className="text-white font-medium line-clamp-2 md:line-clamp-none">{course.name}</h3>
                           <p className="text-gray-400 text-sm">
@@ -1698,21 +1697,32 @@ const AdminCourses = () => {
               />
               {/* Thumbnail Upload Section */}
               <div>
-                <Label>รูปปกคอร์ส (แนะนำ 16:9, เช่น 1280x720)</Label>
-                <div className="mt-2 flex gap-4">
-                  {/* Preview */}
-                  <div className="w-40 h-24 rounded-lg border border-gray-700 bg-gray-800 overflow-hidden flex-shrink-0">
-                    {courseForm.thumbnail_url ? (
+                <Label>🖼️ รูปปกสำรอง (ใช้เฉพาะตอนคอร์สยังไม่มีวิดีโอ)</Label>
+                <p className="text-gray-500 text-xs mt-0.5">
+                  ปกคอร์สบนเว็บใช้ <span className="text-gray-300">ภาพของวิดีโอล่าสุดในคอร์สโดยอัตโนมัติ</span> — เพิ่ม/เปลี่ยนวิดีโอเมื่อไหร่ ปกเปลี่ยนตามทันที
+                  (อยากกำหนดเอง ให้ตั้ง "ปกบทเรียน" ที่บทล่าสุด) · ไฟล์สำรองแนะนำ 16:9 อย่างน้อย 1920×1080 ไม่เกิน 5MB
+                </p>
+                <div className="mt-2 flex flex-col sm:flex-row gap-4">
+                  {/* Preview: แสดง "ปกที่จะขึ้นจริง" ไม่ใช่ไฟล์ที่อัป (สัดส่วนตรงกับการ์ดบนเว็บ 16:9) */}
+                  <div className="relative w-40 aspect-video rounded-lg border border-gray-700 bg-gray-800 overflow-hidden flex-shrink-0">
+                    <div className="absolute inset-0 flex items-center justify-center text-gray-500">
+                      <ImageIcon className="h-8 w-8" />
+                    </div>
+                    {editingCourse ? (
                       <img
-                        src={api.mediaUrl(courseForm.thumbnail_url)}
-                        alt="Preview"
-                        className="w-full h-full object-cover"
+                        src={api.courseCoverUrl(editingCourse, 'card')}
+                        alt="ปกที่จะแสดงจริง"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        className="absolute inset-0 w-full h-full object-cover"
                       />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-gray-500">
-                        <ImageIcon className="h-8 w-8" />
-                      </div>
-                    )}
+                    ) : courseForm.thumbnail_url ? (
+                      <img
+                        src={api.mediaUrl(courseForm.thumbnail_url, 'card')}
+                        alt="Preview"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    ) : null}
                   </div>
                   {/* Upload Controls */}
                   <div className="flex-1 space-y-2">

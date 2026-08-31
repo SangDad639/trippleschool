@@ -30,15 +30,13 @@ const HeroBillboard = ({ course }: { course: BrowseCourse }) => {
 
   return (
     <section className="relative h-[65vh] min-h-[440px] w-full overflow-hidden">
-      {course.thumbnail_url ? (
-        <img
-          src={api.mediaUrl(course.thumbnail_url, 'hero')}
-          alt={course.name}
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-      ) : (
-        <div className="absolute inset-0 bg-gray-800" />
-      )}
+      <div className="absolute inset-0 bg-gray-800" />
+      <img
+        src={api.courseCoverUrl(course, 'hero')}
+        alt={course.name}
+        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+        className="absolute inset-0 w-full h-full object-cover"
+      />
       {/* Netflix-style double gradient: left→right for text legibility, bottom fade into page */}
       <div className="absolute inset-0 bg-gradient-to-r from-background via-background/60 to-transparent" />
       <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/30" />

@@ -68,7 +68,7 @@ const TipsCatalog = () => {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {visible.map((tip) => (
-              <NetflixCard key={tip.id} course={tip} variant="grid" onClick={() => navigate(`/courses/${tip.slug}`)} />
+              <NetflixCard key={tip.id} course={tip} variant="grid" onClick={() => navigate(`/courses/${tip.slug}?ep=latest`)} />
             ))}
           </div>
         )}

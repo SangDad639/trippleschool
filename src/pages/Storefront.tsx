@@ -122,7 +122,7 @@ const Storefront = () => {
                       <Badge className="bg-sky-500/90 text-white text-[10px] px-1.5 py-0.5">💡 Tip</Badge>
                     ) : undefined
                   }
-                  onClick={() => navigate(`/courses/${course.slug}`)}
+                  onClick={() => navigate(`/courses/${course.slug}?ep=latest`)}
                 />
               ))}
             </div>
@@ -172,7 +172,7 @@ const Storefront = () => {
               key={row.key}
               title={row.title}
               courses={row.courses}
-              onOpen={(course) => navigate(`/courses/${course.slug}`)}
+              onOpen={(course) => navigate(`/courses/${course.slug}?ep=latest`)}
             />
           ) : (
             <NetflixRow key={row.key} title={row.title}>
@@ -181,7 +181,7 @@ const Storefront = () => {
                   key={`${row.key}-${course.id}`}
                   course={course}
                   variant="grid"
-                  onClick={() => navigate(`/courses/${course.slug}`)}
+                  onClick={() => navigate(`/courses/${course.slug}?ep=latest`)}
                 />
               ))}
             </NetflixRow>

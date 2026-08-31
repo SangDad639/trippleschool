@@ -65,6 +65,21 @@ class ApiClient {
   }
 
   /**
+   * ปกคอร์ส = ภาพของ "วิดีโอล่าสุด" ในคอร์ส (เซิร์ฟเวอร์เลือกให้: ปกบทล่าสุด →
+   * ภาพจาก YouTube → ปกสำรองที่แอดมินอัป) จึงไม่ผูกกับ thumbnail_url อีกต่อไป
+   * r=cover_rev ทำให้ภาพเปลี่ยนทันทีเมื่อเพิ่ม/แก้วิดีโอ โดยไม่ต้องรอแคชหมดอายุ
+   */
+  courseCoverUrl(
+    course: { id?: number; cover_rev?: string | null; thumbnail_url?: string | null } | null | undefined,
+    variant?: 'card' | 'hero'
+  ): string {
+    if (!course?.id) return this.mediaUrl(course?.thumbnail_url, variant);
+    const rev = course.cover_rev ? Date.parse(course.cover_rev) || 0 : 0;
+    const qs = [variant ? `v=${variant}` : '', rev ? `r=${rev}` : ''].filter(Boolean).join('&');
+    return `${this.apiUrl}/api/courses/${course.id}/cover${qs ? `?${qs}` : ''}`;
+  }
+
+  /**
    * Download a file via backend streaming proxy.
    * Bypasses browser CORS/cross-origin issues for Dropbox/KIE/S3 URLs.
    * Auto-triggers browser download with correct filename.

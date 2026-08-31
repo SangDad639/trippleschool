@@ -51,7 +51,7 @@ const PublicCatalog = () => {
     : [];
   const rows = buildRows(courses);
 
-  const openCourse = (course: BrowseCourse) => navigate(`/courses/${course.slug}`);
+  const openCourse = (course: BrowseCourse) => navigate(`/courses/${course.slug}?ep=latest`);
 
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-clip">

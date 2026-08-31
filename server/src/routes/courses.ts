@@ -9,7 +9,7 @@ import multer from 'multer';
 import pool from '../db.js';
 import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth.js';
 import { uploadFile, getFile } from '../utils/s3.js';
-import { makeThumbnailVariant, variantKey } from '../utils/imageResize.js';
+import { makeThumbnailVariant, variantKey, type ThumbVariant } from '../utils/imageResize.js';
 import { hasActiveSubscription } from '../services/stripeService.js';
 
 const router = Router();
@@ -220,9 +220,16 @@ function extractYoutubeId(url: string): string | null {
 // ?v=card|hero serves the pre-generated webp variant (a fraction of the
 // original size); missing variants fall back to the original transparently,
 // so old thumbnails keep working until the backfill script has run.
+// prefix ที่ยอมให้ดึงผ่าน proxy สาธารณะนี้ — เดิมรับ key อะไรก็ได้ ทำให้ object อื่น
+// ในบัคเก็ต (เช่นสลิปโอนเงิน payment-slips/…) ถูกดึงได้ถ้ารู้คีย์
+const PUBLIC_IMAGE_PREFIXES = ['course-thumb/', 'lesson-cover/', 'lesson-thumb-cache/', 'course-cover-cache/'];
+
 router.get('/thumbnails/*', async (req: Request, res: Response) => {
   try {
     const key = (req.params as any)[0];
+    if (!PUBLIC_IMAGE_PREFIXES.some((p) => key.startsWith(p))) {
+      return res.status(404).json({ error: 'Not found' });
+    }
     const v = req.query.v;
     if (v === 'card' || v === 'hero') {
       try {
@@ -296,6 +303,113 @@ router.get('/lessons/:lessonId/thumb', async (req: Request, res: Response) => {
         res.setHeader('Content-Type', 'image/jpeg');
         res.setHeader('Cache-Control', 'public, max-age=86400');
         return res.end(buf);
+      }
+    }
+
+    res.status(404).end();
+  } catch (error) {
+    res.status(404).end();
+  }
+});
+
+// ============ Public: course cover = ภาพของ "วิดีโอล่าสุด" ในคอร์ส ============
+// กติกา (ตามที่ตกลง): ปกคอร์สไม่ใช่ไฟล์ที่อัปแช่ไว้ แต่มาจากบทเรียนล่าสุดเสมอ
+// และเปลี่ยนตามทันทีเมื่อเพิ่ม/แก้วิดีโอ (FE ต่อ ?r=<cover_rev> ให้ URL เปลี่ยนเอง)
+//   1. บทล่าสุดที่มีภาพได้ → ปกที่แอดมินอัปให้บทนั้น (lessons.cover_url)
+//   2. ไม่มี → ดึงจาก YouTube (maxresdefault 1280x720 → hqdefault) แคชลง S3 + ทำ variant
+//   3. คอร์สยังไม่มีวิดีโอเลย → ใช้ courses.thumbnail_url ที่อัปไว้เป็น "ปกสำรอง"
+//   4. ไม่มีอะไรเลย → 404 ให้ FE วาดไอคอนแทน
+// ไม่เผย youtube_id ให้ client เหมือน /lessons/:id/thumb
+router.get('/:courseId/cover', async (req: Request, res: Response) => {
+  try {
+    const courseId = Number(req.params.courseId);
+    if (!Number.isInteger(courseId) || courseId <= 0) return res.status(404).end();
+    const variant: ThumbVariant | null =
+      req.query.v === 'card' || req.query.v === 'hero' ? (req.query.v as ThumbVariant) : null;
+
+    const lesson = (
+      await pool.query(
+        `SELECT id, youtube_id, cover_url FROM lessons
+          WHERE course_id = $1 AND is_active = true
+            AND (cover_url IS NOT NULL OR (youtube_id IS NOT NULL AND youtube_id <> ''))
+          ORDER BY created_at DESC NULLS LAST, lesson_order DESC, id DESC
+          LIMIT 1`,
+        [courseId]
+      )
+    ).rows[0];
+
+    // ปกเปลี่ยนได้เมื่อมีวิดีโอใหม่ → immutable ไม่ได้ ใช้ ETag + อายุสั้นแทน
+    const sendImage = (body: Buffer | NodeJS.ReadableStream, contentType: string, etag: string) => {
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.setHeader('ETag', `"${etag}"`);
+      if (Buffer.isBuffer(body)) return res.end(body);
+      (body as any).pipe(res);
+    };
+
+    // 1) ปกที่แอดมินอัปให้บทล่าสุด (ย่อเป็น webp ตั้งแต่ตอนอัปแล้ว)
+    if (lesson?.cover_url && typeof lesson.cover_url === 'string') {
+      const key = lesson.cover_url.replace('/api/courses/thumbnails/', '');
+      try {
+        const obj = await getFile(key);
+        return sendImage(obj.Body as any, obj.ContentType || 'image/webp', `c${courseId}-l${lesson.id}-cover`);
+      } catch {
+        /* ตัวชี้ค้าง — ตกไปใช้ YouTube */
+      }
+    }
+
+    // 2) ภาพจาก YouTube ของบทล่าสุด (แคชต้นฉบับ + variant ไว้ที่ S3 ครั้งเดียว)
+    if (lesson?.youtube_id) {
+      const hash = crypto.createHash('md5').update(String(lesson.youtube_id)).digest('hex').slice(0, 8);
+      const baseKey = `course-cover-cache/${courseId}-${lesson.id}-${hash}.jpg`;
+      const etag = `c${courseId}-l${lesson.id}-${hash}-${variant || 'orig'}`;
+      const wantKey = variant ? variantKey(baseKey, variant) : baseKey;
+      try {
+        const cached = await getFile(wantKey);
+        return sendImage(cached.Body as any, variant ? 'image/webp' : 'image/jpeg', etag);
+      } catch {
+        /* ยังไม่แคช */
+      }
+      // maxresdefault คมพอสำหรับ hero (1280x720); คลิปเก่าบางตัวไม่มี → hqdefault
+      let buf: Buffer | null = null;
+      for (const name of ['maxresdefault', 'hqdefault']) {
+        const yt = await fetch(`https://i.ytimg.com/vi/${encodeURIComponent(lesson.youtube_id)}/${name}.jpg`, {
+          signal: AbortSignal.timeout(10000),
+        }).catch(() => null);
+        if (yt?.ok) {
+          const b = Buffer.from(await yt.arrayBuffer());
+          // YouTube คืนภาพ placeholder เทาขนาดเล็กเมื่อไม่มีความละเอียดนั้น
+          if (b.length > 3000) { buf = b; break; }
+        }
+      }
+      if (buf) {
+        uploadFile(buf, baseKey, 'image/jpeg', { contentDisposition: 'inline' }).catch(() => {});
+        if (variant) {
+          const resized = await makeThumbnailVariant(buf, variant);
+          if (resized) {
+            uploadFile(resized, wantKey, 'image/webp', { contentDisposition: 'inline' }).catch(() => {});
+            return sendImage(resized, 'image/webp', etag);
+          }
+        }
+        return sendImage(buf, 'image/jpeg', etag);
+      }
+    }
+
+    // 3) ปกสำรองที่แอดมินอัปให้คอร์ส (คอร์สที่ยังไม่มีวิดีโอ)
+    const course = (await pool.query(`SELECT thumbnail_url FROM courses WHERE id = $1`, [courseId])).rows[0];
+    if (course?.thumbnail_url && typeof course.thumbnail_url === 'string') {
+      if (/^https?:\/\//i.test(course.thumbnail_url)) return res.redirect(302, course.thumbnail_url);
+      const key = course.thumbnail_url.replace('/api/courses/thumbnails/', '');
+      try {
+        const obj = await getFile(variant ? variantKey(key, variant) : key);
+        return sendImage(obj.Body as any, variant ? 'image/webp' : obj.ContentType || 'image/jpeg', `c${courseId}-fallback`);
+      } catch {
+        try {
+          const obj = await getFile(key);
+          return sendImage(obj.Body as any, obj.ContentType || 'image/jpeg', `c${courseId}-fallback-orig`);
+        } catch {
+          /* ไม่มีไฟล์จริง */
+        }
       }
     }
 
@@ -504,6 +618,7 @@ router.get('/admin/all', authenticate, async (req: AuthRequest, res) => {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const result = await pool.query(`
       SELECT c.*, t.name AS tag,
+        GREATEST(MAX(l.created_at) FILTER (WHERE l.is_active = true), MAX(l.updated_at) FILTER (WHERE l.is_active = true)) AS cover_rev,
         COUNT(DISTINCT l.id) as lesson_count,
         COUNT(DISTINCT e.id) as enrollment_count
       FROM courses c
@@ -527,6 +642,13 @@ router.get('/', async (req, res) => {
     let query = `
       SELECT c.*, t.name AS tag,
         MAX(l.created_at) FILTER (WHERE l.is_active = true) as last_lesson_at,
+        -- cover_rev: ปกคอร์สมาจากวิดีโอล่าสุด → ค่านี้เปลี่ยนเมื่อเพิ่ม/แก้บทเรียน
+        -- FE เอาไปต่อท้าย URL ปกเพื่อให้เบราว์เซอร์โหลดภาพใหม่ทันที
+        GREATEST(
+          MAX(l.created_at) FILTER (WHERE l.is_active = true),
+          MAX(l.updated_at) FILTER (WHERE l.is_active = true)
+        ) as cover_rev,
+        (SELECT l2.id FROM lessons l2 WHERE l2.course_id = c.id AND l2.is_active = true ORDER BY l2.created_at DESC NULLS LAST, l2.lesson_order DESC, l2.id DESC LIMIT 1) AS latest_lesson_id,
         COUNT(DISTINCT l.id) FILTER (WHERE l.is_active = true) as lesson_count,
         COUNT(DISTINCT e.id) FILTER (WHERE e.status = 'approved') as enrollment_count,
         COALESCE(AVG(r.rating), 0)::numeric(3,2) as avg_rating,
@@ -1162,6 +1284,9 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
     const { slug } = req.params;
     const userId = req.userId;
     const courseResult = await pool.query(`SELECT c.*,
+        (SELECT GREATEST(MAX(created_at), MAX(updated_at)) FROM lessons WHERE course_id = c.id AND is_active = true) AS cover_rev,
+        -- id ของบทล่าสุด: การ์ดที่โชว์ปกคลิปใหม่ ลิงก์มาที่บทนี้โดยตรง
+        (SELECT l.id FROM lessons l WHERE l.course_id = c.id AND l.is_active = true ORDER BY l.created_at DESC NULLS LAST, l.lesson_order DESC, l.id DESC LIMIT 1) AS latest_lesson_id,
         (SELECT COUNT(*) FROM course_enrollments WHERE course_id = c.id AND status = 'approved') AS enrollment_count,
         (SELECT COALESCE(AVG(rating), 0)::numeric(3,2) FROM course_reviews WHERE course_id = c.id) AS avg_rating,
         (SELECT COUNT(*) FROM course_reviews WHERE course_id = c.id) AS review_count
@@ -1217,6 +1342,9 @@ router.get('/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
     const courseResult = await pool.query(`SELECT c.*,
+        (SELECT GREATEST(MAX(created_at), MAX(updated_at)) FROM lessons WHERE course_id = c.id AND is_active = true) AS cover_rev,
+        -- id ของบทล่าสุด: การ์ดที่โชว์ปกคลิปใหม่ ลิงก์มาที่บทนี้โดยตรง
+        (SELECT l.id FROM lessons l WHERE l.course_id = c.id AND l.is_active = true ORDER BY l.created_at DESC NULLS LAST, l.lesson_order DESC, l.id DESC LIMIT 1) AS latest_lesson_id,
         (SELECT COUNT(*) FROM course_enrollments WHERE course_id = c.id AND status = 'approved') AS enrollment_count,
         (SELECT COALESCE(AVG(rating), 0)::numeric(3,2) FROM course_reviews WHERE course_id = c.id) AS avg_rating,
         (SELECT COUNT(*) FROM course_reviews WHERE course_id = c.id) AS review_count

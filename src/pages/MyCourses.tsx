@@ -147,6 +147,7 @@ const MyCourses = () => {
                 key={`rejected-${e.id}`}
                 course={toBrowseCourse(e)}
                 variant="grid"
+                hidePrice
                 statusBadge={
                   <Badge className="bg-red-500/90 text-white text-[10px] px-1.5 py-0.5 flex items-center gap-0.5">
                     <XCircle className="h-2.5 w-2.5" /> ถูกปฏิเสธ

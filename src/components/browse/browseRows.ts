@@ -10,6 +10,10 @@ export interface BrowseCourse {
   description: string;
   short_description: string;
   thumbnail_url: string;
+  /** id ของบทล่าสุด — กดการ์ดแล้วเลื่อนไปที่คลิปนี้ในหน้าคอร์ส */
+  latest_lesson_id?: number | null;
+  /** เวลาล่าสุดที่บทเรียนเปลี่ยน — ใช้ bust แคชปก (ปก = ภาพวิดีโอล่าสุด) */
+  cover_rev?: string | null;
   /** คอร์สฟรี (flag) — ป้ายราคา "ฟรี" บนการ์ดตามนี้ ไม่ใช่ตามราคา 0 */
   is_free?: boolean;
   instructor_name: string;
