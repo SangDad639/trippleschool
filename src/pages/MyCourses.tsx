@@ -31,6 +31,7 @@ interface Enrollment {
   last_lesson_id?: number | null;
   enrolled_at: string;
   updated_at: string;
+  cover_rev?: string | null;
 }
 
 const toBrowseCourse = (e: Enrollment) =>
@@ -39,6 +40,8 @@ const toBrowseCourse = (e: Enrollment) =>
     name: e.course_name,
     slug: e.course_slug,
     thumbnail_url: e.thumbnail_url,
+    // ปกมาจาก endpoint /cover (ภาพวิดีโอล่าสุด) — cover_rev ทำให้ภาพอัปเดตทันทีเมื่อมีคลิปใหม่
+    cover_rev: e.cover_rev,
     instructor_name: e.instructor_name,
     difficulty: e.difficulty,
     total_lessons: e.total_lessons,
