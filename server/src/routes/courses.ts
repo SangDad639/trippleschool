@@ -692,6 +692,30 @@ function sanitizeCourseTools(input: unknown): { name: string; price: string }[] 
     .filter((t) => t.name);
 }
 
+/**
+ * รหัสลิงก์สั้นประจำคอร์ส (https://www.triple-school.com/courses/{code})
+ * ชุดอักขระเดียวกับ migration 048: ตัด 0/o/1/l/i ที่อ่านสับสน และตัวแรกเป็นตัวอักษร
+ * เสมอ เพื่อไม่ให้รหัสตัวเลขล้วนไปชนกับ route ที่รับ course id
+ */
+function generateShareCode(): string {
+  const letters = 'abcdefghjkmnpqrstuvwxyz';
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let code = letters[Math.floor(Math.random() * letters.length)];
+  for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+/** สุ่มรหัสที่ยังไม่ถูกใช้ (กันชนทั้ง share_code และ slug) */
+async function uniqueShareCode(): Promise<string> {
+  for (let i = 0; i < 10; i++) {
+    const code = generateShareCode();
+    const taken = await pool.query(`SELECT 1 FROM courses WHERE share_code = $1 OR slug = $1 LIMIT 1`, [code]);
+    if (taken.rows.length === 0) return code;
+  }
+  // โอกาสชน 10 ครั้งติดแทบเป็นศูนย์ (660M ความเป็นไปได้) — เผื่อไว้ด้วยรหัสยาวขึ้น
+  return generateShareCode() + Math.floor(Math.random() * 90 + 10);
+}
+
 // ============ Admin: create course ============
 router.post('/', authenticate, async (req: AuthRequest, res) => {
   try {
@@ -708,9 +732,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
         name, slug, description, short_description, thumbnail_url,
         instructor_name, instructor_avatar, difficulty, duration_hours,
         is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-        content_type, tag_id, tag_name, tools, is_free
+        content_type, tag_id, tag_name, tools, is_free, share_code
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       RETURNING *
     `, [
       name, slug, description || null, short_description || null, thumbnail_url || null,
@@ -723,6 +747,7 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       typeof tag_name === 'string' && tag_name.trim() ? tag_name.trim().slice(0, 40) : null,
       JSON.stringify(sanitizeCourseTools(tools)),
       is_free === true,
+      await uniqueShareCode(),
     ]);
     const created = result.rows[0];
     // การปักคือ "ปรับชั่วคราว" — คอร์สใหม่ (ที่เข้าเกณฑ์ Billboard อัตโนมัติ: เป็น
@@ -1189,7 +1214,7 @@ router.put('/:courseId/lessons/reorder', authenticate, async (req: AuthRequest, 
 router.get('/:slug/lessons/:lessonId/video', optionalAuth, async (req: AuthRequest, res) => {
   try {
     const { slug, lessonId } = req.params;
-    const courseResult = await pool.query(`SELECT id, is_free FROM courses WHERE slug = $1 AND is_active = true`, [slug]);
+    const courseResult = await pool.query(`SELECT id, is_free FROM courses WHERE (slug = $1 OR share_code = LOWER($1)) AND is_active = true`, [slug]);
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const courseId = courseResult.rows[0].id;
     const lessonResult = await pool.query(
@@ -1218,7 +1243,7 @@ router.get('/:slug/lessons/:lessonId/video', optionalAuth, async (req: AuthReque
 router.get('/:slug/reviews', async (req, res) => {
   try {
     const { slug } = req.params;
-    const cr = await pool.query(`SELECT id FROM courses WHERE slug = $1`, [slug]);
+    const cr = await pool.query(`SELECT id FROM courses WHERE slug = $1 OR share_code = LOWER($1)`, [slug]);
     if (cr.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const courseId = cr.rows[0].id;
     const reviews = await pool.query(`
@@ -1290,7 +1315,7 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
         (SELECT COUNT(*) FROM course_enrollments WHERE course_id = c.id AND status = 'approved') AS enrollment_count,
         (SELECT COALESCE(AVG(rating), 0)::numeric(3,2) FROM course_reviews WHERE course_id = c.id) AS avg_rating,
         (SELECT COUNT(*) FROM course_reviews WHERE course_id = c.id) AS review_count
-      FROM courses c WHERE c.slug = $1 AND c.is_active = true`, [slug]);
+      FROM courses c WHERE (c.slug = $1 OR c.share_code = LOWER($1)) AND c.is_active = true`, [slug]);
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const course = courseResult.rows[0];
     // Access: admin, active subscription (unlocks ALL courses), or approved purchase.
@@ -1348,7 +1373,7 @@ router.get('/:slug', async (req, res) => {
         (SELECT COUNT(*) FROM course_enrollments WHERE course_id = c.id AND status = 'approved') AS enrollment_count,
         (SELECT COALESCE(AVG(rating), 0)::numeric(3,2) FROM course_reviews WHERE course_id = c.id) AS avg_rating,
         (SELECT COUNT(*) FROM course_reviews WHERE course_id = c.id) AS review_count
-      FROM courses c WHERE c.slug = $1 AND c.is_active = true`, [slug]);
+      FROM courses c WHERE (c.slug = $1 OR c.share_code = LOWER($1)) AND c.is_active = true`, [slug]);
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const course = courseResult.rows[0];
     const sectionsResult = await pool.query(`

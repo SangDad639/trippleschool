@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { smoothScrollToElement } from '@/lib/smoothScrollToElement';
 import { useAuth } from '@/contexts/AuthContext';
 import PublicHeader from '@/components/PublicHeader';
 import AgentChatWidget from '@/components/AgentChatWidget';
@@ -45,6 +46,9 @@ import {
   MessageSquare,
   RefreshCw,
   WifiOff,
+  Share2,
+  Link2,
+  Check,
 } from 'lucide-react';
 
 interface Lesson {
@@ -91,6 +95,8 @@ interface Course {
   /** บทล่าสุด = ตัวที่ปกคอร์สใช้ภาพอยู่ → เข้ามาจากการ์ดแล้วเลื่อนไปหาให้เลย */
   latest_lesson_id?: number | null;
   cover_rev?: string | null;
+  /** รหัสลิงก์สั้นประจำคอร์ส (ใช้แชร์ — /courses/{share_code}) */
+  share_code?: string | null;
   // SkillLane-style enrichment fields (see backend contract).
   learning_outcomes?: string[];
   requirements?: string[];
@@ -180,6 +186,10 @@ const CourseDetail = () => {
   const [refCheck, setRefCheck] = useState<{ valid: boolean; pct: number; reason?: string; code: string } | null>(null);
   const [refChecking, setRefChecking] = useState(false);
 
+  // แชร์คอร์ส: ลิงก์สั้น /courses/{share_code} (คอร์สเก่าที่ยังไม่มีรหัสตกไปใช้ slug)
+  const [shareDialogOpen, setShareDialogOpen] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+
   // มาจากการ์ดที่โชว์ปกคลิปล่าสุด (?ep=latest) → เลื่อนไปที่แถวของคลิปนั้นแล้วไฮไลต์ไว้
   // ไม่งั้นผู้ใช้ต้องไล่เลื่อนหาเองในคอร์สที่มี 20 บท
   const [highlightLessonId, setHighlightLessonId] = useState<number | null>(null);
@@ -200,6 +210,20 @@ const CourseDetail = () => {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, isAuthenticated]);
+
+  // เข้าจากลิงก์สั้น (/courses/{share_code}) → พอโหลดคอร์สเสร็จก็เปลี่ยนแถบที่อยู่
+  // เป็น URL ปกติของคอร์ส ผู้ใช้จะได้เห็น/ก๊อปลิงก์เต็มไปใช้ต่อได้
+  // ใช้ replaceState ไม่ใช่ navigate เพราะ navigate จะทำให้ route param เปลี่ยน
+  // แล้วโหลดคอร์สซ้ำอีกรอบ · และไม่เพิ่ม history entry (กดย้อนกลับต้องออกจากหน้านี้เลย)
+  useEffect(() => {
+    if (!slug || !course?.slug || slug === course.slug) return;
+    const { search, hash } = window.location;
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `/courses/${encodeURIComponent(course.slug)}${search}${hash}`
+    );
+  }, [slug, course?.slug]);
 
   const loadReviews = async () => {
     if (!slug) return;
@@ -223,13 +247,15 @@ const CourseDetail = () => {
       : Number(ep);
     if (!targetId) return;
     setHighlightLessonId(targetId);
-    // รอ DOM วาดแถวบทเรียนเสร็จก่อน (accordion/tab render หลัง course พร้อม)
-    const t = setTimeout(() => {
-      const el = document.getElementById(`lesson-${targetId}`);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, 350);
-    const clear = setTimeout(() => setHighlightLessonId(null), 4000);
-    return () => { clearTimeout(t); clearTimeout(clear); };
+    // ยูทิลรอให้หน้านิ่งก่อนแล้วค่อยเลื่อนเองทีละเฟรม — สั่ง scrollIntoView({behavior:'smooth'})
+    // ตรงนี้ไม่ได้ผล เพราะตอนหน้าเพิ่งโหลดเบราว์เซอร์ไม่มีเฟรมว่างให้อนิเมต เลยกระโดดถึงเลย
+    let clear: ReturnType<typeof setTimeout> | undefined;
+    const cancelScroll = smoothScrollToElement(`lesson-${targetId}`, {
+      // เริ่มนับถอยหลังไฮไลต์ตอน "ถึงที่แล้ว" ไม่ใช่ตอนเริ่มรอ
+      // ไม่งั้นถ้ารอหน้านิ่งนาน วงแหวนจะดับก่อนผู้ใช้ทันเห็นว่าไฮไลต์อันไหน
+      onArrive: () => { clear = setTimeout(() => setHighlightLessonId(null), 3000); },
+    });
+    return () => { cancelScroll(); if (clear) clearTimeout(clear); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [course?.id]);
 
@@ -347,6 +373,39 @@ const CourseDetail = () => {
       return null;
     } finally {
       setRefChecking(false);
+    }
+  };
+
+  // ลิงก์แชร์ = โดเมนจริง (VITE_SITE_URL) ถ้าตั้งไว้ ไม่งั้นใช้โดเมนที่เปิดอยู่
+  const SITE_URL = (import.meta.env.VITE_SITE_URL as string | undefined) || window.location.origin;
+  const shareUrl = course ? `${SITE_URL}/courses/${course.share_code || course.slug}` : '';
+
+  const handleShare = async () => {
+    if (!course) return;
+    // มือถือ: ใช้ share sheet ของเครื่อง (ส่งเข้า LINE/Messenger/คัดลอกได้ในที่เดียว)
+    // เช็ค pointer:coarse ด้วย — Chrome บน Windows ก็มี navigator.share แต่เปิดแผงแชร์
+    // ของ Windows ที่มีแต่แอป Store ใช้ไม่ได้จริง สู้ dialog ของเราเองไม่ได้
+    const isTouch = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
+    if (isTouch && typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: course.name, text: course.short_description || course.name, url: shareUrl });
+        return;
+      } catch {
+        /* ผู้ใช้กดยกเลิก / เบราว์เซอร์ไม่รองรับ → ตกไปใช้ dialog */
+      }
+    }
+    setLinkCopied(false);
+    setShareDialogOpen(true);
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setLinkCopied(true);
+      toast.success('คัดลอกลิงก์แล้ว');
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      toast.error('คัดลอกไม่สำเร็จ');
     }
   };
 
@@ -669,6 +728,16 @@ const CourseDetail = () => {
                     <p className="text-gray-400 text-xs">ดูบทเรียนตัวอย่างฟรี • ซื้อคอร์สนี้ หรือสมัครสมาชิกเพื่อปลดล็อกทั้งหมด</p>
                   </div>
                 )}
+
+                {/* แชร์คอร์ส — มือถือเปิด share sheet ของเครื่อง, เดสก์ท็อปเปิด dialog คัดลอกลิงก์ */}
+                <Button
+                  variant="outline"
+                  onClick={handleShare}
+                  className="w-full mt-2 h-11 md:h-9 text-sm border-gray-600 text-gray-300 hover:bg-gray-800 hover:text-white"
+                >
+                  <Share2 className="h-4 w-4 mr-1.5" />
+                  แชร์คอร์สนี้
+                </Button>
                 </div>
           </div>
           </div>
@@ -1140,6 +1209,36 @@ const CourseDetail = () => {
               ยืนยัน
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* แชร์คอร์ส (เดสก์ท็อป / เครื่องที่ไม่มี share sheet) */}
+      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Share2 className="h-5 w-5 text-purple-400" />
+              แชร์คอร์สนี้
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* min-w-0 ทั้งสองชั้น: DialogContent เป็น grid ซึ่ง item มี min-width:auto
+              ทำให้แถวนี้ไม่ยอมย่อแล้วดัน dialog จนมี scrollbar แนวนอน
+              ปุ่มตรึงความกว้างไว้ เพราะป้ายเปลี่ยน "คัดลอก" → "คัดลอกแล้ว" แล้วกว้างขึ้น
+              ถ้าปล่อยตามเนื้อหา เลย์เอาต์จะกระตุกทุกครั้งที่กด */}
+          <div className="flex flex-col sm:flex-row gap-2 min-w-0">
+            <div className="flex-1 min-w-0 flex items-center gap-2 rounded-md bg-gray-800/60 border border-gray-700 px-3 h-11 md:h-10">
+              <Link2 className="h-4 w-4 text-gray-500 shrink-0" />
+              <span className="text-sm text-gray-200 truncate">{shareUrl}</span>
+            </div>
+            <Button
+              onClick={handleCopyLink}
+              className={`h-11 md:h-10 shrink-0 w-full sm:w-[132px] justify-center ${linkCopied ? 'bg-green-600 hover:bg-green-600' : 'bg-purple-600 hover:bg-purple-700'}`}
+            >
+              {linkCopied ? <Check className="h-4 w-4 mr-1.5" /> : <Link2 className="h-4 w-4 mr-1.5" />}
+              {linkCopied ? 'คัดลอกแล้ว' : 'คัดลอก'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

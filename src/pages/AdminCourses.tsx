@@ -88,6 +88,8 @@ interface Course {
   duration_hours: number;
   total_lessons: number;
   is_featured: boolean;
+  /** ลิงก์สั้นประจำคอร์ส (สร้างอัตโนมัติ) */
+  share_code?: string | null;
   /** คอร์สฟรี: ทุกบทดูได้ไม่ต้อง login — flag ชัดเจน ไม่ผูกกับราคา */
   is_free?: boolean;
   /** ปักขึ้น Billboard หน้าแรกเอง (ได้ครั้งละ 1 คอร์ส); ไม่ปัก = ใช้คอร์สล่าสุดอัตโนมัติ */
@@ -304,6 +306,9 @@ const ToolsEditor = ({
     </div>
   );
 };
+
+// โดเมนจริงสำหรับลิงก์แชร์ (ไม่ตั้ง = ใช้โดเมนที่เปิดอยู่)
+const shareBaseUrl = (import.meta.env.VITE_SITE_URL as string | undefined) || window.location.origin;
 
 const AdminCourses = () => {
   const navigate = useNavigate();
@@ -1660,6 +1665,29 @@ const AdminCourses = () => {
                     onChange={(e) => setCourseForm({ ...courseForm, slug: e.target.value })}
                     placeholder="ai-video-masterclass"
                   />
+                  {/* ลิงก์สั้นสำหรับเอาไปโพสต์/แชร์ (สร้างอัตโนมัติตอนสร้างคอร์ส แก้ไม่ได้) */}
+                  {editingCourse?.share_code && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-gray-500 text-xs shrink-0">🔗 ลิงก์แชร์</span>
+                      <code className="flex-1 min-w-0 truncate text-xs text-purple-300 bg-gray-800/60 rounded px-2 py-1.5">
+                        {shareBaseUrl}/courses/{editingCourse.share_code}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 shrink-0"
+                        onClick={() => {
+                          navigator.clipboard
+                            .writeText(`${shareBaseUrl}/courses/${editingCourse.share_code}`)
+                            .then(() => toast.success('คัดลอกลิงก์แล้ว'))
+                            .catch(() => toast.error('คัดลอกไม่สำเร็จ'));
+                        }}
+                      >
+                        คัดลอก
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
               <div>
