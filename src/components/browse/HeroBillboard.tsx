@@ -73,7 +73,7 @@ const HeroBillboard = ({ course }: { course: BrowseCourse }) => {
             {course.short_description}
           </p>
         )}
-        <div className="flex items-center gap-3 flex-wrap text-xs md:text-sm text-gray-300 mb-5">
+        <div className="flex flex-wrap items-center gap-3 flex-wrap text-xs md:text-sm text-gray-300 mb-5">
           {rating && (
             <span className="flex items-center gap-1 text-yellow-400">
               <Star className="h-4 w-4 fill-yellow-400" />
@@ -96,7 +96,7 @@ const HeroBillboard = ({ course }: { course: BrowseCourse }) => {
             {difficultyLabels[course.difficulty] || 'เริ่มต้น'}
           </span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             size="lg"
             onClick={() => navigate(`/courses/${course.slug}`)}

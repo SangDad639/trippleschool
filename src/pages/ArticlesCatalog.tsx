@@ -45,7 +45,7 @@ const ArticlesCatalog = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="ค้นหาบทความ..."
-            className="pl-10 bg-gray-800/50 border-gray-700 text-white h-9 text-sm"
+            className="pl-10 bg-gray-800/50 border-gray-700 text-white h-11 md:h-9"
           />
         </div>
       </div>

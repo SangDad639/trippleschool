@@ -92,7 +92,11 @@ const CourseLearn = () => {
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // มือถือเริ่มด้วย sidebar ปิด — ไม่งั้นรายการบท (320px) ทับวิดีโอทั้งจอตั้งแต่เข้าหน้า
+  // เดสก์ท็อป (≥lg) ยังเปิดค้างเหมือนเดิมเพราะเนื้อหาถูกดันด้วย lg:mr-[320px]
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
+    typeof window === 'undefined' ? true : window.innerWidth >= 1024
+  );
   const [expandedSections, setExpandedSections] = useState<Record<number, boolean>>({});
   // Purchased (or admin) → full access. Non-buyers may still watch preview lessons.
   const [hasAccess, setHasAccess] = useState(false);
@@ -105,6 +109,36 @@ const CourseLearn = () => {
   const [loadError, setLoadError] = useState<{ expired: boolean } | null>(null);
   // token ตายแต่ fallback public สำเร็จ → ดูแบบ guest ได้ + banner บอกให้ login ใหม่
   const [sessionExpired, setSessionExpired] = useState(false);
+
+  // ติดตามว่าอยู่โหมดมือถือไหมแบบสด (หมุน iPad / ย่อ-ขยายหน้าต่างข้าม 1024 ต้องเปลี่ยนตาม)
+  const [isMobileView, setIsMobileView] = useState(() =>
+    typeof window === 'undefined' ? false : window.innerWidth < 1024
+  );
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 1023px)');
+    const onChange = (e: MediaQueryListEvent | MediaQueryList) => {
+      const mobile = 'matches' in e ? e.matches : false;
+      setIsMobileView(mobile);
+      // ข้ามเส้นไปเดสก์ท็อป → sidebar กลับเป็นแผงข้างที่เปิดค้าง; กลับมามือถือ → ปิดกันทับวิดีโอ
+      setSidebarOpen(!mobile);
+    };
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+
+  // มือถือ: เปิด sidebar = โหมด overlay → ปิดด้วย Esc และล็อกไม่ให้หน้าหลังเลื่อนตาม
+  // (ผูกกับ isMobileView ด้วย เพื่อให้ปลดล็อกทันทีเมื่อจอกว้างขึ้นข้าม 1024 ขณะเปิดค้าง)
+  useEffect(() => {
+    if (!sidebarOpen || !isMobileView) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSidebarOpen(false); };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [sidebarOpen, isMobileView]);
 
   useEffect(() => {
     const lesson = currentLesson;
@@ -226,7 +260,12 @@ const CourseLearn = () => {
     }
   };
 
-  const goToLesson = (lesson: Lesson) => navigate(`/app/courses/${slug}/learn/${lesson.id}`);
+  const goToLesson = (lesson: Lesson) => {
+    // มือถือ: drawer เป็น modal (มีฉากหลัง+ล็อกสกรอลล์) — เลือกบทแล้วต้องปิดเอง
+    // ไม่งั้นหน้าใหม่ถูกบังและเลื่อนไม่ได้ (route เดิม component ไม่ remount)
+    if (window.innerWidth < 1024) setSidebarOpen(false);
+    navigate(`/app/courses/${slug}/learn/${lesson.id}`);
+  };
 
   const goToPreviousLesson = () => {
     if (!course || !currentLesson) return;
@@ -351,18 +390,18 @@ const CourseLearn = () => {
           <div className="p-4 lg:p-6 max-w-5xl mx-auto">
             {/* token ตาย → ดูแบบ guest ได้ แต่บอกชัดว่าสิทธิ์/ความคืบหน้ารอ login ใหม่ */}
             {sessionExpired && (
-              <div className="mb-3 bg-yellow-500/15 border border-yellow-500/30 rounded-lg px-3 py-2.5 flex items-center justify-between gap-3 text-sm text-yellow-200">
-                <span>⚠️ เซสชันหมดอายุ — กำลังแสดงแบบผู้เยี่ยมชม สิทธิ์/ความคืบหน้าจะกลับมาหลังเข้าสู่ระบบใหม่</span>
-                <Button size="sm" onClick={() => navigate('/login')} className="h-7 text-xs bg-yellow-500 hover:bg-yellow-400 text-black shrink-0">
+              <div className="mb-3 bg-yellow-500/15 border border-yellow-500/30 rounded-lg px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 text-sm text-yellow-200">
+                <span className="min-w-0">⚠️ เซสชันหมดอายุ — กำลังแสดงแบบผู้เยี่ยมชม สิทธิ์/ความคืบหน้าจะกลับมาหลังเข้าสู่ระบบใหม่</span>
+                <Button size="sm" onClick={() => navigate('/login')} className="h-10 sm:h-7 text-xs bg-yellow-500 hover:bg-yellow-400 text-black shrink-0 w-full sm:w-auto">
                   เข้าสู่ระบบใหม่
                 </Button>
               </div>
             )}
             <div className="flex items-center justify-between mb-3">
-              <Button variant="ghost" onClick={() => navigate(`/courses/${slug}`)} className="text-gray-400 hover:text-white h-8">
+              <Button variant="ghost" onClick={() => navigate(`/courses/${slug}`)} className="text-gray-400 hover:text-white h-11 md:h-8">
                 <ArrowLeft className="h-4 w-4 mr-2" />กลับไปหน้าคอร์ส
               </Button>
-              <Button variant="ghost" onClick={() => setSidebarOpen(!sidebarOpen)} className="lg:hidden text-gray-400 h-8 w-8 p-0">
+              <Button variant="ghost" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label="รายการบทเรียน" className="lg:hidden text-gray-400 h-11 w-11 p-0">
                 {sidebarOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
               </Button>
             </div>
@@ -423,13 +462,13 @@ const CourseLearn = () => {
 
             <Card className="mb-4">
               <CardContent className="p-4">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 sm:gap-3 mb-3">
+                  <div className="min-w-0">
                     <span className="text-purple-400 text-sm font-medium">บทที่ {currentIndex + 1}</span>
                     <h1 className="text-lg font-bold text-white mt-1">{currentLesson.title}</h1>
                   </div>
                   {enrollment && (
-                    <Button onClick={handleMarkComplete} disabled={completing || isCurrentCompleted} variant={isCurrentCompleted ? 'outline' : 'default'} size="sm" className={`h-8 text-sm ${isCurrentCompleted ? 'text-green-400 border-green-400/50' : ''}`}>
+                    <Button onClick={handleMarkComplete} disabled={completing || isCurrentCompleted} variant={isCurrentCompleted ? 'outline' : 'default'} size="sm" className={`h-11 sm:h-8 w-full sm:w-auto shrink-0 text-sm ${isCurrentCompleted ? 'text-green-400 border-green-400/50' : ''}`}>
                       {completing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
                       {isCurrentCompleted ? 'เรียนจบแล้ว' : 'เรียนจบบทนี้'}
                     </Button>
@@ -507,17 +546,27 @@ const CourseLearn = () => {
           </div>
         </div>
 
+        {/* ฉากหลังทึบเฉพาะมือถือ — กดที่ไหนก็ปิด sidebar ได้ (เดสก์ท็อป sidebar อยู่คู่เนื้อหา ไม่ต้องมี) */}
+        {sidebarOpen && (
+          <div
+            onClick={() => setSidebarOpen(false)}
+            className="fixed inset-0 z-30 bg-black/60 lg:hidden"
+            aria-hidden="true"
+          />
+        )}
+
         {/* Sidebar - Lesson List */}
-        <div className={`fixed right-0 top-0 bottom-0 w-[320px] bg-gray-900 border-l border-gray-800 overflow-hidden transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'} z-40`}>
-          <div className="p-4 border-b border-gray-800">
+        <div className={`fixed right-0 top-0 bottom-0 flex flex-col w-[85vw] max-w-[320px] bg-gray-900 border-l border-gray-800 overflow-hidden transition-transform duration-300 ${sidebarOpen ? 'translate-x-0' : 'translate-x-full'} z-40`}>
+          <div className="p-4 border-b border-gray-800 shrink-0">
             <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-white flex items-center gap-2"><BookOpen className="h-4 w-4" />เนื้อหาคอร์ส</h3>
-              <Button variant="ghost" size="sm" onClick={() => setSidebarOpen(false)} className="lg:hidden h-7 w-7 p-0"><X className="h-4 w-4" /></Button>
+              <h3 className="text-base font-semibold text-white flex items-center gap-2 min-w-0"><BookOpen className="h-4 w-4 shrink-0" />เนื้อหาคอร์ส</h3>
+              <Button variant="ghost" size="sm" onClick={() => setSidebarOpen(false)} className="lg:hidden h-11 w-11 p-0 shrink-0" aria-label="ปิดรายการบทเรียน"><X className="h-5 w-5" /></Button>
             </div>
             <p className="text-gray-400 text-sm mt-1 truncate">{course.name}</p>
           </div>
 
-          <div className="overflow-y-auto h-[calc(100%-72px)]">
+          {/* flex-1 แทน h-[calc(100%-72px)] เดิม — ความสูงหัวจริงไม่คงที่ ทำให้บทท้ายๆ โดนตัด */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {(() => {
               const sections = course.sections || [];
               const unassignedLessons = course.unassigned_lessons || [];
@@ -598,8 +647,14 @@ const CourseLearn = () => {
         </div>
 
         {!sidebarOpen && (
-          <Button onClick={() => setSidebarOpen(true)} className="fixed right-4 bottom-4 lg:right-6 lg:bottom-6 z-50 rounded-full w-12 h-12 bg-purple-600 hover:bg-purple-700 shadow-lg">
-            <Menu className="h-5 w-5" />
+          <Button
+            onClick={() => setSidebarOpen(true)}
+            aria-label="เปิดรายการบทเรียน"
+            // pb safe-area: กันทับแถบ home indicator ของ iPhone
+            style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
+            className="fixed right-4 bottom-4 lg:right-6 lg:bottom-6 z-50 rounded-full w-14 h-14 lg:w-12 lg:h-12 bg-purple-600 hover:bg-purple-700 shadow-lg"
+          >
+            <Menu className="h-6 w-6 lg:h-5 lg:w-5" />
           </Button>
         )}
       </div>

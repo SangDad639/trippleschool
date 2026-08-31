@@ -113,7 +113,7 @@ const MyCourses = () => {
           <p className="text-gray-400 text-sm mb-3">
             แอดมินกำลังตรวจสอบสลิปของคุณ — กดที่การ์ดเพื่อดูสถานะหรืออัปเดตสลิป
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {pending.map((e) => (
               <NetflixCard
                 key={`pending-${e.id}`}
@@ -141,7 +141,7 @@ const MyCourses = () => {
           <p className="text-gray-400 text-sm mb-3">
             สลิปไม่ผ่านการตรวจสอบ — กดที่การ์ดเพื่อดูรายละเอียดหรือซื้อใหม่
           </p>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {rejected.map((e) => (
               <NetflixCard
                 key={`rejected-${e.id}`}
@@ -178,7 +178,7 @@ const MyCourses = () => {
               onBrowse={() => navigate('/courses')}
             />
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {inProgressCourses.map((e) => (
                 <NetflixCard
                   key={`learning-${e.id}`}
@@ -201,7 +201,7 @@ const MyCourses = () => {
               description="คอร์สที่คุณเรียนจบทุกบทเรียนจะแสดงที่นี่"
             />
           ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {completedCourses.map((e) => (
                 <NetflixCard
                   key={`done-${e.id}`}

@@ -116,7 +116,7 @@ const AffiliateInfo = () => {
             <div className="flex items-center justify-center gap-4 flex-wrap">
               <button
                 onClick={() => setCodeOpen(true)}
-                className="relative inline-flex items-center justify-center gap-3 text-xl font-bold px-12 py-5 rounded-full text-black overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-[0_0_40px_rgba(255,179,0,0.5)] active:scale-95 group min-w-[22rem]"
+                className="relative inline-flex items-center justify-center gap-3 text-base sm:text-xl font-bold px-6 sm:px-12 py-4 sm:py-5 rounded-full text-black overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-[0_0_40px_rgba(255,179,0,0.5)] active:scale-95 group w-full sm:w-auto sm:min-w-[22rem]"
                 style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FFB300 50%, #FF9800 100%)' }}
               >
                 <span className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 rounded-full" />
@@ -127,7 +127,7 @@ const AffiliateInfo = () => {
               </button>
               <button
                 onClick={() => navigate('/tutorials')}
-                className="relative inline-flex items-center justify-center gap-3 text-xl font-bold px-12 py-5 rounded-full text-black overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-[0_0_40px_rgba(255,179,0,0.5)] active:scale-95 group whitespace-nowrap min-w-[22rem]"
+                className="relative inline-flex items-center justify-center gap-3 text-base sm:text-xl font-bold px-6 sm:px-12 py-4 sm:py-5 rounded-full text-black overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-[0_0_40px_rgba(255,179,0,0.5)] active:scale-95 group w-full sm:w-auto sm:min-w-[22rem]"
                 style={{ background: 'linear-gradient(135deg, #FFD700 0%, #FFB300 50%, #FF9800 100%)' }}
               >
                 <span className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 rounded-full" />

@@ -7,12 +7,18 @@ export default {
   theme: {
     container: {
       center: true,
-      padding: "2rem",
+      // 2rem คงที่กินพื้นที่จอ 360px ไปมาก — ไล่ระดับตามจอแทน
+      padding: { DEFAULT: "1rem", sm: "1.5rem", lg: "2rem" },
       screens: {
         "2xl": "1400px",
       },
     },
     extend: {
+      // เดิม breakpoint เริ่มที่ sm:640 → จอ 360 กับ 430 ถูกมองเป็นช่วงเดียวกันหมด
+      // xs ให้แยก "จอเล็กมาก" ออกจาก iPhone ขนาดปกติได้
+      screens: {
+        xs: "400px",
+      },
       fontFamily: {
         sans: ['Kanit', 'ui-sans-serif', 'system-ui', 'sans-serif'],
       },

@@ -66,7 +66,7 @@ const PublicCatalog = () => {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="ค้นหาคอร์สเรียน..."
-            className="pl-10 bg-gray-800/50 border-gray-700 text-white h-9 text-sm"
+            className="pl-10 bg-gray-800/50 border-gray-700 text-white h-11 md:h-9"
           />
         </div>
       </div>
@@ -117,7 +117,7 @@ const PublicCatalog = () => {
             <div className="flex items-center gap-3 mb-4">
               <h2 className="text-base md:text-lg font-semibold flex-1">คอร์สทั้งหมด</h2>
               <Select value={sort} onValueChange={setSort}>
-                <SelectTrigger className="w-40 h-9 bg-gray-800/50 border-gray-700 text-white text-sm">
+                <SelectTrigger className="w-full sm:w-40 h-9 bg-gray-800/50 border-gray-700 text-white text-sm">
                   <SelectValue placeholder="เรียงลำดับ" />
                 </SelectTrigger>
                 <SelectContent>

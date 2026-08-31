@@ -86,6 +86,16 @@ const AuthPage = () => {
     if (refcode) localStorage.setItem('ts_ref', refcode);
   }, [refcode]);
 
+  // ปุ่ม Google รับความกว้างเป็น px — คำนวณจากจอจริงกันล้นการ์ดบนมือถือ (การ์ด max-w-md + padding)
+  const [googleBtnWidth, setGoogleBtnWidth] = useState(() =>
+    typeof window === 'undefined' ? 350 : Math.min(350, window.innerWidth - 80)
+  );
+  useEffect(() => {
+    const onResize = () => setGoogleBtnWidth(Math.min(350, window.innerWidth - 80));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -219,7 +229,7 @@ const AuthPage = () => {
             </div>
           </div>
 
-          <div className="flex justify-center">
+          <div className="flex justify-center w-full overflow-hidden">
             <GoogleLogin
               onSuccess={async (credentialResponse) => {
                 if (credentialResponse.credential) {
@@ -244,7 +254,8 @@ const AuthPage = () => {
               }}
               theme="filled_black"
               size="large"
-              width={350}
+              // ปุ่ม Google รับ width เป็น px เท่านั้น — 350 คงที่ล้นการ์ดบนจอ 360
+              width={googleBtnWidth}
               text={isLogin ? "signin_with" : "signup_with"}
             />
           </div>
@@ -448,6 +459,30 @@ function RedirectToCourse() {
   return <Navigate to={`/courses/${slug}`} replace />;
 }
 
+/**
+ * วัดความสูงรวมของแบนเนอร์ (เตือนสมาชิก/ประกาศแอดมิน) แล้วเผยแพร่เป็น CSS var `--banner-h`
+ * — header แบบลอยทับ (PublicHeader overlay) ใช้ค่านี้ตรึงตัวเองใต้แบนเนอร์
+ * ไม่มีแบนเนอร์ = 0px (header กลับไปชิดขอบบนเหมือนเดิม)
+ */
+const BannerStack = ({ children }: { children: React.ReactNode }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const apply = () => {
+      document.documentElement.style.setProperty('--banner-h', `${Math.round(el.getBoundingClientRect().height)}px`);
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.setProperty('--banner-h', '0px');
+    };
+  }, []);
+  return <div ref={ref}>{children}</div>;
+};
+
 function App() {
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 
@@ -458,8 +493,12 @@ function App() {
           <SubscriptionProvider>
             <LanguageProvider>
               <SubscriptionRedirectHandler />
-              <SubscriptionWarningBanner />
-              <AdminNotificationBanner />
+              {/* แบนเนอร์อยู่ในโฟลว์หัวเอกสาร แล้วบอกความสูงจริงผ่าน --banner-h ให้ header
+                  แบบลอยทับ (หน้าแรก/หน้าคอร์ส) เลื่อนลงพอดี ไม่ไปทับแบนเนอร์ */}
+              <BannerStack>
+                <SubscriptionWarningBanner />
+                <AdminNotificationBanner />
+              </BannerStack>
               <Suspense
                 fallback={
                   <div className="min-h-screen bg-background flex items-center justify-center">

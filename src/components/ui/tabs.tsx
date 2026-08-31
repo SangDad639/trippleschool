@@ -12,7 +12,9 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex h-10 items-center justify-center rounded-[25px] bg-muted p-1 text-muted-foreground",
+      // TabsTrigger เป็น whitespace-nowrap → แท็บภาษาไทยหลายอันล้นจอมือถือแล้วทับกัน
+      // ให้เลื่อนแนวนอนได้เป็นค่าเริ่มต้น (ซ่อน scrollbar ด้วย .scrollbar-hide ใน index.css)
+      "inline-flex h-10 max-w-full items-center justify-center overflow-x-auto scrollbar-hide rounded-[25px] bg-muted p-1 text-muted-foreground",
       className,
     )}
     {...props}

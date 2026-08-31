@@ -58,32 +58,33 @@ export const SubscriptionWarningBanner: React.FC = () => {
   const config = getWarningConfig();
 
   return (
+    // อยู่ในโฟลว์ (ไม่ fixed): เดิม fixed top-0 ทับ header จนโลโก้/ปุ่มเมนูบนมือถือหายทั้งแถบ
     <div
       className={cn(
-        'fixed top-0 left-0 right-0 z-[100] border-b px-4 py-2',
+        'relative z-[100] border-b px-4 py-2',
         config.bgColor
       )}
     >
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <AlertTriangle className={cn('h-5 w-5', config.iconColor)} />
-          <span className={cn('text-sm font-medium', config.textColor)}>
+      <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
+        <div className="flex items-start sm:items-center gap-3 min-w-0">
+          <AlertTriangle className={cn('h-5 w-5 shrink-0', config.iconColor)} />
+          <span className={cn('text-sm font-medium min-w-0', config.textColor)}>
             {config.message}
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <Button
             size="sm"
             onClick={() => navigate('/subscription')}
-            className="h-7 text-xs"
+            className="h-9 sm:h-7 text-xs"
           >
             {t('subscription.renewNow')}
           </Button>
           <button
             onClick={dismissWarning}
             className={cn(
-              'p-1 rounded hover:bg-white/10 transition-colors',
+              'p-2 sm:p-1 rounded hover:bg-white/10 transition-colors',
               config.textColor
             )}
             aria-label="ปิด"

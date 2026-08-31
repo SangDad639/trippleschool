@@ -374,7 +374,7 @@ const AdminChats = () => {
               value={kbTitle}
               onChange={(e) => setKbTitle(e.target.value)}
               placeholder="หัวข้อ เช่น เรียนจบได้ certificate ไหม"
-              className="h-9 text-sm"
+              className="h-11 md:h-9"
             />
             <Textarea
               value={kbContent}

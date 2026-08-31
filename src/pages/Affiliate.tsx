@@ -280,9 +280,9 @@ const Affiliate = () => {
               <h1 className="text-2xl font-bold">{t('affiliate.title')}</h1>
               <p className="text-muted-foreground">{t('affiliate.subtitle')}</p>
             </div>
-            {/* Debug: Geo detection */}
+            {/* Debug: Geo detection — ซ่อนบนมือถือ (เบียดหัวเรื่องจนล้น) */}
             {detectedCountry && (
-              <span className="ml-auto text-xs px-2 py-1 rounded bg-muted text-muted-foreground">
+              <span className="ml-auto hidden md:inline text-xs px-2 py-1 rounded bg-muted text-muted-foreground">
                 Geo: {detectedCountry} → {currency}
               </span>
             )}
@@ -339,8 +339,8 @@ const Affiliate = () => {
                 </div>
               </div>
 
-              {/* Refcode + referrals */}
-              <div className="grid grid-cols-2 gap-3">
+              {/* Refcode + referrals — มือถือวางซ้อนกัน (โค้ด 8 ตัวตัวใหญ่ล้นออกนอกช่องเมื่อบีบ 2 คอลัมน์) */}
+              <div className="grid grid-cols-1 xs:grid-cols-2 gap-3">
                 <div className="p-3 rounded-lg border border-border text-center">
                   <div className="text-xs text-muted-foreground mb-1">
                     {language === 'th' ? 'ผู้แนะนำมา' : 'Referrals'}
@@ -359,7 +359,7 @@ const Affiliate = () => {
                     disabled={!stats?.refcode}
                     title={language === 'th' ? 'คัดลอกโค้ด' : 'Copy code'}
                   >
-                    <span className="text-2xl font-bold font-mono text-[#FFB300] tracking-wider">
+                    <span className="text-xl xs:text-2xl font-bold font-mono text-[#FFB300] tracking-wide xs:tracking-wider truncate">
                       {stats?.refcode || '—'}
                     </span>
                     {stats?.refcode && (
@@ -389,11 +389,11 @@ const Affiliate = () => {
             </div>
           )}
 
-          {/* Stats Cards */}
-          <div className="grid grid-cols-3 gap-4">
+          {/* Stats Cards — ตัวเลขเงินแบบ ฿12,500.00 ล้นช่องเมื่อบีบ 3 คอลัมน์บนจอเล็ก */}
+          <div className="grid grid-cols-3 gap-2 sm:gap-4">
             <div className="bg-card p-4 rounded-xl border border-border text-center">
               <Clock className="h-5 w-5 text-yellow-500 mx-auto mb-2" />
-              <div className="text-2xl font-bold text-yellow-500">{stats?.pending_transfers || 0}</div>
+              <div className="text-xl sm:text-2xl font-bold text-yellow-500 tabular-nums">{stats?.pending_transfers || 0}</div>
               <div className="text-xs text-muted-foreground">{t('affiliate.pendingTransfers')}</div>
               {stats?.pending_wht != null && stats.pending_wht > 0 && (
                 <div className="text-[10px] text-muted-foreground mt-1">
@@ -403,12 +403,12 @@ const Affiliate = () => {
             </div>
             <div className="bg-card p-4 rounded-xl border border-border text-center">
               <Users className="h-5 w-5 text-green-500 mx-auto mb-2" />
-              <div className="text-2xl font-bold text-green-500">{stats?.completed_transfers || 0}</div>
+              <div className="text-xl sm:text-2xl font-bold text-green-500 tabular-nums">{stats?.completed_transfers || 0}</div>
               <div className="text-xs text-muted-foreground">{t('affiliate.completed')}</div>
             </div>
             <div className="bg-card p-4 rounded-xl border border-border text-center">
               <Wallet className="h-5 w-5 text-[#FFB300] mx-auto mb-2" />
-              <div className="text-xl font-bold text-[#FFB300]">{fmt(stats?.total_earnings || 0)}</div>
+              <div className="text-sm sm:text-xl font-bold text-[#FFB300] tabular-nums break-all">{fmt(stats?.total_earnings || 0)}</div>
               <div className="text-xs text-muted-foreground">{t('affiliate.totalEarnings')}</div>
             </div>
           </div>
@@ -417,17 +417,18 @@ const Affiliate = () => {
               วิธีรับเงินค่าคอมมิชชั่น / ข้อมูลภาษี. Default tab = referees (top
               of user's list, matches reading order). */}
           <Tabs defaultValue="referees" className="space-y-4">
-            <TabsList className="w-full grid grid-cols-4 h-auto rounded-xl p-1">
-              <TabsTrigger value="referees" className="text-xs md:text-sm py-2.5 rounded-lg">
+            {/* มือถือ: เลื่อนแนวนอน (grid 4 ช่องทำให้ป้ายไทยทับกันจนอ่านไม่ออก), เดสก์ท็อปเป็น grid เท่ากันเหมือนเดิม */}
+            <TabsList className="w-full flex md:grid md:grid-cols-4 justify-start h-auto rounded-xl p-1">
+              <TabsTrigger value="referees" className="shrink-0 text-xs md:text-sm py-2.5 rounded-lg">
                 {language === 'th' ? 'รายการผู้แนะนำ' : 'Referees'}
               </TabsTrigger>
-              <TabsTrigger value="transfers" className="text-xs md:text-sm py-2.5 rounded-lg">
+              <TabsTrigger value="transfers" className="shrink-0 text-xs md:text-sm py-2.5 rounded-lg">
                 {language === 'th' ? 'ประวัติการโอนเงิน' : 'Transfer History'}
               </TabsTrigger>
-              <TabsTrigger value="payout" className="text-xs md:text-sm py-2.5 rounded-lg">
+              <TabsTrigger value="payout" className="shrink-0 text-xs md:text-sm py-2.5 rounded-lg">
                 {language === 'th' ? 'วิธีรับเงินค่าคอมมิชชั่น' : 'Payout Method'}
               </TabsTrigger>
-              <TabsTrigger value="tax" className="text-xs md:text-sm py-2.5 rounded-lg">
+              <TabsTrigger value="tax" className="shrink-0 text-xs md:text-sm py-2.5 rounded-lg">
                 {language === 'th' ? 'ข้อมูลภาษี' : 'Tax Info'}
               </TabsTrigger>
             </TabsList>
@@ -455,7 +456,7 @@ const Affiliate = () => {
                       value={refereeSearch}
                       onChange={(e) => setRefereeSearch(e.target.value)}
                       placeholder={t('affiliate.searchEmail')}
-                      className="h-9 text-sm"
+                      className="h-11 md:h-9"
                     />
                     {referees.filter(r => r.email.toLowerCase().includes(refereeSearch.toLowerCase())).map((referee) => (
                       <div key={referee.id} className="flex items-center justify-between text-sm p-2 rounded-lg bg-muted/30">

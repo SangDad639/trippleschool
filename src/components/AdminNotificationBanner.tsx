@@ -55,16 +55,17 @@ export const AdminNotificationBanner: React.FC = () => {
   const notification = notifications[currentIndex];
 
   return (
+    // อยู่ในโฟลว์เช่นเดียวกับ SubscriptionWarningBanner (เดิม fixed ทับ header + ทับกันเอง)
     <div
       className={cn(
-        'fixed top-0 left-0 right-0 z-[99] border-b px-4 py-3',
+        'relative z-[99] border-b px-4 py-3',
         'bg-blue-500/10 border-blue-500/50'
       )}
     >
-      <div className="max-w-7xl mx-auto flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3 flex-1">
+      <div className="max-w-7xl mx-auto flex items-start justify-between gap-3 sm:gap-4">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
           <Bell className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <p className="font-medium text-blue-400">
               {notification.title}
             </p>

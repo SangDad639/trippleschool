@@ -1188,16 +1188,16 @@ const AdminCourses = () => {
           กลับ
         </Button>
 
-        {/* Header */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-              <GraduationCap className="h-6 w-6 text-purple-400" />
+        {/* Header — มือถือ: หัวเรื่องกับแถวปุ่มแยกบรรทัด + ปุ่มตัดบรรทัดได้ (เดิมล้นจอ 2 เท่า) */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-6">
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+              <GraduationCap className="h-6 w-6 text-purple-400 shrink-0" />
               จัดการคอร์สเรียน
             </h1>
-            <p className="text-gray-400">สร้างและจัดการคอร์สเรียนและบทเรียน</p>
+            <p className="text-gray-400 text-sm sm:text-base">สร้างและจัดการคอร์สเรียนและบทเรียน</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {/* ดึงซับให้ทุกคอร์สในคลิกเดียว — เดิมต้องเปิดกล่อง 🎬 ทีละคอร์ส
                 ทำให้หลายคอร์สไม่เคยถูกดึง บอทจึงไม่มีความรู้ */}
             <Button
@@ -1254,21 +1254,21 @@ const AdminCourses = () => {
                       }
                     }}
                   >
-                    <div className="flex items-center justify-between w-full mr-4">
-                      <div className="flex items-center gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 w-full mr-2 sm:mr-4 min-w-0">
+                      <div className="flex items-center gap-3 sm:gap-4 min-w-0">
                         {course.thumbnail_url ? (
                           <img
                             src={api.mediaUrl(course.thumbnail_url, 'card')}
                             alt={course.name}
-                            className="w-16 h-10 rounded object-cover"
+                            className="w-16 h-10 rounded object-cover shrink-0"
                           />
                         ) : (
-                          <div className="w-16 h-10 rounded bg-gray-700 flex items-center justify-center">
+                          <div className="w-16 h-10 rounded bg-gray-700 flex items-center justify-center shrink-0">
                             <BookOpen className="h-5 w-5 text-gray-500" />
                           </div>
                         )}
-                        <div className="text-left">
-                          <h3 className="text-white font-medium">{course.name}</h3>
+                        <div className="text-left min-w-0">
+                          <h3 className="text-white font-medium line-clamp-2 md:line-clamp-none">{course.name}</h3>
                           <p className="text-gray-400 text-sm">
                             {course.lesson_count || 0} บทเรียน | {course.enrollment_count || 0} คนลงทะเบียน
                           </p>

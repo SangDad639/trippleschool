@@ -464,17 +464,19 @@ const CourseDetail = () => {
       {/* token ตาย → โชว์เนื้อหาแบบ guest ได้ แต่ต้องบอกชัดว่าสิทธิ์ที่ซื้อไว้แค่มองไม่เห็น */}
       {sessionExpired && (
         <div className="relative z-20 bg-yellow-500/15 border-b border-yellow-500/30 px-4 py-2.5">
-          <div className="max-w-6xl mx-auto flex items-center justify-between gap-3 text-sm text-yellow-200">
+          <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-3 text-sm text-yellow-200">
             <span>⚠️ เซสชันหมดอายุ — กำลังแสดงแบบผู้เยี่ยมชม สิทธิ์/ความคืบหน้าของคุณจะกลับมาหลังเข้าสู่ระบบใหม่</span>
-            <Button size="sm" onClick={() => navigate('/login')} className="h-7 text-xs bg-yellow-500 hover:bg-yellow-400 text-black shrink-0">
+            <Button size="sm" onClick={() => navigate('/login')} className="h-10 sm:h-7 text-xs bg-yellow-500 hover:bg-yellow-400 text-black shrink-0 w-full sm:w-auto">
               เข้าสู่ระบบใหม่
             </Button>
           </div>
         </div>
       )}
 
-      {/* Netflix-style backdrop hero */}
-      <section className="relative h-[56vh] min-h-[440px] w-full overflow-hidden">
+      {/* Netflix-style backdrop hero
+          มือถือ: ปล่อยให้สูงตามเนื้อหา (h-auto) — เดิมตรึง 56vh แล้ววางเนื้อหาแบบ absolute
+          ทำให้หัวคอร์ส/ปุ่ม "คอร์สทั้งหมด" ทะลุขึ้นไปโดนตัดใต้ header; เดสก์ท็อปคงเดิม */}
+      <section className="relative h-auto min-h-[56vh] md:h-[56vh] md:min-h-[440px] w-full overflow-hidden">
         {course.thumbnail_url ? (
           <img src={api.mediaUrl(course.thumbnail_url, 'hero')} alt={course.name} className="absolute inset-0 w-full h-full object-cover" />
         ) : (
@@ -485,7 +487,7 @@ const CourseDetail = () => {
         <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
         <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-black/40" />
 
-        <div className="absolute inset-x-0 bottom-0 pb-8">
+        <div className="relative md:absolute inset-x-0 bottom-0 pt-20 md:pt-0 pb-8">
           <div className="max-w-6xl mx-auto px-4 md:px-12">
           <div className="max-w-2xl">
             <button onClick={() => navigate('/courses')} className="flex items-center gap-1 text-gray-300 hover:text-white text-sm mb-3 drop-shadow">
@@ -576,7 +578,7 @@ const CourseDetail = () => {
                         </div>
                       </div>
                     )}
-                    <Button onClick={enrollment?.last_lesson_id ? handleContinueLearning : handleStartLearning} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
+                    <Button onClick={enrollment?.last_lesson_id ? handleContinueLearning : handleStartLearning} className="w-full bg-purple-600 hover:bg-purple-700 h-11 md:h-8 text-sm">
                       <Play className="h-3.5 w-3.5 mr-1.5" />
                       {enrollment?.last_lesson_id ? 'เรียนต่อ' : 'เริ่มเรียน'}
                     </Button>
@@ -601,7 +603,7 @@ const CourseDetail = () => {
                         <p className="text-red-300/80 text-xs mt-1">{enrollment.rejection_reason}</p>
                       )}
                     </div>
-                    <Button onClick={openBuyDialog} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
+                    <Button onClick={openBuyDialog} className="w-full bg-purple-600 hover:bg-purple-700 h-11 md:h-8 text-sm">
                       <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
                       ซื้อใหม่
                     </Button>
@@ -609,12 +611,12 @@ const CourseDetail = () => {
                 ) : isFree ? (
                   /* คอร์สฟรี: กดเรียนได้ทันทีไม่ต้อง login — login มีไว้เก็บความคืบหน้าเท่านั้น */
                   <div className="space-y-2">
-                    <Button onClick={handleStartLearning} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
+                    <Button onClick={handleStartLearning} className="w-full bg-purple-600 hover:bg-purple-700 h-11 md:h-8 text-sm">
                       <Play className="h-3.5 w-3.5 mr-1.5" />
                       เริ่มเรียนฟรีเลย
                     </Button>
                     {isAuthenticated ? (
-                      <Button variant="outline" onClick={openBuyDialog} className="w-full h-8 text-sm border-purple-500/40 text-purple-300 hover:bg-purple-500/10">
+                      <Button variant="outline" onClick={openBuyDialog} className="w-full h-11 md:h-8 text-sm border-purple-500/40 text-purple-300 hover:bg-purple-500/10">
                         <GraduationCap className="h-3.5 w-3.5 mr-1.5" />
                         ลงทะเบียนคอร์สนี้ (บันทึกความคืบหน้า)
                       </Button>
@@ -626,12 +628,12 @@ const CourseDetail = () => {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <Button onClick={openBuyDialog} className="w-full bg-purple-600 hover:bg-purple-700 h-8 text-sm">
+                    <Button onClick={openBuyDialog} className="w-full bg-purple-600 hover:bg-purple-700 h-11 md:h-8 text-sm">
                       <ShoppingCart className="h-3.5 w-3.5 mr-1.5" />
                       ซื้อคอร์สนี้ ฿{buyAmount.toLocaleString()}
                     </Button>
                     <div className="py-1 text-center"><span className="text-gray-500 text-xs">— หรือ —</span></div>
-                    <Button variant="outline" onClick={() => navigate('/subscription')} className="w-full h-8 text-sm border-purple-500/40 text-purple-300 hover:bg-purple-500/10">
+                    <Button variant="outline" onClick={() => navigate('/subscription')} className="w-full h-11 md:h-8 text-sm border-purple-500/40 text-purple-300 hover:bg-purple-500/10">
                       <GraduationCap className="h-3.5 w-3.5 mr-1.5" />
                       สมัครสมาชิก เข้าเรียนได้ทุกคอร์ส
                     </Button>
@@ -815,7 +817,7 @@ const CourseDetail = () => {
                     return (
                       <AccordionItem key={section.id} value={section.id.toString()} className="border border-gray-700 rounded-md overflow-hidden bg-gray-800/30">
                         <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-gray-800/50">
-                          <div className="flex items-center justify-between w-full mr-3">
+                          <div className="flex items-center justify-between gap-2 w-full mr-3 min-w-0">
                             <div className="flex items-center gap-2">
                               <FolderOpen className="h-4 w-4 text-purple-400" />
                               <div className="text-left">
@@ -1017,14 +1019,14 @@ const CourseDetail = () => {
                       value={refCode}
                       onChange={(e) => { setRefCode(e.target.value); setRefCheck(null); }}
                       placeholder="กรอกโค้ดเพื่อรับส่วนลด"
-                      className="h-9 text-sm font-mono"
+                      className="h-11 md:h-9 font-mono"
                       disabled={submitting}
                     />
                     <Button
                       variant="outline"
                       onClick={handleCheckRefCode}
                       disabled={refChecking || !refCode.trim() || submitting}
-                      className="h-9 text-xs shrink-0 border-purple-500/40 text-purple-300 hover:bg-purple-500/10"
+                      className="h-11 md:h-9 text-xs shrink-0 border-purple-500/40 text-purple-300 hover:bg-purple-500/10"
                     >
                       {refChecking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'ใช้โค้ด'}
                     </Button>

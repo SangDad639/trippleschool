@@ -203,7 +203,7 @@ const EbookDetail = () => {
                   built-in Download/Print buttons) — a UI-level deterrent only,
                   not real DRM (Ctrl+S / dev tools still work), but removes the
                   obvious one-click download affordance from the reader itself. */}
-              <iframe src={`${viewHref}#toolbar=0`} title={`อ่าน ${ebook.title}`} className="w-full h-[80vh] bg-white" />
+              <iframe src={`${viewHref}#toolbar=0`} title={`อ่าน ${ebook.title}`} className="w-full h-[60vh] md:h-[80vh] bg-white" />
             </div>
           )}
         </div>

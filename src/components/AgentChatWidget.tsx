@@ -246,6 +246,8 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
         <button
           onClick={handleOpen}
           aria-label="เปิดแชทผู้ช่วย"
+          // safe-area: กันปุ่มทับแถบ home indicator ของ iPhone
+          style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
           className="fixed bottom-4 right-4 z-[60] w-16 h-16 sm:w-[4.5rem] sm:h-[4.5rem] rounded-full bg-gradient-to-br from-primary to-fuchsia-600 text-primary-foreground shadow-xl shadow-primary/50 flex items-center justify-center hover:scale-110 transition-transform"
         >
           {/* วงแหวน pulse เรียกสายตา (ปิดเองเมื่อผู้ใช้ตั้งค่าลดการเคลื่อนไหว) */}
@@ -260,7 +262,13 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
 
       {/* Panel */}
       {open && (
-        <div className="fixed bottom-4 left-2 right-2 sm:left-auto sm:right-4 sm:w-[380px] z-[60] h-[560px] max-h-[calc(100dvh-2rem)] bg-card border border-border rounded-2xl shadow-2xl flex flex-col animate-scale-in overflow-hidden">
+        <>
+        {/* ฉากหลังเฉพาะมือถือ: แผงกินจอเกือบเต็ม — กันเผลอเลื่อน/กดหน้าเบื้องหลัง + กดปิดได้ */}
+        <div className="fixed inset-0 z-[55] bg-black/50 sm:hidden" onClick={() => setOpen(false)} aria-hidden="true" />
+        <div
+          style={{ marginBottom: 'env(safe-area-inset-bottom)' }}
+          className="fixed bottom-4 left-2 right-2 sm:left-auto sm:right-4 sm:w-[380px] z-[60] h-[560px] max-h-[calc(100dvh-2rem)] bg-card border border-border rounded-2xl shadow-2xl flex flex-col animate-scale-in overflow-hidden"
+        >
           {/* Header */}
           <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-primary/5">
             <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
@@ -382,9 +390,9 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
                 }}
                 placeholder="พิมพ์ข้อความ..."
                 disabled={sending}
-                className="h-9 text-sm"
+                className="h-11 md:h-9"
               />
-              <Button onClick={handleSend} disabled={sending || (!input.trim() && !attachedImage)} size="sm" className="h-9 px-3">
+              <Button onClick={handleSend} disabled={sending || (!input.trim() && !attachedImage)} size="sm" className="h-11 md:h-9 px-3">
                 <Send className="h-4 w-4" />
               </Button>
             </div>
@@ -407,6 +415,7 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
             )}
           </div>
         </div>
+        </>
       )}
     </>
   );

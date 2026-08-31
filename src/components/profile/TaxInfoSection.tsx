@@ -244,7 +244,7 @@ export default function TaxInfoSection({ bankInfo, onSaved }: Props) {
       </div>
 
       {/* Name + ID */}
-      <div className="grid grid-cols-[140px_1fr] gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-3">
         <div>
           <Label className="text-xs text-muted-foreground">
             {isTh ? 'คำนำหน้า' : 'Title'}
@@ -340,7 +340,7 @@ export default function TaxInfoSection({ bankInfo, onSaved }: Props) {
         </div>
       </div>
 
-      <div className="grid grid-cols-[1fr_140px] gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-[1fr_140px] gap-3">
         <div>
           <Label className="text-xs text-muted-foreground">
             {isTh ? 'จังหวัด' : 'Province'}

@@ -55,13 +55,20 @@ const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statu
         </div>
       )}
 
-      {/* Permanent bottom gradient + title */}
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent pt-10 pb-2 px-3">
-        <h3 className="text-white text-sm font-semibold line-clamp-2 leading-snug drop-shadow">
+      {/* Permanent bottom gradient + title
+          มือถือ: การ์ดสูงแค่ ~90px — ลด padding บน + ชื่อบรรทัดเดียว ไม่ให้ทับรูปทั้งใบ */}
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent pt-6 md:pt-10 pb-2 px-3">
+        <h3 className="text-white text-sm font-semibold line-clamp-1 md:line-clamp-2 leading-snug drop-shadow">
           {course.name}
         </h3>
-        {/* Meta revealed on hover */}
-        <div className="max-h-0 opacity-0 group-hover/card:max-h-24 group-hover/card:opacity-100 group-hover/card:mt-1.5 transition-all duration-300 overflow-hidden">
+        {/* Meta: จอสัมผัสไม่มี hover → เดิมราคาจึงไม่เคยแสดงบนมือถือเลย
+            มือถือแสดง "ราคา" ถาวร (ข้อมูลที่ใช้ตัดสินใจซื้อ), เดสก์ท็อปยังเผยทั้งชุดตอน hover เหมือนเดิม */}
+        {!hidePrice && (
+          <div className="mt-1 md:hidden">
+            <CoursePrice price={course.price} discountPrice={course.discount_price} isFree={course.is_free === true} size="sm" />
+          </div>
+        )}
+        <div className="hidden md:block max-h-0 opacity-0 group-hover/card:max-h-24 group-hover/card:opacity-100 group-hover/card:mt-1.5 transition-all duration-300 overflow-hidden">
           <div className="flex items-center gap-2 flex-wrap text-[11px] text-gray-300">
             {reviewCount > 0 && (
               <StarRating value={course.avg_rating ?? 0} count={reviewCount} size={11} />

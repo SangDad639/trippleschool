@@ -20,7 +20,7 @@ const FeaturedRow = ({ title, courses, onOpen }: FeaturedRowProps) => {
       <h2 className="text-white text-base md:text-lg font-semibold mb-2">{title}</h2>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-3">
         {courses.map((course, i) => (
-          <div key={course.id} className={i === 0 ? 'col-span-2 row-span-2' : ''}>
+          <div key={course.id} className={i === 0 ? 'lg:col-span-2 lg:row-span-2' : ''}>
             <NetflixCard
               course={course}
               variant="grid"

@@ -243,7 +243,7 @@ const SubscriptionTransferV2 = () => {
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border">
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate(-1)} className="text-gray-400 hover:text-white transition-colors">
+            <button onClick={() => navigate(-1)} aria-label="ย้อนกลับ" className="p-2 -m-2 text-gray-400 hover:text-white transition-colors">
               <ArrowLeft className="h-5 w-5" />
             </button>
             <h1 className="text-lg font-bold">{l('สมัครสมาชิก', 'Subscribe')}</h1>
@@ -288,7 +288,7 @@ const SubscriptionTransferV2 = () => {
               <span className="line-through opacity-60 mr-1">฿{perMonthOfYearly(getPlanPricing('yearly').subtotal * 2).toLocaleString()}</span>
               ฿{perMonthOfYearly(getPlanPricing('yearly').subtotal).toLocaleString()}/{l('เดือน', 'mo')}
             </span>
-            <span className="block text-[11px] font-normal opacity-70">
+            <span className="block text-xs sm:text-[11px] font-normal opacity-90 sm:opacity-70">
               {l('ชำระเป็นรายปี', 'Billed annually')} ฿{getPlanPricing('yearly').subtotal.toLocaleString()}
             </span>
             <span className="absolute -top-2 -right-1 px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-bold">-50%</span>
@@ -335,14 +335,14 @@ const SubscriptionTransferV2 = () => {
                   onChange={(e) => { setRefCode(e.target.value); setRefCheck(null); }}
                   placeholder={l('กรอกโค้ดเพื่อรับส่วนลด', 'Enter code for a discount')}
                   disabled={verifying}
-                  className="flex-1 h-9 rounded-lg bg-gray-900/60 border border-gray-700 px-3 text-sm font-mono text-white placeholder:text-gray-600 focus:outline-none focus:border-green-500/50"
+                  className="flex-1 h-11 md:h-9 rounded-lg bg-gray-900/60 border border-gray-700 px-3 text-base md:text-sm font-mono text-white placeholder:text-gray-600 focus:outline-none focus:border-green-500/50"
                 />
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={handleCheckRefCode}
                   disabled={refChecking || !refCode.trim() || verifying}
-                  className="h-9 text-xs border-green-500/30 text-green-400 hover:bg-green-500/10"
+                  className="h-11 md:h-9 text-xs border-green-500/30 text-green-400 hover:bg-green-500/10"
                 >
                   {refChecking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : l('ใช้โค้ด', 'Apply')}
                 </Button>

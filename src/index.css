@@ -52,9 +52,20 @@
     @apply border-border;
   }
 
+  html {
+    /* กัน iOS/Android ขยายฟอนต์เองตอนหมุนจอ (ทำให้ layout เพี้ยนเฉพาะมือถือ) */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "kern";
+    /* กันเลื่อนแนวนอนทั้งเว็บ เผื่อมีอะไรหลุด (หน้า public บางหน้าไม่มี overflow-x-clip ของตัวเอง) */
+    overflow-x: clip;
+    /* viewport-fit=cover ทำให้ layout กินพื้นที่ใต้รอยบากทุกด้าน — กันเนื้อหาโดนบากบังตอนตะแคงจอ */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
 
   /* Custom Scrollbar */
@@ -164,7 +175,8 @@
 /* Outside @layer to match sora-spark-forge's GalleryDemo.css specificity */
 .page-wrapper {
   position: relative;
-  min-height: 100vh;
+  /* dvh: 100vh บนมือถือรวมความสูงแถบ URL ที่ยุบได้ → หน้าสูงเกินจอจริง */
+  min-height: 100dvh;
   background: #141414;
   overflow-x: clip;
 }

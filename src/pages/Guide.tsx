@@ -54,7 +54,7 @@ const Guide = () => {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="ค้นหาคู่มือ..."
-            className="h-9 border-gray-700 bg-gray-800/50 pl-10 text-sm text-white"
+            className="h-11 md:h-9 border-gray-700 bg-gray-800/50 pl-10 text-white"
           />
         </div>
       </div>

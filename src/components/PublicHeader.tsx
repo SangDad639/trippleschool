@@ -129,8 +129,10 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
 
   // While the search box is in use the billboard behind may be replaced by
   // results — keep the bar solid so text stays readable.
+  // top-[var(--banner-h)]: หน้าที่ header ลอยทับ hero ต้องเลื่อนลงตามความสูงแบนเนอร์เตือน
+  // (แบนเนอร์อยู่ในโฟลว์หัวเอกสาร — ถ้า header ตรึง top-0 มันจะทับแบนเนอร์จนอ่านไม่เห็น)
   const headerClass = overlay
-    ? `fixed top-0 inset-x-0 z-50 transition-colors duration-300 ${
+    ? `fixed top-[var(--banner-h,0px)] inset-x-0 z-50 transition-colors duration-300 ${
         scrolled || searching
           ? 'bg-background/95 border-b border-border/60 backdrop-blur'
           : 'bg-gradient-to-b from-black/70 to-transparent border-b border-transparent'
@@ -155,7 +157,7 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
           if (!search?.query) setSearchOpen(false);
         }}
         placeholder="ค้นหาคอร์ส, Tip..."
-        className="pl-8 pr-8 h-9 bg-gray-800/70 border-gray-700 text-white text-sm w-full"
+        className="pl-8 pr-8 h-11 md:h-9 bg-gray-800/70 border-gray-700 text-white w-full"
       />
       <button
         onMouseDown={(e) => e.preventDefault()}
@@ -172,9 +174,9 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
     <header className={headerClass}>
       <div className="max-w-6xl mx-auto px-4 h-14 lg:h-16 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-          <Link to="/" className="flex items-center gap-2 font-bold text-white shrink-0">
+          <Link to="/" className="flex items-center gap-2 font-bold text-white min-w-0 lg:shrink-0">
             <GraduationCap className="h-6 w-6 lg:h-7 lg:w-7 xl:h-8 xl:w-8 text-purple-400" />
-            <span className="text-base lg:text-lg xl:text-xl bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent">Triple School</span>
+            <span className="text-base lg:text-lg xl:text-xl truncate bg-gradient-to-r from-purple-400 to-fuchsia-400 bg-clip-text text-transparent">Triple School</span>
           </Link>
 
           {/* Desktop nav — Netflix-style: active item white + bold.
@@ -282,7 +284,7 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
               {daysLeft !== null && (
                 <button
                   onClick={() => navigate('/subscription')}
-                  className={`hidden sm:inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
+                  className={`hidden xs:inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full border transition-colors ${
                     daysLeft <= 7
                       ? 'bg-red-500/15 text-red-400 border-red-500/30 hover:bg-red-500/25'
                       : 'bg-[#FFB300]/15 text-[#FFB300] border-[#FFB300]/30 hover:bg-[#FFB300]/25'
@@ -292,8 +294,9 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
                   <Crown className="h-3.5 w-3.5" /> เหลือ {daysLeft} วัน
                 </button>
               )}
-              <Button size="sm" onClick={() => navigate('/app/my-courses')} className="bg-purple-600 hover:bg-purple-700">
-                คอร์สของฉัน
+              <Button size="sm" onClick={() => navigate('/app/my-courses')} aria-label="คอร์สของฉัน" className="bg-purple-600 hover:bg-purple-700 px-2 xs:px-3">
+                <GraduationCap className="h-4 w-4 xs:hidden" />
+                <span className="hidden xs:inline">คอร์สของฉัน</span>
               </Button>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -308,7 +311,7 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
                   {daysLeft !== null && (
                     <DropdownMenuItem
                       onClick={() => navigate('/subscription')}
-                      className={`sm:hidden ${daysLeft <= 7 ? 'text-red-400 focus:text-red-400' : 'text-[#FFB300] focus:text-[#FFB300]'}`}
+                      className={`xs:hidden ${daysLeft <= 7 ? 'text-red-400 focus:text-red-400' : 'text-[#FFB300] focus:text-[#FFB300]'}`}
                     >
                       <Crown className="h-4 w-4 mr-2" /> สมาชิกเหลือ {daysLeft} วัน
                     </DropdownMenuItem>
