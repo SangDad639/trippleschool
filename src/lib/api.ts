@@ -2995,16 +2995,37 @@ class ApiClient {
   }
 
   // ============================================
-  // Tags (ชื่อย่อขึ้นเมนู header — คลังกลาง Course/Tip)
+  // Tags — สองถังแยกกัน: ของคอร์ส (ขึ้นเมนู Course + เป็นกุญแจให้ทิปมาเกาะ)
+  // และของทิป (ขึ้นเมนู Tip + ชื่อแท็บในหน้าคอร์ส)
   // ============================================
-  async getTags(): Promise<TagDto[]> {
-    return this.request('/api/courses/tags');
+  async getTags(kind?: TagKind): Promise<TagDto[]> {
+    return this.request(`/api/courses/tags${kind ? `?kind=${kind}` : ''}`);
   }
-  async createTag(name: string): Promise<TagDto> {
-    return this.request('/api/courses/tags', { method: 'POST', body: JSON.stringify({ name }) });
+  async createTag(name: string, kind: TagKind = 'course'): Promise<TagDto> {
+    return this.request('/api/courses/tags', { method: 'POST', body: JSON.stringify({ name, kind }) });
+  }
+  /** ลิงก์สั้น /app/courses/{ref} — ถามว่า ref ชี้บทเรียนหรือคอร์ส */
+  async resolveShareRef(ref: string): Promise<{ type: 'lesson'; slug: string; lesson_id: number } | { type: 'course'; slug: string }> {
+    return this.request(`/api/courses/resolve/${encodeURIComponent(ref)}`);
   }
   async deleteTag(id: number): Promise<{ ok: boolean }> {
     return this.request(`/api/courses/tags/${id}`, { method: 'DELETE' });
+  }
+
+  // ============================================
+  // หมวดหมู่กลาง (2 ภาษา) — ใช้ตั้งชื่อหมวดในคอร์ส ทุกคอร์สเลือกจากถังเดียวกัน
+  // ============================================
+  async getCategories(): Promise<CategoryDto[]> {
+    return this.request('/api/courses/categories');
+  }
+  async createCategory(name_en: string, name_th: string): Promise<CategoryDto> {
+    return this.request('/api/courses/categories', { method: 'POST', body: JSON.stringify({ name_en, name_th }) });
+  }
+  async updateCategory(id: number, data: { name_en?: string; name_th?: string; display_order?: number }): Promise<CategoryDto> {
+    return this.request(`/api/courses/categories/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteCategory(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/courses/categories/${id}`, { method: 'DELETE' });
   }
 
   /** Pin (or unpin) the course shown on the home-page billboard. Unpinned = automatic (newest course). */
@@ -3069,7 +3090,7 @@ class ApiClient {
   async getCourseSections(courseId: number) {
     return this.request(`/api/courses/${courseId}/sections`);
   }
-  async createSection(courseId: number, data: { title: string; description?: string; section_order?: number; mode?: 'basic' | 'update' }) {
+  async createSection(courseId: number, data: { title?: string; description?: string; section_order?: number; mode?: 'basic' | 'update'; category_id?: number | null }) {
     return this.request(`/api/courses/${courseId}/sections`, { method: 'POST', body: JSON.stringify(data) });
   }
   async updateSection(sectionId: number, data: Record<string, unknown>) {
@@ -3384,13 +3405,28 @@ export interface SubtitleSyncSummary {
 }
 
 /** Tag = ชื่อย่อขึ้นเมนู header; Tip ที่ใช้ tag เดียวกับคอร์ส = เกาะกับคอร์สนั้น */
+/** ถัง tag: 'course' = ชื่อย่อคอร์ส · 'tip' = ชื่อย่อทิป — คนละถัง ใช้ข้ามกันไม่ได้ */
+export type TagKind = 'course' | 'tip';
+
+/** หมวดหมู่กลางของหมวดในคอร์ส — เก็บชื่อสองภาษาในแถวเดียว (แอดมินแก้ได้ตลอด) */
+export interface CategoryDto {
+  id: number;
+  name_en: string;
+  name_th: string;
+  display_order: number;
+  created_at: string;
+  /** จำนวนหมวดในคอร์สที่ใช้หมวดหมู่นี้ (จาก GET /categories) */
+  usage_count?: number;
+}
+
 export interface TagDto {
   id: number;
   name: string;
+  kind: TagKind;
   display_order: number;
   created_at: string;
-  /** จำนวนคอร์ส+ทิปที่ใช้ tag นี้ (จาก GET /tags) */
-  course_count?: number;
+  /** จำนวนคอร์ส/ทิปที่ใช้ tag นี้ (จาก GET /tags — นับตามถังของมันเอง) */
+  usage_count?: number;
 }
 
 /** บทความ (เมนู Content) — เนื้อหาอยู่ใน content_html (วางตรง) หรือ content_url (ไฟล์ HTML บน S3) */

@@ -4,7 +4,10 @@ import { toast } from 'sonner';
 import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
 import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
 import { api } from '@/lib/api';
+import { sectionLabel } from '@/lib/sectionLabel';
+import { shareLink, SITE_URL } from '@/lib/shareLink';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -25,6 +28,8 @@ import {
   ChevronUp,
   Download,
   Lock,
+  Share2,
+  Check,
   RefreshCw,
   WifiOff,
 } from 'lucide-react';
@@ -50,6 +55,8 @@ interface Lesson {
   lesson_order: number;
   is_preview: boolean;
   section_id: number | null;
+  /** รหัสลิงก์สั้นของบทนี้ — ลิงก์แชร์ = /app/courses/{share_code} */
+  share_code?: string | null;
   materials?: LessonMaterial[];
 }
 
@@ -58,6 +65,10 @@ interface Section {
   title: string;
   description: string;
   section_order: number;
+  /** หมวดหมู่กลาง (2 ภาษา) — มาก่อน title เสมอถ้าเลือกไว้ */
+  category_id?: number | null;
+  category_en?: string | null;
+  category_th?: string | null;
   mode?: 'basic' | 'update';
   lessons: Lesson[];
 }
@@ -66,6 +77,8 @@ interface Course {
   id: number;
   name: string;
   slug: string;
+  /** รหัสลิงก์สั้นประจำคอร์ส — ใช้ทำลิงก์แชร์วิดีโอ */
+  share_code?: string | null;
   description: string;
   price?: number;
   /** คอร์สฟรี (flag admin ติ๊ก): ทุกบทดูได้ไม่ต้อง login */
@@ -87,11 +100,14 @@ const CourseLearn = () => {
   const { slug, lessonId } = useParams<{ slug: string; lessonId: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { language } = useLanguage();
   const [course, setCourse] = useState<Course | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [loading, setLoading] = useState(true);
   const [completing, setCompleting] = useState(false);
+  // แชร์ลิงก์วิดีโอบทนี้ — ติ๊กค้าง 2 วิหลังคัดลอกสำเร็จ
+  const [videoLinkCopied, setVideoLinkCopied] = useState(false);
   // มือถือเริ่มด้วย sidebar ปิด — ไม่งั้นรายการบท (320px) ทับวิดีโอทั้งจอตั้งแต่เข้าหน้า
   // เดสก์ท็อป (≥lg) ยังเปิดค้างเหมือนเดิมเพราะเนื้อหาถูกดันด้วย lg:mr-[320px]
   const [sidebarOpen, setSidebarOpen] = useState(() =>
@@ -188,6 +204,18 @@ const CourseLearn = () => {
     // user เปลี่ยน (token hydrate หลัง mount) → โหลดใหม่ให้ได้สิทธิ์/ความคืบหน้าจริง
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug, user?.id]);
+
+  // เข้าจากลิงก์ย่อ (/app/courses/{share_code}/learn/..) → เปลี่ยนแถบที่อยู่เป็น slug เต็ม
+  // แบบเดียวกับหน้ารายละเอียดคอร์ส (replaceState: ไม่โหลดซ้ำ ไม่เพิ่ม history)
+  useEffect(() => {
+    if (!slug || !course?.slug || slug === course.slug) return;
+    const { search, hash } = window.location;
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `/app/courses/${encodeURIComponent(course.slug)}/learn/${lessonId ?? ''}${search}${hash}`
+    );
+  }, [slug, course?.slug, lessonId]);
 
   useEffect(() => {
     if (course && lessonId) {
@@ -532,6 +560,31 @@ const CourseLearn = () => {
                     </div>
                   );
                 })()}
+
+                {/* แชร์ลิงก์ตรงเข้าวิดีโอบทนี้ — มุมขวาล่างของการ์ด
+                    (มือถือ: share sheet ของเครื่อง / เดสก์ท็อป: คัดลอก + ติ๊ก 2 วิ) */}
+                <div className="flex justify-end mt-3">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    title="แชร์วิดีโอนี้"
+                    className="h-11 w-11 sm:h-8 sm:w-8 shrink-0 text-gray-400 hover:text-white"
+                    onClick={async () => {
+                      const result = await shareLink(
+                        currentLesson.share_code
+                          ? `${SITE_URL}/${currentLesson.share_code}`
+                          : `${SITE_URL}/app/courses/${course.share_code || course.slug}/learn/${currentLesson.id}`,
+                        currentLesson.title
+                      );
+                      if (result === 'copied') {
+                        setVideoLinkCopied(true);
+                        setTimeout(() => setVideoLinkCopied(false), 2000);
+                      }
+                    }}
+                  >
+                    {videoLinkCopied ? <Check className="h-4 w-4 text-green-400" /> : <Share2 className="h-4 w-4" />}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
 
@@ -581,7 +634,7 @@ const CourseLearn = () => {
                 return (
                   <div key={section.id}>
                     <div onClick={() => toggleSection(section.id)} className={`flex items-center justify-between py-2.5 px-4 cursor-pointer border-b border-gray-800 bg-gray-800/50 hover:bg-gray-800/70 ${hasCurrentLesson ? 'border-l-2 border-l-purple-500' : ''}`}>
-                      <div className="flex items-center gap-2"><FolderOpen className="h-4 w-4 text-purple-400" /><span className="text-sm font-medium text-white truncate">{section.title}</span></div>
+                      <div className="flex items-center gap-2"><FolderOpen className="h-4 w-4 text-purple-400" /><span className="text-sm font-medium text-white truncate">{sectionLabel(section, language)}</span></div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs text-gray-400">{completedCount}/{sectionLessons.length}</span>
                         {isExpanded ? <ChevronUp className="h-4 w-4 text-gray-400" /> : <ChevronDown className="h-4 w-4 text-gray-400" />}

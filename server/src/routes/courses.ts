@@ -569,12 +569,33 @@ router.post('/upload-html', authenticate, uploadSingle(htmlUpload, 'file'), asyn
 
 // ============ Tags (ชื่อย่อขึ้นเมนู header — คลังกลางใช้ร่วม Course/Tip) ============
 // NOTE: named routes must be registered before /:slug.
-router.get('/tags', async (_req, res) => {
+/** ถัง tag มีสองใบ: ของคอร์ส กับ ของทิป — คนละเรื่องกัน ห้ามใช้ข้ามถัง */
+type TagKind = 'course' | 'tip';
+const asTagKind = (v: unknown): TagKind | null =>
+  v === 'course' || v === 'tip' ? v : null;
+
+/** tag ที่ส่งมาต้องมีอยู่จริงและอยู่ถังที่ถูก (null = ไม่ได้เลือก ก็ผ่าน) */
+async function tagIdOfKind(id: unknown, kind: TagKind): Promise<number | null | false> {
+  if (id === null || id === undefined || id === '') return null;
+  if (!Number.isInteger(id)) return false;
+  const r = await pool.query(`SELECT 1 FROM tags WHERE id = $1 AND kind = $2`, [id, kind]);
+  return r.rows.length ? (id as number) : false;
+}
+
+router.get('/tags', async (req, res) => {
   try {
+    const kind = asTagKind(req.query.kind);
+    // นับการใช้งานให้ตรงถัง: tag ของคอร์สผูกผ่าน tag_id, ของทิปผูกผ่าน tip_tag_id
     const result = await pool.query(
-      `SELECT t.*, COUNT(c.id)::int AS course_count
-       FROM tags t LEFT JOIN courses c ON c.tag_id = t.id
-       GROUP BY t.id ORDER BY t.display_order ASC, t.name ASC`
+      `SELECT t.*,
+         CASE WHEN t.kind = 'tip'
+           THEN (SELECT COUNT(*) FROM courses c WHERE c.tip_tag_id = t.id)
+           ELSE (SELECT COUNT(*) FROM courses c WHERE c.tag_id = t.id)
+         END::int AS usage_count
+       FROM tags t
+       WHERE $1::text IS NULL OR t.kind = $1
+       ORDER BY t.kind ASC, t.display_order ASC, t.name ASC`,
+      [kind]
     );
     res.json(result.rows);
   } catch (error) {
@@ -588,10 +609,17 @@ router.post('/tags', authenticate, async (req: AuthRequest, res) => {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const name = typeof req.body.name === 'string' ? req.body.name.trim().slice(0, 40) : '';
     if (!name) return res.status(400).json({ error: 'กรุณาใส่ชื่อ tag' });
-    const result = await pool.query(`INSERT INTO tags (name) VALUES ($1) RETURNING *`, [name]);
+    const kind = req.body.kind === undefined ? 'course' : asTagKind(req.body.kind);
+    if (!kind) return res.status(400).json({ error: 'kind ต้องเป็น course หรือ tip' });
+    const result = await pool.query(
+      `INSERT INTO tags (name, kind) VALUES ($1, $2) RETURNING *`, [name, kind]
+    );
     res.json(result.rows[0]);
   } catch (error) {
-    if ((error as any).code === '23505') return res.status(400).json({ error: 'มี tag ชื่อนี้อยู่แล้ว' });
+    if ((error as any).code === '23505') {
+      const where = req.body.kind === 'tip' ? 'ถัง Tag Tip' : 'ถัง Tag Course';
+      return res.status(400).json({ error: `มี tag ชื่อนี้อยู่แล้วใน${where}` });
+    }
     console.error('Error creating tag:', error);
     res.status(500).json({ error: 'สร้าง tag ไม่สำเร็จ' });
   }
@@ -612,20 +640,147 @@ router.delete('/tags/:id', authenticate, async (req: AuthRequest, res) => {
   }
 });
 
+// ============ หมวดหมู่กลาง (2 ภาษา) — ใช้ตั้งชื่อหมวดในคอร์ส ============
+// ต้องประกาศก่อน router.get('/:slug') ท้ายไฟล์ ไม่งั้น '/categories' โดนมองเป็น slug คอร์ส
+
+/** ตัดช่องว่าง + จำกัดความยาว; คืน '' ถ้าไม่ใช่ข้อความที่ใช้ได้ */
+const cleanName = (v: unknown) => (typeof v === 'string' ? v.trim().slice(0, 60) : '');
+
+router.get('/categories', async (_req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT c.*, (SELECT COUNT(*)::int FROM course_sections s WHERE s.category_id = c.id) AS usage_count
+       FROM categories c ORDER BY c.display_order ASC, c.name_en ASC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    res.status(500).json({ error: 'โหลดหมวดหมู่ไม่สำเร็จ' });
+  }
+});
+
+router.post('/categories', authenticate, async (req: AuthRequest, res) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    const nameEn = cleanName(req.body.name_en);
+    const nameTh = cleanName(req.body.name_th);
+    if (!nameEn || !nameTh) return res.status(400).json({ error: 'ต้องใส่ชื่อทั้งภาษาอังกฤษและภาษาไทย' });
+    // ต่อท้ายรายการเสมอ ให้ลำดับที่แอดมินเห็นตรงกับลำดับที่เพิ่ม
+    const result = await pool.query(
+      `INSERT INTO categories (name_en, name_th, display_order)
+       VALUES ($1, $2, (SELECT COALESCE(MAX(display_order), 0) + 1 FROM categories)) RETURNING *`,
+      [nameEn, nameTh]
+    );
+    res.json(result.rows[0]);
+  } catch (error) {
+    if ((error as any).code === '23505') return res.status(400).json({ error: 'มีหมวดหมู่ชื่อนี้อยู่แล้ว' });
+    console.error('Error creating category:', error);
+    res.status(500).json({ error: 'สร้างหมวดหมู่ไม่สำเร็จ' });
+  }
+});
+
+router.put('/categories/:id', authenticate, async (req: AuthRequest, res) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Bad category id' });
+    const nameEn = req.body.name_en === undefined ? null : cleanName(req.body.name_en);
+    const nameTh = req.body.name_th === undefined ? null : cleanName(req.body.name_th);
+    // ส่งมาแล้วต้องไม่ว่าง (ไม่ส่งมาเลย = ไม่แก้ช่องนั้น)
+    if (nameEn === '' || nameTh === '') return res.status(400).json({ error: 'ชื่อหมวดหมู่ว่างไม่ได้' });
+    const order = Number.isInteger(req.body.display_order) ? req.body.display_order : null;
+    const result = await pool.query(
+      `UPDATE categories SET
+         name_en = COALESCE($1, name_en),
+         name_th = COALESCE($2, name_th),
+         display_order = COALESCE($3, display_order)
+       WHERE id = $4 RETURNING *`,
+      [nameEn, nameTh, order, id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'ไม่พบหมวดหมู่' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    if ((error as any).code === '23505') return res.status(400).json({ error: 'มีหมวดหมู่ชื่อนี้อยู่แล้ว' });
+    console.error('Error updating category:', error);
+    res.status(500).json({ error: 'แก้ไขหมวดหมู่ไม่สำเร็จ' });
+  }
+});
+
+router.delete('/categories/:id', authenticate, async (req: AuthRequest, res) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Bad category id' });
+    // FK ON DELETE SET NULL — หมวดที่ใช้อยู่จะกลับไปแสดงชื่อที่พิมพ์เองแทน ไม่พัง
+    const result = await pool.query(`DELETE FROM categories WHERE id = $1 RETURNING id`, [id]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'ไม่พบหมวดหมู่' });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Error deleting category:', error);
+    res.status(500).json({ error: 'ลบหมวดหมู่ไม่สำเร็จ' });
+  }
+});
+
+/** category_id ที่ส่งมาต้องมีอยู่จริง (null = ไม่ได้เลือก ก็ผ่าน) */
+async function validCategoryId(id: unknown): Promise<number | null | false> {
+  if (id === null || id === undefined || id === '') return null;
+  if (!Number.isInteger(id)) return false;
+  const r = await pool.query(`SELECT 1 FROM categories WHERE id = $1`, [id]);
+  return r.rows.length ? (id as number) : false;
+}
+
+/**
+ * course_sections.title เป็น NOT NULL มาแต่เดิม และเราไม่ปลด เพราะมันกลายเป็น
+ * "สำเนาสำรองของชื่อ" ที่มีประโยชน์: ถ้าวันหนึ่งหมวดหมู่ถูกลบ (FK SET NULL)
+ * หมวดในคอร์สจะยังมีชื่อแสดงอยู่ ไม่กลายเป็นหมวดไร้ชื่อ
+ * เลือกหมวดหมู่แล้วไม่พิมพ์ชื่อเอง → ก๊อปชื่อไทยของหมวดหมู่มาเก็บไว้
+ * (ตอนแสดงผลหมวดหมู่ชนะอยู่แล้ว สำเนานี้จึงไม่บังการสลับภาษา)
+ */
+/**
+ * กล่องหมวด "พื้นฐาน" ของคอร์สนี้ — ไม่มีก็สร้างให้ (คืน null ถ้าไม่มีหมวดหมู่ Basics ในระบบ)
+ * ใช้เป็นที่ลงของบทเรียนที่ไม่ได้ระบุหมวด เพราะ UI ไม่มีตัวเลือก "ไม่จัดหมวด" แล้ว
+ */
+async function basicsSectionId(courseId: number): Promise<number | null> {
+  const cat = await pool.query(`SELECT id, name_th FROM categories WHERE name_en = 'Basics'`);
+  if (cat.rows.length === 0) return null;
+  const { id: catId, name_th } = cat.rows[0];
+  const existing = await pool.query(
+    `SELECT id FROM course_sections WHERE course_id = $1 AND category_id = $2 AND is_active = true ORDER BY id LIMIT 1`,
+    [courseId, catId]
+  );
+  if (existing.rows.length) return existing.rows[0].id;
+  const created = await pool.query(
+    `INSERT INTO course_sections (course_id, title, section_order, mode, category_id)
+     VALUES ($1, $2, (SELECT COALESCE(MAX(section_order), -1) + 1 FROM course_sections WHERE course_id = $1), 'basic', $3)
+     RETURNING id`,
+    [courseId, name_th, catId]
+  );
+  return created.rows[0].id;
+}
+
+async function sectionTitleFallback(title: unknown, categoryId: number | null): Promise<string | null> {
+  const typed = typeof title === 'string' && title.trim() ? title.trim() : null;
+  if (typed) return typed;
+  if (categoryId === null) return null;
+  const r = await pool.query(`SELECT name_th FROM categories WHERE id = $1`, [categoryId]);
+  return r.rows[0]?.name_th ?? null;
+}
+
 // ============ Admin: list all courses (incl. inactive) ============
 router.get('/admin/all', authenticate, async (req: AuthRequest, res) => {
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const result = await pool.query(`
-      SELECT c.*, t.name AS tag,
+      SELECT c.*, t.name AS tag, tt.name AS tip_tag,
         GREATEST(MAX(l.created_at) FILTER (WHERE l.is_active = true), MAX(l.updated_at) FILTER (WHERE l.is_active = true)) AS cover_rev,
         COUNT(DISTINCT l.id) as lesson_count,
         COUNT(DISTINCT e.id) as enrollment_count
       FROM courses c
       LEFT JOIN tags t ON t.id = c.tag_id
+      LEFT JOIN tags tt ON tt.id = c.tip_tag_id
       LEFT JOIN lessons l ON c.id = l.course_id
       LEFT JOIN course_enrollments e ON c.id = e.course_id
-      GROUP BY c.id, t.name
+      GROUP BY c.id, t.name, tt.name
       ORDER BY c.display_order ASC, c.created_at DESC
     `);
     res.json(result.rows);
@@ -640,7 +795,7 @@ router.get('/', async (req, res) => {
   try {
     const { featured, difficulty, search, sort, type } = req.query;
     let query = `
-      SELECT c.*, t.name AS tag,
+      SELECT c.*, t.name AS tag, tt.name AS tip_tag,
         MAX(l.created_at) FILTER (WHERE l.is_active = true) as last_lesson_at,
         -- cover_rev: ปกคอร์สมาจากวิดีโอล่าสุด → ค่านี้เปลี่ยนเมื่อเพิ่ม/แก้บทเรียน
         -- FE เอาไปต่อท้าย URL ปกเพื่อให้เบราว์เซอร์โหลดภาพใหม่ทันที
@@ -655,6 +810,7 @@ router.get('/', async (req, res) => {
         COUNT(DISTINCT r.id) as review_count
       FROM courses c
       LEFT JOIN tags t ON t.id = c.tag_id
+      LEFT JOIN tags tt ON tt.id = c.tip_tag_id
       LEFT JOIN lessons l ON c.id = l.course_id
       LEFT JOIN course_enrollments e ON c.id = e.course_id
       LEFT JOIN course_reviews r ON c.id = r.course_id
@@ -666,7 +822,7 @@ router.get('/', async (req, res) => {
     if (type === 'course' || type === 'tip') { query += ` AND c.content_type = $${paramIndex}`; params.push(type); paramIndex++; }
     if (difficulty) { query += ` AND c.difficulty = $${paramIndex}`; params.push(difficulty); paramIndex++; }
     if (search) { query += ` AND (c.name ILIKE $${paramIndex} OR c.description ILIKE $${paramIndex})`; params.push(`%${search}%`); paramIndex++; }
-    query += ` GROUP BY c.id, t.name`;
+    query += ` GROUP BY c.id, t.name, tt.name`;
     const order = sort === 'popular' ? `enrollment_count DESC, c.created_at DESC`
       : sort === 'new' ? `c.created_at DESC`
       : sort === 'price_asc' ? `COALESCE(c.discount_price, c.price) ASC`
@@ -724,15 +880,21 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-      content_type, tag_id, tag_name, tools, is_free,
+      content_type, tag_id, tip_tag_id, tools, is_free,
     } = req.body;
     if (!name || !slug) return res.status(400).json({ error: 'Name and slug are required' });
+    const isTip = content_type === 'tip';
+    // tag ต้องมาจากถังที่ถูก · คอร์สไม่มี Tag Tip (มีแต่ทิป) จึงบังคับเป็น null
+    const tagId = await tagIdOfKind(tag_id, 'course');
+    if (tagId === false) return res.status(400).json({ error: 'Tag Course ไม่ถูกต้อง' });
+    const tipTagId = isTip ? await tagIdOfKind(tip_tag_id, 'tip') : null;
+    if (tipTagId === false) return res.status(400).json({ error: 'Tag Tip ไม่ถูกต้อง' });
     const result = await pool.query(`
       INSERT INTO courses (
         name, slug, description, short_description, thumbnail_url,
         instructor_name, instructor_avatar, difficulty, duration_hours,
         is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-        content_type, tag_id, tag_name, tools, is_free, share_code
+        content_type, tag_id, tip_tag_id, tools, is_free, share_code
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       RETURNING *
@@ -742,9 +904,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       is_featured || false, display_order || 0, price || 0, discount_price || null,
       JSON.stringify(Array.isArray(learning_outcomes) ? learning_outcomes : []),
       JSON.stringify(Array.isArray(requirements) ? requirements : []),
-      content_type === 'tip' ? 'tip' : 'course',
-      Number.isInteger(tag_id) ? tag_id : null,
-      typeof tag_name === 'string' && tag_name.trim() ? tag_name.trim().slice(0, 40) : null,
+      isTip ? 'tip' : 'course',
+      tagId,
+      tipTagId,
       JSON.stringify(sanitizeCourseTools(tools)),
       is_free === true,
       await uniqueShareCode(),
@@ -774,18 +936,33 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, is_active, display_order, price, discount_price, learning_outcomes, requirements,
-      content_type, tag_id, tag_name, tools, is_free,
+      content_type, tag_id, tip_tag_id, tools, is_free,
     } = req.body;
-    // tag_id/tag_name/tools/is_free ตั้งเฉพาะเมื่อส่งมา และรองรับส่ง null/'' = ล้างค่า (COALESCE ทำไม่ได้)
+    // tag_id/tip_tag_id/tools/is_free ตั้งเฉพาะเมื่อส่งมา และรองรับส่ง null/'' = ล้างค่า (COALESCE ทำไม่ได้)
     const extraSets: string[] = [];
     const extraParams: any[] = [];
     if (tag_id !== undefined) {
-      extraParams.push(Number.isInteger(tag_id) ? tag_id : null);
+      const tagId = await tagIdOfKind(tag_id, 'course');
+      if (tagId === false) return res.status(400).json({ error: 'Tag Course ไม่ถูกต้อง' });
+      extraParams.push(tagId);
       extraSets.push(`tag_id = $${18 + extraParams.length}`);
     }
-    if (tag_name !== undefined) {
-      extraParams.push(typeof tag_name === 'string' && tag_name.trim() ? tag_name.trim().slice(0, 40) : null);
-      extraSets.push(`tag_name = $${18 + extraParams.length}`);
+    // ชนิดหลังอัปเดต — ไม่ได้ส่งมาก็ต้องไปดูของเดิม เพราะกฎ "คอร์สห้ามมี Tag Tip"
+    // ต้องบังคับได้แม้แอดมินแค่สลับประเภทเฉยๆ โดยไม่ได้แตะช่อง tag
+    if (content_type !== undefined || tip_tag_id !== undefined) {
+      const cur = await pool.query(`SELECT content_type FROM courses WHERE id = $1`, [id]);
+      if (cur.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
+      const nextType = content_type === 'tip' || content_type === 'course'
+        ? content_type : cur.rows[0].content_type;
+      if (nextType !== 'tip') {
+        extraParams.push(null);
+        extraSets.push(`tip_tag_id = $${18 + extraParams.length}`);
+      } else if (tip_tag_id !== undefined) {
+        const tipTagId = await tagIdOfKind(tip_tag_id, 'tip');
+        if (tipTagId === false) return res.status(400).json({ error: 'Tag Tip ไม่ถูกต้อง' });
+        extraParams.push(tipTagId);
+        extraSets.push(`tip_tag_id = $${18 + extraParams.length}`);
+      }
     }
     if (tools !== undefined) {
       extraParams.push(JSON.stringify(sanitizeCourseTools(tools)));
@@ -898,7 +1075,9 @@ router.get('/:courseId/sections', optionalAuth, async (req: AuthRequest, res) =>
       (await isCourseFreeById(Number(courseId))) ||
       (await hasSubscriptionOrEnrollment(req.userId, Number(courseId)));
     const sectionsResult = await pool.query(`
-      SELECT * FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
+      SELECT s.*, cat.name_en AS category_en, cat.name_th AS category_th
+      FROM course_sections s LEFT JOIN categories cat ON cat.id = s.category_id
+      WHERE s.course_id = $1 AND s.is_active = true ORDER BY s.section_order ASC
     `, [courseId]);
     const sections = await Promise.all(sectionsResult.rows.map(async (section) => {
       const lessonsResult = await pool.query(`
@@ -921,8 +1100,14 @@ router.post('/:courseId/sections', authenticate, async (req: AuthRequest, res) =
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const { courseId } = req.params;
-    const { title, description, section_order, mode } = req.body;
-    if (!title) return res.status(400).json({ error: 'Title is required' });
+    const { title, description, section_order, mode, category_id } = req.body;
+    const categoryId = await validCategoryId(category_id);
+    if (categoryId === false) return res.status(400).json({ error: 'หมวดหมู่ไม่ถูกต้อง' });
+    // ชื่อมาจากหมวดหมู่กลางก็ได้ พิมพ์เองก็ได้ แต่ต้องมีอย่างน้อยหนึ่งอย่าง
+    // ไม่งั้นหมวดจะไม่มีชื่ออะไรให้แสดงเลย
+    if (!title && categoryId === null) {
+      return res.status(400).json({ error: 'ต้องเลือกหมวดหมู่ หรือใส่ชื่อที่แสดงเอง' });
+    }
     const sectionMode = mode === 'update' ? 'update' : 'basic';
     let order = section_order;
     if (order === undefined || order === null) {
@@ -932,9 +1117,9 @@ router.post('/:courseId/sections', authenticate, async (req: AuthRequest, res) =
       order = maxOrderResult.rows[0].next_order;
     }
     const result = await pool.query(`
-      INSERT INTO course_sections (course_id, title, description, section_order, mode)
-      VALUES ($1, $2, $3, $4, $5) RETURNING *
-    `, [courseId, title, description || null, order, sectionMode]);
+      INSERT INTO course_sections (course_id, title, description, section_order, mode, category_id)
+      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *
+    `, [courseId, await sectionTitleFallback(title, categoryId), description || null, order, sectionMode, categoryId]);
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error creating section:', error);
@@ -966,16 +1151,38 @@ router.put('/sections/:id', authenticate, async (req: AuthRequest, res) => {
     const { id } = req.params;
     const { title, description, section_order, is_active } = req.body;
     const mode = req.body.mode === 'basic' || req.body.mode === 'update' ? req.body.mode : null;
+
+    // title/category_id ต้องจัดการแยกจาก COALESCE เพราะทั้งคู่ "ล้างค่าได้"
+    // (ส่ง '' หรือ null = เอาออก) ซึ่ง COALESCE ตีความเป็น "ไม่แก้" ไม่ได้
+    const cur = (await pool.query(
+      `SELECT title, category_id FROM course_sections WHERE id = $1`, [id]
+    )).rows[0];
+    if (!cur) return res.status(404).json({ error: 'Section not found' });
+
+    let nextCategory = cur.category_id;
+    if (req.body.category_id !== undefined) {
+      const v = await validCategoryId(req.body.category_id);
+      if (v === false) return res.status(400).json({ error: 'หมวดหมู่ไม่ถูกต้อง' });
+      nextCategory = v;
+    }
+    const nextTitle = title === undefined
+      ? cur.title
+      : await sectionTitleFallback(title, nextCategory);
+    if (!nextTitle && nextCategory === null) {
+      return res.status(400).json({ error: 'ต้องเลือกหมวดหมู่ หรือใส่ชื่อที่แสดงเอง' });
+    }
+
     const result = await pool.query(`
       UPDATE course_sections SET
-        title = COALESCE($1, title),
+        title = $1,
         description = COALESCE($2, description),
         section_order = COALESCE($3, section_order),
         is_active = COALESCE($4, is_active),
         mode = COALESCE($6, mode),
+        category_id = $7,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $5 RETURNING *
-    `, [title, description, section_order, is_active, id, mode]);
+    `, [nextTitle, description, section_order, is_active, id, mode, nextCategory]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Section not found' });
     res.json(result.rows[0]);
   } catch (error) {
@@ -1100,10 +1307,13 @@ router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) =>
     const cleanMaterials = sanitizeMaterials(materials);
     const sizeError = validateMaterialsSize(cleanMaterials);
     if (sizeError) return res.status(400).json({ error: sizeError });
+    // ทุกบทต้องมีหมวด — ไม่ส่งมาก็ลงหมวดหมู่ "พื้นฐาน" ให้ (สร้างกล่องถ้าคอร์สยังไม่มี)
+    // UI ไม่มีตัวเลือก "ไม่จัดหมวด" แล้ว อันนี้กันบทหลุดจากทางอื่นที่เรียก API ตรงๆ
+    const sectionId = section_id ?? (await basicsSectionId(Number(courseId)));
     let order = lesson_order;
     if (order === undefined || order === null) {
-      if (section_id) {
-        const r = await pool.query(`SELECT COALESCE(MAX(lesson_order), 0) + 1 as next_order FROM lessons WHERE section_id = $1`, [section_id]);
+      if (sectionId) {
+        const r = await pool.query(`SELECT COALESCE(MAX(lesson_order), 0) + 1 as next_order FROM lessons WHERE section_id = $1`, [sectionId]);
         order = r.rows[0].next_order;
       } else {
         const r = await pool.query(`SELECT COALESCE(MAX(lesson_order), 0) + 1 as next_order FROM lessons WHERE course_id = $1`, [courseId]);
@@ -1113,7 +1323,7 @@ router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) =>
     const result = await pool.query(`
       INSERT INTO lessons (course_id, section_id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, materials)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *
-    `, [courseId, section_id || null, title, description || null, youtube_url, youtube_id, duration_minutes || 0, order, is_preview || false, JSON.stringify(cleanMaterials)]);
+    `, [courseId, sectionId, title, description || null, youtube_url, youtube_id, duration_minutes || 0, order, is_preview || false, JSON.stringify(cleanMaterials)]);
     await pool.query(`
       UPDATE courses SET total_lessons = (SELECT COUNT(*) FROM lessons WHERE course_id = $1 AND is_active = true), updated_at = CURRENT_TIMESTAMP WHERE id = $1
     `, [courseId]);
@@ -1340,7 +1550,10 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
     // คอร์สฟรี (ราคา 0) = ทุกคนเข้าถึงทุกบทได้ ไม่ต้องซื้อ/สมัคร
     const hasAccess = req.isAdmin || isSubscriber || (enrollment?.status === 'approved') || isFreeCourse(course);
     const sectionsResult = await pool.query(`
-      SELECT id, title, description, section_order, mode FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
+      SELECT s.id, s.title, s.description, s.section_order, s.mode, s.category_id,
+             cat.name_en AS category_en, cat.name_th AS category_th
+      FROM course_sections s LEFT JOIN categories cat ON cat.id = s.category_id
+      WHERE s.course_id = $1 AND s.is_active = true ORDER BY s.section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
       SELECT id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, section_id, cover_url,
@@ -1377,7 +1590,10 @@ router.get('/:slug', async (req, res) => {
     if (courseResult.rows.length === 0) return res.status(404).json({ error: 'Course not found' });
     const course = courseResult.rows[0];
     const sectionsResult = await pool.query(`
-      SELECT id, title, description, section_order, mode FROM course_sections WHERE course_id = $1 AND is_active = true ORDER BY section_order ASC
+      SELECT s.id, s.title, s.description, s.section_order, s.mode, s.category_id,
+             cat.name_en AS category_en, cat.name_th AS category_th
+      FROM course_sections s LEFT JOIN categories cat ON cat.id = s.category_id
+      WHERE s.course_id = $1 AND s.is_active = true ORDER BY s.section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
       SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id, cover_url,

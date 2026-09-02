@@ -29,6 +29,8 @@ export interface BrowseCourse {
   tag_id?: number | null;
   /** ชื่อย่อของ Tip เอง (สั้นกว่า title — ใช้แสดงใน UI) */
   tag_name?: string | null;
+  /** ชื่อย่อของทิปเอง (จาก Tag Tip) — ใช้เป็นป้ายในเมนู Tip และชื่อแท็บ */
+  tip_tag?: string | null;
   /** เวลาที่ admin เพิ่มบทเรียนล่าสุด — ใช้ตัดสินป้าย "Update" (7 วัน) */
   last_lesson_at?: string | null;
   lesson_count: number;

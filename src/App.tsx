@@ -24,6 +24,7 @@ const usePageTracking = () => {
 import { GoogleOAuthProvider, GoogleLogin } from "@react-oauth/google";
 import { Toaster } from "@/components/ui/sonner";
 import { api } from "@/lib/api";
+import { Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { LanguageProvider, useLanguage } from "@/contexts/LanguageContext";
@@ -442,21 +443,53 @@ function AppRoutes() {
       {/* หน้าเรียนเปิด public — บท "ดูฟรี" ดูได้โดยไม่ต้อง login; บทล็อกโชว์ overlay ชวนซื้อ/สมัครแทน */}
       <Route path="/app/courses/:slug/learn/:lessonId" element={<CourseLearn />} />
       {/* Old in-app detail paths now resolve to the single public detail page. */}
-      <Route path="/app/courses/:slug" element={<RedirectToCourse />} />
+      <Route path="/app/courses/:slug" element={<ResolveShareRef fallback="course" />} />
       <Route path="/app/courses" element={<Navigate to="/courses" replace />} />
       <Route path="/app" element={<Navigate to="/app/my-courses" replace />} />
       <Route path="/app/*" element={<Navigate to="/app/my-courses" replace />} />
 
+      {/* ลิงก์สั้นแบบ bitly — triple-school.com/{รหัส} เด้งเข้าวิดีโอ/คอร์สทันที
+          (เส้นทาง static ทั้งหมดข้างบนชนะ dynamic segment เสมอ จึงไม่ทับ /login /pricing ฯลฯ
+           ref ที่ไขไม่ออกจะถูกพากลับหน้าแรก = พฤติกรรม catch-all เดิมของ path เดี่ยว) */}
+      <Route path="/:ref" element={<ResolveShareRef fallback="home" />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
 
-// Preserve the :slug when redirecting the legacy /app/courses/:slug → /courses/:slug.
-function RedirectToCourse() {
+// ตัวไขลิงก์สั้น — ref อาจเป็นรหัสบทเรียน (→ หน้าเรียนของบทนั้นทันที) หรือ slug/รหัสคอร์ส
+// (→ หน้ารายละเอียดคอร์ส) ต้องถาม server เพราะรหัสสุ่มจากเนมสเปซเดียวกัน แยกด้วยตาไม่ได้
+// ใช้กับ 2 เส้นทาง: /{ref} แบบ bitly (ลิงก์แชร์หลัก) และ /app/courses/{ref} (เส้นทาง in-app เดิม)
+function ResolveShareRef({ fallback }: { fallback: 'course' | 'home' }) {
   const location = useLocation();
-  const slug = location.pathname.split('/').pop() || '';
-  return <Navigate to={`/courses/${slug}`} replace />;
+  const navigate = useNavigate();
+  const ref = location.pathname.split('/').pop() || '';
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await api.resolveShareRef(ref);
+        if (cancelled) return;
+        if (r.type === 'lesson') {
+          navigate(`/app/courses/${r.slug}/learn/${r.lesson_id}`, { replace: true });
+          return;
+        }
+        navigate(`/courses/${r.slug}`, { replace: true });
+      } catch {
+        // resolve ไม่ติด (offline/404):
+        //   เส้นทาง in-app เดิม → เดาว่าเป็นคอร์ส (พฤติกรรมก่อนมีลิงก์สั้น)
+        //   เส้นทาง root → กลับหน้าแรก (แทน catch-all * เดิมของ path เดี่ยวที่ไม่รู้จัก)
+        if (!cancelled) navigate(fallback === 'course' ? `/courses/${ref}` : '/', { replace: true });
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ref]);
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <Loader2 className="h-6 w-6 animate-spin text-purple-500" />
+    </div>
+  );
 }
 
 /**

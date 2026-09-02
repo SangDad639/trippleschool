@@ -2,7 +2,9 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
 import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
-import { api, type TagDto } from '@/lib/api';
+import { api, type TagDto, type TagKind, type CategoryDto } from '@/lib/api';
+import { sectionLabel } from '@/lib/sectionLabel';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -32,7 +34,9 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
@@ -53,6 +57,7 @@ import {
 import {
   Loader2,
   Plus,
+  Check,
   Pencil,
   Trash2,
   BookOpen,
@@ -97,8 +102,9 @@ interface Course {
   /** ชื่อย่อขึ้นเมนู header (join จากตาราง tags) */
   tag?: string | null;
   tag_id?: number | null;
-  /** ชื่อย่อของ Tip เอง (แสดงใน UI แทน title ที่ยาว) */
-  tag_name?: string | null;
+  /** Tag Tip = ชื่อย่อของ Tip เอง (แสดงใน UI แทน title ที่ยาว) */
+  tip_tag_id?: number | null;
+  tip_tag?: string | null;
   is_active: boolean;
   display_order: number;
   created_at?: string;
@@ -125,6 +131,10 @@ interface Section {
   description: string;
   mode?: 'basic' | 'update';
   section_order: number;
+  /** หมวดหมู่กลาง (2 ภาษา) — มาก่อน title เสมอถ้าเลือกไว้ */
+  category_id?: number | null;
+  category_en?: string | null;
+  category_th?: string | null;
   is_active: boolean;
   lessons: Lesson[];
 }
@@ -173,7 +183,7 @@ const initialCourseForm = {
   discount_price: null as number | null,
   content_type: 'course' as 'course' | 'tip',
   tag_id: null as number | null,
-  tag_name: '',
+  tip_tag_id: null as number | null,
   learning_outcomes: [] as string[],
   requirements: [] as string[],
   tools: [] as CourseTool[],
@@ -189,10 +199,26 @@ const initialLessonForm = {
   materials: [] as LessonMaterial[],
 };
 
+/**
+ * แปลง section_id เป็นค่าของ dropdown หมวด — กล่องที่ผูกหมวดหมู่แล้วต้องเป็น `cat:` ไม่ใช่ `sec:`
+ * ไม่งั้นค่าที่เลือกอยู่จะไม่ตรงกับรายการ (รายการหลักเป็นหมวดหมู่กลาง) แล้วช่องจะโชว์ว่าง
+ * บทที่ยังไม่มีหมวด (ข้อมูลเก่าที่หลุดรอด) ตกไปที่ค่าเริ่มต้น = พื้นฐาน
+ */
+const valueForSection = (
+  sections: Section[],
+  sectionId: number | null | undefined,
+  fallback: string
+): string => {
+  if (!sectionId) return fallback;
+  const sec = sections.find((s) => s.id === sectionId);
+  return sec?.category_id ? `cat:${sec.category_id}` : `sec:${sectionId}`;
+};
+
 const initialSectionForm = {
   title: '',
   description: '',
   mode: 'basic' as 'basic' | 'update',
+  category_id: null as number | null,
 };
 
 // Reusable add/edit/remove bullet-list editor for string[] fields.
@@ -313,6 +339,7 @@ const shareBaseUrl = (import.meta.env.VITE_SITE_URL as string | undefined) || wi
 const AdminCourses = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { language } = useLanguage();
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -340,7 +367,14 @@ const AdminCourses = () => {
   const [syncingMissing, setSyncingMissing] = useState(false);
   // คลัง tag (ชื่อย่อขึ้นเมนู header) — ใช้ทั้งช่องเลือกใน dialog และหน้าจัดการ
   const [tags, setTags] = useState<TagDto[]>([]);
-  const [tagDialogOpen, setTagDialogOpen] = useState(false);
+  // เปิด dialog จัดการ tag ถังไหน (null = ปิด) — แยกถังคอร์ส/ถังทิป
+  const [tagDialogKind, setTagDialogKind] = useState<TagKind | null>(null);
+  // หมวดหมู่กลาง 2 ภาษา (ใช้ตั้งชื่อหมวดในคอร์ส) — เพิ่ม/แก้/ลบได้
+  const [categories, setCategories] = useState<CategoryDto[]>([]);
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
+  const [newCategory, setNewCategory] = useState({ en: '', th: '' });
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null);
+  const [editingCategory, setEditingCategory] = useState({ en: '', th: '' });
   const [newTagName, setNewTagName] = useState('');
   // ผลตรวจการเชื่อมต่อ YouTube ของเซิร์ฟเวอร์ — ใช้แยก "ระบบดึงไม่ได้" ออกจาก "คลิปไม่มีซับ"
   const [ytHealth, setYtHealth] = useState<{ ok: boolean; message: string } | null>(null);
@@ -380,6 +414,9 @@ const AdminCourses = () => {
   const [sectionDialogOpen, setSectionDialogOpen] = useState(false);
   const [editingSection, setEditingSection] = useState<Section | null>(null);
   const [sectionForm, setSectionForm] = useState(initialSectionForm);
+  // ค่าที่เลือกใน dropdown หมวดของฟอร์มบทเรียน: 'none' | 'cat:<id>' | 'sec:<id>'
+  // เก็บดิบไว้ก่อน แล้วค่อยแปลงเป็น section_id ตอนกดบันทึก — กดยกเลิกจะได้ไม่มีหมวดเปล่าค้าง
+  const [pendingSectionValue, setPendingSectionValue] = useState('none');
   const [selectedCourseForSection, setSelectedCourseForSection] = useState<Course | null>(null);
   const [courseSections, setCourseSections] = useState<Record<number, Section[]>>({});
 
@@ -387,6 +424,7 @@ const AdminCourses = () => {
     if (!user?.isAdmin) return;
     loadCourses();
     loadTags();
+    loadCategories();
   }, [user]);
 
   const loadTags = async () => {
@@ -397,15 +435,63 @@ const AdminCourses = () => {
     }
   };
 
+  const loadCategories = async () => {
+    try {
+      setCategories(await api.getCategories());
+    } catch (e) {
+      console.error('Failed to load categories:', e);
+    }
+  };
+
+  /**
+   * คอร์สนี้มีกล่องของหมวดหมู่นี้แล้วก็ใช้ตัวเดิม ไม่มีก็สร้างให้ — คืน section_id
+   * นี่คือทางเดียวที่หมวดในคอร์สเกิดขึ้นแล้ว (ไม่มีปุ่ม "เพิ่มหมวด" อีกต่อไป)
+   */
+  const ensureSectionForCategory = async (courseId: number, categoryId: number): Promise<number> => {
+    const existing = (courseSections[courseId] || []).find((s) => s.category_id === categoryId);
+    if (existing) return existing.id;
+    const created = await api.createSection(courseId, { category_id: categoryId });
+    await loadCourseSections(courseId);
+    return created.id;
+  };
+
+  const handleDeleteCategory = (cat: CategoryDto) => {
+    const used = cat.usage_count || 0;
+    setConfirmState({
+      title: `ลบหมวดหมู่ "${cat.name_en}"?`,
+      description: used
+        ? `มีหมวดในคอร์สใช้อยู่ ${used} หมวด — หมวดพวกนั้นจะกลับไปใช้ชื่อที่พิมพ์เองแทน`
+        : undefined,
+      onConfirm: async () => {
+        try {
+          await api.deleteCategory(cat.id);
+          toast.success('ลบหมวดหมู่แล้ว');
+          loadCategories();
+          loadCourses();
+        } catch (e: any) {
+          toast.error(e?.message || 'ลบไม่สำเร็จ');
+        }
+      },
+    });
+  };
+
+  // ดึงมาทีเดียวทั้งสองถังแล้วแยกตรงนี้ — คอร์สเลือกได้เฉพาะถังคอร์ส ทิปเลือก Tag Tip
+  // ได้เฉพาะถังทิป (ส่วน Link Tag Course ของทิปเลือกจากถังคอร์ส เพราะมันคือ tag ของคอร์สแม่)
+  const courseTags = tags.filter((t) => t.kind === 'course');
+  const tipTags = tags.filter((t) => t.kind === 'tip');
+
   // สร้าง tag เร็วๆ จากใน dialog คอร์ส — สร้างแล้วเลือกให้ทันที
-  const handleQuickCreateTag = async () => {
-    const name = prompt('ชื่อ tag ใหม่ (สั้นๆ เช่น Gemini, ChatCut):')?.trim();
+  const handleQuickCreateTag = async (kind: TagKind) => {
+    const label = kind === 'tip' ? 'Tag Tip' : 'Tag Course';
+    const name = prompt(`ชื่อ ${label} ใหม่ (สั้นๆ เช่น Gemini, ChatCut):`)?.trim();
     if (!name) return;
     try {
-      const tag = await api.createTag(name);
+      const tag = await api.createTag(name, kind);
       await loadTags();
-      setCourseForm((prev) => ({ ...prev, tag_id: tag.id }));
-      toast.success(`สร้าง tag "${tag.name}" และเลือกให้แล้ว`);
+      setCourseForm((prev) =>
+        kind === 'tip' ? { ...prev, tip_tag_id: tag.id } : { ...prev, tag_id: tag.id }
+      );
+      toast.success(`สร้าง ${label} "${tag.name}" และเลือกให้แล้ว`);
     } catch (e: any) {
       toast.error(e?.message || 'สร้าง tag ไม่สำเร็จ');
     }
@@ -419,10 +505,13 @@ const AdminCourses = () => {
   } | null>(null);
 
   const handleDeleteTag = (tag: TagDto) => {
-    const used = tag.course_count || 0;
+    const used = tag.usage_count || 0;
+    const label = tag.kind === 'tip' ? 'Tag Tip' : 'Tag Course';
     setConfirmState({
-      title: `ลบ Tag "${tag.name}"?`,
-      description: used ? `มีคอร์ส/ทิปใช้อยู่ ${used} รายการ — จะกลายเป็นไม่มี tag` : undefined,
+      title: `ลบ ${label} "${tag.name}"?`,
+      description: used
+        ? `มี${tag.kind === 'tip' ? 'ทิป' : 'คอร์ส'}ใช้อยู่ ${used} รายการ — จะกลายเป็นไม่มี tag`
+        : undefined,
       onConfirm: async () => {
         try {
           await api.deleteTag(tag.id);
@@ -498,8 +587,10 @@ const AdminCourses = () => {
     try {
       const data = await api.getCourseSections(courseId);
       setCourseSections((prev) => ({ ...prev, [courseId]: data }));
+      return data;
     } catch (error) {
       console.error('Failed to load sections:', error);
+      return [] as Section[];
     }
   };
 
@@ -540,7 +631,7 @@ const AdminCourses = () => {
         discount_price: course.discount_price,
         content_type: course.content_type === 'tip' ? 'tip' : 'course',
         tag_id: course.tag_id ?? null,
-        tag_name: course.tag_name || '',
+        tip_tag_id: course.tip_tag_id ?? null,
         learning_outcomes: Array.isArray(course.learning_outcomes) ? course.learning_outcomes : [],
         requirements: Array.isArray(course.requirements) ? course.requirements : [],
         tools: Array.isArray(course.tools) ? course.tools : [],
@@ -859,9 +950,9 @@ const AdminCourses = () => {
   const handleOpenLessonDialog = async (course: Course, lesson?: Lesson) => {
     setSelectedCourseForLesson(course);
     // Load sections if not loaded
-    if (!courseSections[course.id]) {
-      await loadCourseSections(course.id);
-    }
+    // (รับค่าคืนมาใช้ตรงๆ ด้วย — setState ยังไม่สะท้อนใน courseSections ในรอบนี้)
+    let sections = courseSections[course.id];
+    if (!sections) sections = await loadCourseSections(course.id);
     if (lesson) {
       setEditingLesson(lesson);
       // List payloads strip inline html content — MUST fetch the full
@@ -884,9 +975,14 @@ const AdminCourses = () => {
         section_id: lesson.section_id,
         materials,
       });
+      setPendingSectionValue(valueForSection(sections || [], lesson.section_id, defaultSectionValue));
     } else {
       setEditingLesson(null);
-      setLessonForm(initialLessonForm);
+      // บทใหม่: ตั้งต้นที่หมวดหมู่ "พื้นฐาน" เสมอ — คอร์สยังไม่มีกล่องพื้นฐานก็สร้างให้
+      // ตอนกดบันทึก (ไม่มีทางเลือก "ไม่จัดหมวด" แล้ว บทจึงไม่หลุดไปกองนอกหมวดอีก)
+      const basicsSection = (sections || []).find((s) => s.category_en === 'Basics');
+      setLessonForm({ ...initialLessonForm, section_id: basicsSection?.id ?? null });
+      setPendingSectionValue(defaultSectionValue);
     }
     setShowMaterialPreview(false);
     setLessonDialogOpen(true);
@@ -997,27 +1093,23 @@ const AdminCourses = () => {
 
     try {
       setSaving(true);
+      // เลือกหมวดหมู่ที่คอร์สยังไม่มีกล่อง → เพิ่งมาสร้างตอนนี้ ไม่ใช่ตอนกดเลือก
+      // (กดยกเลิกกลางทางจะได้ไม่มีหมวดเปล่าค้างในคอร์ส)
+      const courseId = editingLesson ? editingLesson.course_id : selectedCourseForLesson!.id;
+      const sectionId = await resolveSectionValue(courseId, pendingSectionValue);
       const materials = lessonForm.materials.filter((m) =>
         // html rows are valid with inline content (legacy) OR an uploaded S3 file (url)
         m.type === 'html' ? Boolean((m.content || '').trim() || (m.url || '').trim()) : m.url.trim()
       );
       if (editingLesson) {
-        await api.updateLesson(editingLesson.id, {
-          ...lessonForm,
-          materials,
-          section_id: lessonForm.section_id || null
-        });
+        await api.updateLesson(editingLesson.id, { ...lessonForm, materials, section_id: sectionId });
         toast.success('Success: Lesson updated successfully');
       } else {
-        await api.createLesson(selectedCourseForLesson!.id, {
-          ...lessonForm,
-          materials,
-          section_id: lessonForm.section_id || null
-        });
+        await api.createLesson(selectedCourseForLesson!.id, { ...lessonForm, materials, section_id: sectionId });
         toast.success('Success: Lesson created successfully');
       }
       if (andAddAnother && !editingLesson) {
-        setLessonForm({ ...initialLessonForm, section_id: lessonForm.section_id });
+        setLessonForm({ ...initialLessonForm, section_id: sectionId });
         setShowMaterialPreview(false);
         // Straight back to typing the next lesson title.
         setTimeout(() => lessonTitleRef.current?.focus(), 50);
@@ -1071,25 +1163,29 @@ const AdminCourses = () => {
   };
 
   // Section CRUD
-  const handleOpenSectionDialog = (course: Course, section?: Section) => {
+  // เปิดได้เฉพาะโหมดแก้ไข — การสร้างหมวดใหม่ไม่มีแล้ว บทเรียนเลือกหมวดหมู่กลางตรงๆ
+  // แล้วระบบสร้างกล่องให้เอง (ดู ensureSectionForCategory)
+  const handleOpenSectionDialog = (course: Course, section: Section) => {
     setSelectedCourseForSection(course);
-    if (section) {
-      setEditingSection(section);
-      setSectionForm({
-        title: section.title,
-        description: section.description || '',
-        mode: section.mode ?? 'basic',
-      });
-    } else {
-      setEditingSection(null);
-      setSectionForm(initialSectionForm);
-    }
+    setEditingSection(section);
+    setSectionForm({
+      title: section.title || '',
+      description: section.description || '',
+      mode: section.mode ?? 'basic',
+      category_id: section.category_id ?? null,
+    });
     setSectionDialogOpen(true);
   };
 
   const handleSaveSection = async () => {
-    if (!sectionForm.title) {
-      toast.error('Error: Title is required');
+    // หมวดใหม่ = ต้องมาจากถังหมวดหมู่กลางเท่านั้น ไม่มีทางพิมพ์ชื่อเองแล้ว
+    // (หมวดเก่าที่ยังใช้ชื่อพิมพ์เองไว้ ยังแก้คำอธิบาย/โหมดได้ ไม่บังคับให้ย้ายทันที)
+    if (!sectionForm.category_id && !editingSection) {
+      toast.error('ต้องเลือกหมวดหมู่ — ถ้ายังไม่มี ไปเพิ่มที่ปุ่ม 📂 จัดการหมวดหมู่ ก่อน');
+      return;
+    }
+    if (!sectionForm.category_id && !sectionForm.title.trim()) {
+      toast.error('ต้องเลือกหมวดหมู่');
       return;
     }
 
@@ -1113,7 +1209,7 @@ const AdminCourses = () => {
 
   const handleDeleteSection = (section: Section) => {
     setConfirmState({
-      title: `ลบหมวด "${section.title}"?`,
+      title: `ลบหมวด "${sectionLabel(section, language)}"?`,
       description: 'บทเรียนในหมวดนี้จะไม่ถูกลบ แต่จะกลายเป็น "ไม่มีหมวด"',
       onConfirm: async () => {
         try {
@@ -1148,10 +1244,58 @@ const AdminCourses = () => {
     }
   };
 
-  const handleAssignLessonToSection = async (lesson: Lesson, sectionId: number | null) => {
+  /** หมวดหมู่ "พื้นฐาน" — ค่าเริ่มต้นของทุกบทเรียนที่ยังไม่ได้เลือกหมวดเอง */
+  const basicsCategory = categories.find((c) => c.name_en === 'Basics');
+  const defaultSectionValue = basicsCategory ? `cat:${basicsCategory.id}` : '';
+
+  /**
+   * ค่าจาก dropdown หมวดของบทเรียน: 'cat:<category_id>' | 'sec:<section_id>'
+   * เลือกหมวดหมู่กลางที่คอร์สยังไม่มีกล่อง → สร้างกล่องให้ก่อนแล้วค่อยย้ายบทเข้าไป
+   * (ไม่มีทางเลือก "ไม่จัดหมวด" แล้ว — ทุกบทต้องอยู่ในหมวดเสมอ)
+   */
+  const resolveSectionValue = async (courseId: number, value: string): Promise<number | null> => {
+    if (!value) return null;
+    if (value.startsWith('cat:')) return ensureSectionForCategory(courseId, Number(value.slice(4)));
+    return Number(value.slice(4));
+  };
+
+  /** ค่าที่ dropdown ควรโชว์อยู่ตอนนี้ — กล่องที่ผูกหมวดหมู่แล้วแสดงเป็น cat: จะได้ตรงกับรายการ */
+  const sectionValueOf = (courseId: number, sectionId: number | null | undefined): string =>
+    valueForSection(courseSections[courseId] || [], sectionId, defaultSectionValue);
+
+  /**
+   * รายการตัวเลือกหมวดของบทเรียน — หมวดหมู่กลางทั้งถัง (เลือกแล้วสร้างกล่องให้เอง)
+   * ส่วนกลุ่มล่างมีไว้เผื่อกล่องเก่าที่ยังไม่ผูกหมวดหมู่ ปกติหลัง migration จะไม่มีแล้ว
+   */
+  const renderSectionOptions = (courseId: number) => {
+    const loose = (courseSections[courseId] || []).filter((s) => !s.category_id);
+    return (
+      <>
+        <SelectGroup>
+          <SelectLabel>หมวดหมู่</SelectLabel>
+          {categories.map((c) => (
+            <SelectItem key={`cat-${c.id}`} value={`cat:${c.id}`}>
+              {language === 'en' ? c.name_en : c.name_th}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+        {loose.length > 0 && (
+          <SelectGroup>
+            <SelectLabel>หมวดเฉพาะของคอร์สนี้</SelectLabel>
+            {loose.map((s) => (
+              <SelectItem key={`sec-${s.id}`} value={`sec:${s.id}`}>{sectionLabel(s, language)}</SelectItem>
+            ))}
+          </SelectGroup>
+        )}
+      </>
+    );
+  };
+
+  const handleAssignLessonToSection = async (lesson: Lesson, value: string) => {
     try {
+      const sectionId = await resolveSectionValue(lesson.course_id, value);
       await api.updateLesson(lesson.id, { section_id: sectionId });
-      toast.success(sectionId ? 'Success: Lesson assigned to section' : 'Success: Lesson unassigned from section');
+      toast.success('ย้ายบทเรียนเข้าหมวดแล้ว');
       loadCourseLessons(lesson.course_id);
       loadCourseSections(lesson.course_id);
     } catch (error: any) {
@@ -1218,8 +1362,14 @@ const AdminCourses = () => {
               )}
               {syncingMissing ? 'กำลังดึงซับ...' : 'ดึงซับที่ยังไม่มี'}
             </Button>
-            <Button onClick={() => setTagDialogOpen(true)} variant="outline" title="จัดการชื่อย่อที่ขึ้นเมนู Tip/Course บน header">
-              🏷️ จัดการ Tag
+            <Button onClick={() => setTagDialogKind('course')} variant="outline" title="ชื่อย่อของคอร์สที่ขึ้นเมนู Course บน header (และเป็นกุญแจให้ Tip มาเกาะ)">
+              🏷️ Tag Course
+            </Button>
+            <Button onClick={() => setTagDialogKind('tip')} variant="outline" title="ชื่อย่อของทิปที่ขึ้นเมนู Tip บน header และเป็นชื่อแท็บในหน้าคอร์ส">
+              🏷️ Tag Tip
+            </Button>
+            <Button onClick={() => setCategoryDialogOpen(true)} variant="outline" title="ถังหมวดหมู่กลาง 2 ภาษา ที่ทุกคอร์สเลือกไปตั้งเป็นชื่อหมวด">
+              📂 จัดการหมวดหมู่
             </Button>
             <Button onClick={() => navigate('/admin/enrollments')} variant="outline">
               <Users className="h-4 w-4 mr-2" />
@@ -1378,10 +1528,6 @@ const AdminCourses = () => {
                             <Pencil className="h-4 w-4 mr-1" />
                             แก้ไข
                           </Button>
-                          <Button size="sm" variant="outline" onClick={() => handleOpenSectionDialog(course)}>
-                            <Layers className="h-4 w-4 mr-1" />
-                            เพิ่มหมวด
-                          </Button>
                           <Button size="sm" variant="outline" onClick={() => handleOpenLessonDialog(course)}>
                             <Plus className="h-4 w-4 mr-1" />
                             เพิ่มบทเรียน
@@ -1459,18 +1605,13 @@ const AdminCourses = () => {
                             </TableCell>
                             <TableCell>
                               <Select
-                                value={lesson.section_id?.toString() || 'none'}
-                                onValueChange={(value) => handleAssignLessonToSection(lesson, value === 'none' ? null : parseInt(value))}
+                                value={sectionValueOf(course.id, lesson.section_id)}
+                                onValueChange={(value) => handleAssignLessonToSection(lesson, value)}
                               >
-                                <SelectTrigger className="w-28 h-8 text-xs">
+                                <SelectTrigger className="w-36 h-8 text-xs">
                                   <SelectValue />
                                 </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="none">ไม่จัดหมวด</SelectItem>
-                                  {sections.map((s) => (
-                                    <SelectItem key={s.id} value={s.id.toString()}>{s.title}</SelectItem>
-                                  ))}
-                                </SelectContent>
+                                <SelectContent>{renderSectionOptions(course.id)}</SelectContent>
                               </Select>
                             </TableCell>
                             <TableCell>
@@ -1509,7 +1650,7 @@ const AdminCourses = () => {
                             {sections.length > 0 && (
                               <div className="flex items-start gap-2 text-xs text-gray-400 bg-gray-800/40 border border-gray-700 rounded-md px-3 py-2">
                                 <Layers className="h-4 w-4 text-purple-400 flex-shrink-0 mt-0.5" />
-                                <span>เนื้อหาแบ่งเป็น 2 โหมด: หมวด <b className="text-slate-300">พื้นฐาน</b> กับ <b className="text-amber-400">อัพเดท</b> จะแยกเป็น 2 แท็บให้ผู้เรียน (ตั้งโหมดในปุ่มแก้ไขหมวด) — บทเรียนที่ "ไม่จัดหมวด" จะอยู่แท็บพื้นฐาน</span>
+                                <span>เนื้อหาแบ่งเป็น 2 โหมด: หมวด <b className="text-slate-300">พื้นฐาน</b> กับ <b className="text-amber-400">อัพเดท</b> จะแยกเป็น 2 แท็บให้ผู้เรียน (ตั้งโหมดในปุ่มแก้ไขหมวด) — บทเรียนใหม่ลงหมวดหมู่ <b className="text-slate-300">พื้นฐาน</b> ให้อัตโนมัติ</span>
                               </div>
                             )}
                             {/* Sections with Lessons */}
@@ -1541,7 +1682,7 @@ const AdminCourses = () => {
                                         </Button>
                                       </div>
                                       <FolderOpen className="h-4 w-4 text-purple-400" />
-                                      <span className="text-white font-medium">{section.title}</span>
+                                      <span className="text-white font-medium">{sectionLabel(section, language)}</span>
                                       <Badge className={`text-xs ${section.mode === 'update' ? 'bg-amber-500/15 text-amber-400 border-amber-500/30' : 'bg-slate-500/15 text-slate-300 border-slate-500/30'}`}>
                                         {section.mode === 'update' ? 'อัพเดท' : 'พื้นฐาน'}
                                       </Badge>
@@ -1585,7 +1726,8 @@ const AdminCourses = () => {
                               <div className="border border-gray-700 rounded-lg overflow-hidden">
                                 <div className="bg-gray-800/30 px-4 py-3 flex items-center gap-3">
                                   <BookOpen className="h-4 w-4 text-gray-400" />
-                                  <span className="text-gray-300 font-medium">ไม่จัดหมวด</span>
+                                  {/* ปกติไม่ควรมีแล้ว (ทุกบทลงหมวดเสมอ) — เหลือไว้กันข้อมูลแปลกปลอมหาย */}
+                                  <span className="text-gray-300 font-medium">ยังไม่มีหมวด</span>
                                   <Badge variant="secondary" className="text-xs">{unassignedLessons.length} บท</Badge>
                                 </div>
                                 <Table>
@@ -1802,7 +1944,7 @@ const AdminCourses = () => {
                 <Label>ประเภทคอนเทนต์</Label>
                 <Select
                   value={courseForm.content_type}
-                  onValueChange={(value) => setCourseForm({ ...courseForm, content_type: value === 'tip' ? 'tip' : 'course' })}
+                  onValueChange={(value) => setCourseForm({ ...courseForm, content_type: value === 'tip' ? 'tip' : 'course', tip_tag_id: value === 'tip' ? courseForm.tip_tag_id : null })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -1816,8 +1958,8 @@ const AdminCourses = () => {
               <div>
                 <Label>
                   🏷️ {courseForm.content_type === 'tip'
-                    ? 'Link Tag (เลือก tag เดียวกับคอร์สแม่ = Tip นี้เกาะกับคอร์สนั้น)'
-                    : 'Tag (ชื่อย่อที่ขึ้นในเมนู Course บน header)'}
+                    ? 'Link Tag Course (เลือก tag เดียวกับคอร์สแม่ = Tip นี้เกาะกับคอร์สนั้น)'
+                    : 'Tag Course (ชื่อย่อที่ขึ้นในเมนู Course บน header)'}
                 </Label>
                 <div className="flex items-center gap-2 mt-1.5">
                   <Select
@@ -1829,25 +1971,46 @@ const AdminCourses = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">— ไม่มี tag —</SelectItem>
-                      {tags.map((t) => (
+                      {courseTags.map((t) => (
                         <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button type="button" variant="outline" size="sm" onClick={handleQuickCreateTag} title="สร้าง tag ใหม่">
+                  <Button type="button" variant="outline" size="sm" onClick={() => handleQuickCreateTag('course')} title="สร้าง Tag Course ใหม่">
                     <Plus className="h-4 w-4" />
                   </Button>
                 </div>
+                {/* เคยพลาดมาแล้ว: ทิปเลือก tag ที่ไม่มีคอร์สไหนใช้ เลยไม่เกาะกับอะไรเลยแบบเงียบๆ */}
+                {courseForm.content_type === 'tip' && courseForm.tag_id !== null &&
+                  !courses.some((c) => c.content_type !== 'tip' && c.tag_id === courseForm.tag_id) && (
+                  <p className="text-xs text-yellow-300/90 mt-1.5">
+                    ⚠️ ยังไม่มีคอร์สไหนใช้ tag นี้ → Tip นี้จะไม่เกาะกับคอร์สใดเลย
+                    (ไปตั้ง Tag Course ของคอร์สแม่ให้เป็นตัวเดียวกันก่อน)
+                  </p>
+                )}
               </div>
               {courseForm.content_type === 'tip' && (
                 <div>
-                  <Label>🏷️ Tag Name ของ Tip (ชื่อย่อสั้นๆ ที่แสดงในเมนู Tip และชื่อ tab — สั้นกว่า title)</Label>
-                  <Input
-                    value={courseForm.tag_name}
-                    onChange={(e) => setCourseForm({ ...courseForm, tag_name: e.target.value.slice(0, 40) })}
-                    placeholder='เช่น "FLUX 3", "Monsoon Clash" (เว้นว่าง = ใช้ชื่อเต็มตัดสั้น)'
-                    className="mt-1.5"
-                  />
+                  <Label>🏷️ Tag Tip (ชื่อย่อสั้นๆ ที่แสดงในเมนู Tip และชื่อ tab — สั้นกว่า title)</Label>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <Select
+                      value={courseForm.tip_tag_id === null ? 'none' : String(courseForm.tip_tag_id)}
+                      onValueChange={(v) => setCourseForm({ ...courseForm, tip_tag_id: v === 'none' ? null : Number(v) })}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="— ไม่มี Tag Tip (ใช้ชื่อเต็มตัดสั้น) —" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— ไม่มี Tag Tip (ใช้ชื่อเต็มตัดสั้น) —</SelectItem>
+                        {tipTags.map((t) => (
+                          <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="outline" size="sm" onClick={() => handleQuickCreateTag('tip')} title="สร้าง Tag Tip ใหม่">
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-4">
@@ -2051,19 +2214,18 @@ const AdminCourses = () => {
                   />
                 </div>
                 <div>
-                  <Label>หมวดหมู่</Label>
+                  {/* เลือก "หมวดของคอร์สนี้" ไม่ใช่หมวดหมู่กลาง — หมวดหมู่กลางใช้ตั้งชื่อหมวด
+                      อีกทีหนึ่งในฟอร์มหมวด ตั้งชื่อ label ให้ต่างกันจะได้ไม่สับสน */}
+                  <Label>หมวดในคอร์สนี้</Label>
                   <Select
-                    value={lessonForm.section_id?.toString() || 'none'}
-                    onValueChange={(value) => setLessonForm({ ...lessonForm, section_id: value === 'none' ? null : parseInt(value) })}
+                    value={pendingSectionValue}
+                    onValueChange={setPendingSectionValue}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="เลือกหมวด" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">ไม่จัดหมวด</SelectItem>
-                      {selectedCourseForLesson && (courseSections[selectedCourseForLesson.id] || []).map((s) => (
-                        <SelectItem key={s.id} value={s.id.toString()}>{s.title}</SelectItem>
-                      ))}
+                      {selectedCourseForLesson && renderSectionOptions(selectedCourseForLesson.id)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -2499,24 +2661,26 @@ const AdminCourses = () => {
           </DialogContent>
         </Dialog>
 
-        {/* จัดการ Tag — ชื่อย่อที่ขึ้นเมนู Tip/Course บน header */}
-        <Dialog open={tagDialogOpen} onOpenChange={setTagDialogOpen}>
+        {/* จัดการ Tag — ถังคอร์สกับถังทิปแยกกัน ใช้ dialog ตัวเดียวคนละ kind */}
+        <Dialog open={tagDialogKind !== null} onOpenChange={(o) => { if (!o) { setTagDialogKind(null); setNewTagName(''); } }}>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>🏷️ จัดการ Tag</DialogTitle>
+              <DialogTitle>🏷️ จัดการ {tagDialogKind === 'tip' ? 'Tag Tip' : 'Tag Course'}</DialogTitle>
             </DialogHeader>
             <p className="text-xs text-gray-400 -mt-1">
-              Tag = ชื่อย่อที่แสดงในเมนู Course/Tip บน header · Tip ที่ใช้ tag เดียวกับคอร์ส = เกาะกับคอร์สนั้น
+              {tagDialogKind === 'tip'
+                ? 'ชื่อย่อของ Tip เอง — ขึ้นเป็นป้ายในเมนู Tip บน header และเป็นชื่อแท็บในหน้าคอร์ส'
+                : 'ชื่อย่อของคอร์ส — ขึ้นเป็นป้ายในเมนู Course บน header และเป็นกุญแจให้ Tip มาเกาะ (Tip ที่เลือก Link Tag Course ตัวเดียวกัน = เกาะคอร์สนั้น)'}
             </p>
             <div className="flex items-center gap-2">
               <Input
                 value={newTagName}
                 onChange={(e) => setNewTagName(e.target.value)}
-                placeholder="ชื่อ tag ใหม่ เช่น Gemini"
+                placeholder={tagDialogKind === 'tip' ? 'ชื่อ Tag Tip ใหม่ เช่น Monsoon Clash' : 'ชื่อ Tag Course ใหม่ เช่น Gemini'}
                 onKeyDown={async (e) => {
                   if (e.key === 'Enter' && newTagName.trim()) {
                     try {
-                      await api.createTag(newTagName.trim());
+                      await api.createTag(newTagName.trim(), tagDialogKind ?? 'course');
                       setNewTagName('');
                       loadTags();
                     } catch (err: any) {
@@ -2531,7 +2695,7 @@ const AdminCourses = () => {
                 disabled={!newTagName.trim()}
                 onClick={async () => {
                   try {
-                    await api.createTag(newTagName.trim());
+                    await api.createTag(newTagName.trim(), tagDialogKind ?? 'course');
                     setNewTagName('');
                     loadTags();
                   } catch (err: any) {
@@ -2543,13 +2707,15 @@ const AdminCourses = () => {
               </Button>
             </div>
             <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
-              {tags.length === 0 ? (
-                <p className="text-center text-gray-500 text-sm py-6">ยังไม่มี tag</p>
+              {(tagDialogKind === 'tip' ? tipTags : courseTags).length === 0 ? (
+                <p className="text-center text-gray-500 text-sm py-6">
+                  ยังไม่มี {tagDialogKind === 'tip' ? 'Tag Tip' : 'Tag Course'}
+                </p>
               ) : (
-                tags.map((t) => (
+                (tagDialogKind === 'tip' ? tipTags : courseTags).map((t) => (
                   <div key={t.id} className="flex items-center gap-2 rounded-md border border-gray-800 px-3 py-2">
                     <span className="flex-1 text-sm text-white">{t.name}</span>
-                    <span className="text-xs text-gray-500">{t.course_count || 0} รายการ</span>
+                    <span className="text-xs text-gray-500">{t.usage_count || 0} รายการ</span>
                     <Button size="sm" variant="ghost" className="text-red-400 hover:text-red-300 h-7 px-2" onClick={() => handleDeleteTag(t)}>
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -2560,21 +2726,165 @@ const AdminCourses = () => {
           </DialogContent>
         </Dialog>
 
+        {/* จัดการหมวดหมู่กลาง — ถังเดียวที่ทุกคอร์สเลือกไปตั้งเป็นชื่อหมวด เก็บ 2 ภาษา */}
+        <Dialog
+          open={categoryDialogOpen}
+          onOpenChange={(o) => {
+            setCategoryDialogOpen(o);
+            if (!o) { setNewCategory({ en: '', th: '' }); setEditingCategoryId(null); }
+          }}
+        >
+          <DialogContent className="max-w-xl">
+            <DialogHeader>
+              <DialogTitle>📂 จัดการหมวดหมู่</DialogTitle>
+            </DialogHeader>
+            <p className="text-xs text-gray-400 -mt-1">
+              ชื่อหมวดในคอร์สเลือกจากถังนี้ — เก็บทั้งไทยและอังกฤษ หน้าเว็บจะสลับให้เองตามภาษาที่ผู้เรียนเลือก
+            </p>
+
+            <div className="flex items-center gap-2">
+              <Input
+                value={newCategory.en}
+                onChange={(e) => setNewCategory({ ...newCategory, en: e.target.value })}
+                placeholder="English เช่น Video Generation"
+                className="flex-1"
+              />
+              <Input
+                value={newCategory.th}
+                onChange={(e) => setNewCategory({ ...newCategory, th: e.target.value })}
+                placeholder="ไทย เช่น สร้างวิดีโอ"
+                className="flex-1"
+              />
+              <Button
+                size="sm"
+                className="bg-purple-600 hover:bg-purple-700 shrink-0"
+                disabled={!newCategory.en.trim() || !newCategory.th.trim()}
+                onClick={async () => {
+                  try {
+                    await api.createCategory(newCategory.en.trim(), newCategory.th.trim());
+                    setNewCategory({ en: '', th: '' });
+                    loadCategories();
+                  } catch (err: any) {
+                    toast.error(err?.message || 'สร้างไม่สำเร็จ');
+                  }
+                }}
+              >
+                <Plus className="h-4 w-4 mr-1" /> เพิ่ม
+              </Button>
+            </div>
+
+            <div className="space-y-1.5 max-h-[50vh] overflow-y-auto">
+              {categories.length === 0 ? (
+                <p className="text-center text-gray-500 text-sm py-6">ยังไม่มีหมวดหมู่</p>
+              ) : (
+                categories.map((c) =>
+                  editingCategoryId === c.id ? (
+                    <div key={c.id} className="flex items-center gap-2 rounded-md border border-purple-500/50 px-3 py-2">
+                      <Input
+                        value={editingCategory.en}
+                        onChange={(e) => setEditingCategory({ ...editingCategory, en: e.target.value })}
+                        className="flex-1 h-8"
+                      />
+                      <Input
+                        value={editingCategory.th}
+                        onChange={(e) => setEditingCategory({ ...editingCategory, th: e.target.value })}
+                        className="flex-1 h-8"
+                      />
+                      <Button
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700 h-8 px-2 shrink-0"
+                        disabled={!editingCategory.en.trim() || !editingCategory.th.trim()}
+                        onClick={async () => {
+                          try {
+                            await api.updateCategory(c.id, {
+                              name_en: editingCategory.en.trim(),
+                              name_th: editingCategory.th.trim(),
+                            });
+                            setEditingCategoryId(null);
+                            await loadCategories();
+                            loadCourses();
+                            toast.success('แก้ไขหมวดหมู่แล้ว');
+                          } catch (err: any) {
+                            toast.error(err?.message || 'แก้ไขไม่สำเร็จ');
+                          }
+                        }}
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-8 px-2 shrink-0" onClick={() => setEditingCategoryId(null)}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div key={c.id} className="flex items-center gap-2 rounded-md border border-gray-800 px-3 py-2">
+                      <span className="flex-1 text-sm text-white truncate">{c.name_th}</span>
+                      <span className="flex-1 text-sm text-gray-400 truncate">{c.name_en}</span>
+                      <span className="text-xs text-gray-500 shrink-0">{c.usage_count || 0} หมวด</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-2 shrink-0"
+                        onClick={() => { setEditingCategoryId(c.id); setEditingCategory({ en: c.name_en, th: c.name_th }); }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-red-400 hover:text-red-300 h-7 px-2 shrink-0"
+                        onClick={() => handleDeleteCategory(c)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )
+                )
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Section Dialog */}
         <Dialog open={sectionDialogOpen} onOpenChange={setSectionDialogOpen}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>{editingSection ? 'แก้ไขหมวดหมู่' : 'สร้างหมวดหมู่ใหม่'}</DialogTitle>
+              <DialogTitle>ตั้งค่าหมวด</DialogTitle>
             </DialogHeader>
             <div className="space-y-4">
               <div>
-                <Label>ชื่อหมวดหมู่ *</Label>
-                <Input
-                  value={sectionForm.title}
-                  onChange={(e) => setSectionForm({ ...sectionForm, title: e.target.value })}
-                  placeholder="เช่น บทนำ, หลักการพื้นฐาน, ฝึกปฏิบัติ"
-                />
+                <Label>📂 หมวดหมู่</Label>
+                <p className="text-xs text-gray-500 mt-0.5 mb-1">
+                  เลือกจากถังกลาง — ชื่อจะสลับไทย/อังกฤษตามภาษาที่ผู้เรียนเลือกให้เอง
+                </p>
+                <Select
+                  value={sectionForm.category_id === null ? 'none' : String(sectionForm.category_id)}
+                  onValueChange={(v) => setSectionForm({ ...sectionForm, category_id: v === 'none' ? null : Number(v) })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="— ยังไม่ผูกหมวดหมู่ —" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— ยังไม่ผูกหมวดหมู่ —</SelectItem>
+                    {categories.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name_th} · {c.name_en}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+              {/* ชื่อหมวดมาจากถังหมวดหมู่อย่างเดียว — อยากได้ชื่อใหม่ต้องไปเพิ่มที่
+                  "📂 จัดการหมวดหมู่" ก่อน (หรือกดปุ่ม + ข้างบน ซึ่งเพิ่มลงถังเดียวกัน)
+                  ช่องพิมพ์ชื่อเองถูกถอดออกแล้ว ไม่งั้นชื่อหมวดจะกระจัดกระจายเหมือนเดิม */}
+              {sectionForm.category_id === null && sectionForm.title.trim() && (
+                <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-3 py-2">
+                  <p className="text-xs text-yellow-200/90">
+                    ⚠️ หมวดนี้ยังใช้ชื่อเดิมที่พิมพ์ไว้: <b className="text-yellow-100">{sectionForm.title}</b>
+                    <br />เลือกหมวดหมู่ด้านบนเพื่อเปลี่ยนมาใช้ชื่อจากถังกลาง (สลับไทย/อังกฤษได้)
+                    — ถ้ายังไม่มีหมวดหมู่ที่ต้องการ ไปเพิ่มที่ปุ่ม 📂 จัดการหมวดหมู่ ก่อน
+                  </p>
+                </div>
+              )}
               <div>
                 <Label>คำอธิบาย (ไม่บังคับ)</Label>
                 <Textarea

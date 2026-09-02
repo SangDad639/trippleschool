@@ -48,9 +48,9 @@ function fetchCoursesOnce(): Promise<BrowseCourse[]> {
   return coursesCachePromise;
 }
 
-/** ป้ายในเมนูย่อย: Tip ใช้ tag_name ของตัวเองก่อน (สั้นสุด) → tag (link) → title ตัดสั้น */
+/** ป้ายในเมนูย่อย: Tip ใช้ Tag Tip ของตัวเองก่อน (สั้นสุด) → Tag Course (link) → title ตัดสั้น */
 function menuLabel(c: BrowseCourse): string {
-  if (c.tag_name) return c.tag_name;
+  if (c.tip_tag) return c.tip_tag;
   if (c.tag) return c.tag;
   return c.name.length > 26 ? `${c.name.slice(0, 26)}…` : c.name;
 }
@@ -202,11 +202,11 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
               const items = menuCourses.filter(
                 (c) => (c.content_type === 'tip' ? 'tip' : 'course') === hoverKind
               );
-              // tip ที่ไม่มี tag_name ของตัวเองแต่ link tag ซ้ำกัน — เติม title กันแยกไม่ออก
+              // tip ที่ไม่มี Tag Tip ของตัวเองแต่ link tag ซ้ำกัน — เติม title กันแยกไม่ออก
               const tagCounts: Record<string, number> = {};
-              for (const c of items) if (!c.tag_name && c.tag) tagCounts[c.tag] = (tagCounts[c.tag] || 0) + 1;
+              for (const c of items) if (!c.tip_tag && c.tag) tagCounts[c.tag] = (tagCounts[c.tag] || 0) + 1;
               const labelFor = (c: BrowseCourse) =>
-                !c.tag_name && c.tag && tagCounts[c.tag] > 1 ? `${c.tag} — ${c.name.slice(0, 18)}…` : menuLabel(c);
+                !c.tip_tag && c.tag && tagCounts[c.tag] > 1 ? `${c.tag} — ${c.name.slice(0, 18)}…` : menuLabel(c);
               return (
                 <div
                   key={item.to}

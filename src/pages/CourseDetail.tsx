@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { sectionLabel } from '@/lib/sectionLabel';
 import { smoothScrollToElement } from '@/lib/smoothScrollToElement';
+import { shareLink } from '@/lib/shareLink';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import PublicHeader from '@/components/PublicHeader';
 import AgentChatWidget from '@/components/AgentChatWidget';
 import CoursePrice from '@/components/CoursePrice';
@@ -34,8 +37,8 @@ import {
   CheckCircle,
   XCircle,
   ArrowLeft,
-  GraduationCap,
   FolderOpen,
+  GraduationCap,
   Star,
   Users,
   Upload,
@@ -61,6 +64,8 @@ interface Lesson {
   lesson_order: number;
   is_preview: boolean;
   section_id: number | null;
+  /** รหัสลิงก์สั้นของบทนี้ — ลิงก์แชร์ = /app/courses/{share_code} */
+  share_code?: string | null;
 }
 
 interface Section {
@@ -68,6 +73,10 @@ interface Section {
   title: string;
   description: string;
   section_order: number;
+  /** หมวดหมู่กลาง (2 ภาษา) — มาก่อน title เสมอถ้าเลือกไว้ */
+  category_id?: number | null;
+  category_en?: string | null;
+  category_th?: string | null;
   mode?: 'basic' | 'update';
   lessons: Lesson[];
 }
@@ -119,6 +128,7 @@ interface RelatedTip {
   tag_id?: number | null;
   /** ชื่อย่อของ Tip เอง — ใช้เป็นชื่อ tab (สั้นกว่า title) */
   tag_name?: string | null;
+  tip_tag?: string | null;
 }
 interface TipTabData {
   loading: boolean;
@@ -129,6 +139,8 @@ interface TipTabData {
 /** บริบทของแถวบทเรียน — คอร์สแม่กับ Tip แต่ละตัวมี slug/สิทธิ์/ความคืบหน้าของตัวเอง */
 interface LessonRowCtx {
   slug: string;
+  /** ตัวอ้างอิงสำหรับลิงก์แชร์ — รหัสสั้นถ้ามี ไม่มีค่อย slug (สั้นกว่า/หน้าตาดีกว่า) */
+  shareRef: string;
   hasAccess: boolean;
   enrollment: Enrollment | null;
 }
@@ -162,6 +174,7 @@ const CourseDetail = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { language } = useLanguage();
   const isAuthenticated = !!user;
   const [course, setCourse] = useState<Course | null>(null);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
@@ -189,14 +202,20 @@ const CourseDetail = () => {
   // แชร์คอร์ส: ลิงก์สั้น /courses/{share_code} (คอร์สเก่าที่ยังไม่มีรหัสตกไปใช้ slug)
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  // แชร์รายบท (ไอคอนบนแถว EP) — บทไหนเพิ่งคัดลอกได้ติ๊ก 2 วิ
+  const [sharedLessonId, setSharedLessonId] = useState<number | null>(null);
 
   // มาจากการ์ดที่โชว์ปกคลิปล่าสุด (?ep=latest) → เลื่อนไปที่แถวของคลิปนั้นแล้วไฮไลต์ไว้
   // ไม่งั้นผู้ใช้ต้องไล่เลื่อนหาเองในคอร์สที่มี 20 บท
   const [highlightLessonId, setHighlightLessonId] = useState<number | null>(null);
 
-  // Tip ที่เกาะคอร์สนี้ผ่าน tag เดียวกัน → แสดงเป็น tab ต่อจาก "พื้นฐาน"
+  // Tip ที่เกาะคอร์สนี้ผ่าน tag เดียวกัน → เป็นแท็บต่อท้ายแท็บหมวด
   const [relatedTips, setRelatedTips] = useState<RelatedTip[]>([]);
   const [tipData, setTipData] = useState<Record<number, TipTabData>>({});
+
+  // แท็บเนื้อหาที่เลือกอยู่ (null = แท็บแรก) — ต้อง controlled เพราะ ?ep= ต้องสลับแท็บ
+  // ไปหาบทเป้าหมายให้เองก่อนเลื่อน ไม่งั้นบทที่อยู่แท็บอื่นจะหาไม่เจอ (ไม่ถูก mount)
+  const [contentTab, setContentTab] = useState<string | null>(null);
 
   // Reviews (public read).
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -205,6 +224,7 @@ const CourseDetail = () => {
 
   useEffect(() => {
     if (slug) {
+      setContentTab(null); // เปลี่ยนคอร์ส → กลับไปแท็บแรกของคอร์สใหม่ ไม่จำแท็บของคอร์สก่อน
       loadCourse();
       loadReviews();
     }
@@ -247,6 +267,11 @@ const CourseDetail = () => {
       : Number(ep);
     if (!targetId) return;
     setHighlightLessonId(targetId);
+    // บทเป้าหมายอาจอยู่แท็บอื่น (แต่ละหมวดเป็นแท็บของตัวเอง) — สลับแท็บให้ก่อน
+    // ไม่งั้นแถวไม่ถูก mount แล้วตัวเลื่อนหาไม่เจอ เลิกรอไปเงียบๆ
+    const holder = course.sections?.find((s) => (s.lessons || []).some((l) => l.id === targetId));
+    if (holder) setContentTab(`sec-${holder.id}`);
+    else if ((course.unassigned_lessons || []).some((l) => l.id === targetId)) setContentTab('misc');
     // ยูทิลรอให้หน้านิ่งก่อนแล้วค่อยเลื่อนเองทีละเฟรม — สั่ง scrollIntoView({behavior:'smooth'})
     // ตรงนี้ไม่ได้ผล เพราะตอนหน้าเพิ่งโหลดเบราว์เซอร์ไม่มีเฟรมว่างให้อนิเมต เลยกระโดดถึงเลย
     let clear: ReturnType<typeof setTimeout> | undefined;
@@ -566,10 +591,22 @@ const CourseDetail = () => {
         <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
           <BookOpen className="h-20 w-20 text-gray-600" />
         </div>
+        {/* hero ใช้ "ปกสำรอง" ที่แอดมินอัปในฟอร์มคอร์สก่อน — ไม่มี/รูปเสีย ค่อยตกไปใช้
+            ปกวิดีโอล่าสุด (การ์ดหน้า /courses, Billboard, og:image ยังใช้ปกวิดีโอล่าสุดเหมือนเดิม) */}
         <img
-          src={api.courseCoverUrl(course, 'hero')}
+          src={course.thumbnail_url
+            ? api.mediaUrl(course.thumbnail_url, 'hero')
+            : api.courseCoverUrl(course, 'hero')}
           alt={course.name}
-          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          onError={(e) => {
+            const img = e.target as HTMLImageElement;
+            const fallback = api.courseCoverUrl(course, 'hero');
+            if (course.thumbnail_url && img.src !== fallback) {
+              img.src = fallback; // ปกสำรองเสีย → ลองปกวิดีโอล่าสุด
+            } else {
+              img.style.display = 'none'; // พังทั้งคู่ → เหลือพื้นเทา+ไอคอนหนังสือ
+            }
+          }}
           className="absolute inset-0 w-full h-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />
@@ -834,7 +871,7 @@ const CourseDetail = () => {
               // Netflix-style episode row: video cover left (YouTube thumb via
               // our proxy — the video id never reaches the client), info right.
               // ctx = คอร์สแม่หรือ Tip แต่ละตัว (คนละ slug/สิทธิ์/ความคืบหน้า)
-              const rowCtx: LessonRowCtx = { slug: course.slug, hasAccess: hasAccess || isFree, enrollment };
+              const rowCtx: LessonRowCtx = { slug: course.slug, shareRef: course.share_code || course.slug, hasAccess: hasAccess || isFree, enrollment };
               const renderLessonRow = (lesson: Lesson, index: number, ctx: LessonRowCtx = rowCtx) => {
                 const isCompleted = ctx.enrollment?.completed_lessons?.includes(lesson.id);
                 const locked = !lesson.is_preview && !ctx.hasAccess;
@@ -909,6 +946,31 @@ const CourseDetail = () => {
                         )}
                       </div>
                     </div>
+
+                    {/* แชร์ลิงก์ตรงเข้าวิดีโอบทนี้ — โชว์ตลอด มุมขวาล่างของแถว
+                        ต้อง stopPropagation ไม่งั้นชนกับ onClick ของแถวที่พาเข้าหน้าเรียน */}
+                    <button
+                      type="button"
+                      title="แชร์วิดีโอนี้"
+                      className="self-end shrink-0 p-2 -m-1 rounded-md text-gray-500 hover:text-white hover:bg-gray-700/60 transition-colors"
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        const result = await shareLink(
+                          lesson.share_code
+                            ? `${SITE_URL}/${lesson.share_code}`
+                            : `${SITE_URL}/app/courses/${ctx.shareRef}/learn/${lesson.id}`,
+                          lesson.title
+                        );
+                        if (result === 'copied') {
+                          setSharedLessonId(lesson.id);
+                          setTimeout(() => setSharedLessonId(null), 2000);
+                        }
+                      }}
+                    >
+                      {sharedLessonId === lesson.id
+                        ? <Check className="h-4 w-4 text-green-400" />
+                        : <Share2 className="h-4 w-4" />}
+                    </button>
                   </div>
                 );
               };
@@ -919,125 +981,105 @@ const CourseDetail = () => {
                 return { completedCount, totalDuration };
               };
 
-              // Accordion for an arbitrary list of sections (reused by both tabs).
-              const renderSectionAccordion = (list: Section[]) => (
-                <Accordion type="multiple" defaultValue={list.map(s => s.id.toString())} className="space-y-2">
-                  {list.map((section) => {
-                    const sectionLessons = section.lessons || [];
-                    const { completedCount, totalDuration } = getSectionStats(sectionLessons);
-                    return (
-                      <AccordionItem key={section.id} value={section.id.toString()} className="border border-gray-700 rounded-md overflow-hidden bg-gray-800/30">
-                        <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-gray-800/50">
-                          <div className="flex items-center justify-between gap-2 w-full mr-3 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <FolderOpen className="h-4 w-4 text-purple-400" />
-                              <div className="text-left">
-                                <h3 className="text-white text-sm font-medium">{section.title}</h3>
-                                {section.description && <p className="text-gray-400 text-xs">{section.description}</p>}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 text-gray-400 text-xs">
-                              <span>{sectionLessons.length} บท</span>
-                              {totalDuration > 0 && <span>{formatDuration(totalDuration)}</span>}
-                              {hasAccess && completedCount > 0 && (
-                                <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{completedCount}/{sectionLessons.length}</Badge>
-                              )}
-                            </div>
-                          </div>
-                        </AccordionTrigger>
-                        <AccordionContent className="px-3 pb-3 pt-1">
-                          <div className="space-y-1.5">
-                            {sectionLessons.length > 0 ? (
-                              sectionLessons.map((lesson, idx) => renderLessonRow(lesson, idx))
-                            ) : (
-                              <p className="text-gray-500 text-center py-2 text-xs">ยังไม่มีบทเรียนในหมวดนี้</p>
-                            )}
-                          </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    );
-                  })}
-                </Accordion>
-              );
-
-              const unassignedBlock = unassignedLessons.length > 0 ? (
-                <div className="border border-gray-700 rounded-md overflow-hidden bg-gray-800/20">
-                  <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700">
-                    <div className="flex items-center gap-2"><BookOpen className="h-4 w-4 text-gray-400" /><span className="text-gray-300 text-sm font-medium">บทเรียนอื่นๆ</span></div>
-                    <span className="text-gray-400 text-xs">{unassignedLessons.length} บท</span>
-                  </div>
-                  <div className="p-3 space-y-1.5">{unassignedLessons.map((lesson, idx) => renderLessonRow(lesson, idx))}</div>
-                </div>
-              ) : null;
-
-              // ---------- เนื้อหาของคอร์สนี้เอง (= tab "พื้นฐาน" เมื่อมี tip เกาะ) ----------
-              const basicContent = (() => {
-                if (allLessons.length === 0) {
-                  return <p className="text-gray-400 text-center py-8">ยังไม่มีบทเรียน</p>;
-                }
-                if (hasSections) {
-                  const basicSections = sections.filter(s => (s.mode ?? 'basic') === 'basic');
-                  const updateSections = sections.filter(s => s.mode === 'update');
-
-                  // No update sections → render exactly as before (no inner tabs).
-                  if (updateSections.length === 0) {
-                    return (
-                      <div className="space-y-2">
-                        {renderSectionAccordion(sections)}
-                        {unassignedBlock}
-                      </div>
-                    );
-                  }
-
-                  // Mixed basic/update → two inner tabs; unassigned lessons live under พื้นฐาน.
-                  return (
-                    <Tabs defaultValue="basic">
-                      <TabsList className="mb-3">
-                        <TabsTrigger value="basic">พื้นฐาน</TabsTrigger>
-                        <TabsTrigger value="update">อัพเดท</TabsTrigger>
-                      </TabsList>
-                      <TabsContent value="basic" className="mt-0 space-y-2">
-                        {renderSectionAccordion(basicSections)}
-                        {unassignedBlock}
-                      </TabsContent>
-                      <TabsContent value="update" className="mt-0 space-y-2">
-                        {renderSectionAccordion(updateSections)}
-                      </TabsContent>
-                    </Tabs>
-                  );
-                }
-                return <div className="space-y-1.5">{allLessons.map((lesson, index) => renderLessonRow(lesson, index))}</div>;
-              })();
-
-              // ไม่มี Tip เกาะ → หน้าตาเดิมทุกอย่าง ไม่มี tab bar
-              if (relatedTips.length === 0) return basicContent;
-
-              // มี Tip เกาะ (tag เดียวกัน) → tab นอก: "พื้นฐาน" + Tip แต่ละตัว
-              // ชื่อ tab = tag_name ของ tip เอง (admin ตั้ง) → ไม่มีค่อยตัด title
+              // ---------- แถบแท็บชั้นเดียว: หมวดทุกหมวดของคอร์ส + Tip ที่เกาะ ต่อท้ายกัน ----------
+              // (เดิมมี 2 ชั้น: แท็บนอก พื้นฐาน/ทิป ซ้อนแท็บใน พื้นฐาน/อัพเดท — ยุบเหลือชั้นเดียว
+              //  โหมดของหมวดจึงไม่มีผลกับหน้านี้แล้ว เพราะทุกหมวดเป็นแท็บของตัวเอง)
               const tipLabel = (t: RelatedTip) => {
-                if (t.tag_name) return t.tag_name;
+                if (t.tip_tag) return t.tip_tag;
                 const n = t.name.trim();
                 return n.length > 20 ? `${n.slice(0, 20)}…` : n;
               };
+
+              // กรอบหมวดหน้าตาเดิม (กล่องขอบ + ไอคอนโฟลเดอร์ + จำนวนบท + พับได้)
+              // แท็บละหนึ่งหมวด — เปิดกางมาให้ตั้งแต่แรก
+              const renderSectionCard = (section: Section) => {
+                const sectionLessons = section.lessons || [];
+                const { completedCount, totalDuration } = getSectionStats(sectionLessons);
+                return (
+                  <Accordion type="multiple" defaultValue={[section.id.toString()]} className="space-y-2">
+                    <AccordionItem value={section.id.toString()} className="border border-gray-700 rounded-md overflow-hidden bg-gray-800/30">
+                      <AccordionTrigger className="px-3 py-2 hover:no-underline hover:bg-gray-800/50">
+                        <div className="flex items-center justify-between gap-2 w-full mr-3 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <FolderOpen className="h-4 w-4 text-purple-400" />
+                            <div className="text-left">
+                              <h3 className="text-white text-sm font-medium">{sectionLabel(section, language)}</h3>
+                              {section.description && <p className="text-gray-400 text-xs">{section.description}</p>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 text-gray-400 text-xs">
+                            <span>{sectionLessons.length} บท</span>
+                            {totalDuration > 0 && <span>{formatDuration(totalDuration)}</span>}
+                            {hasAccess && completedCount > 0 && (
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">{completedCount}/{sectionLessons.length}</Badge>
+                            )}
+                          </div>
+                        </div>
+                      </AccordionTrigger>
+                      <AccordionContent className="px-3 pb-3 pt-1">
+                        <div className="space-y-1.5">
+                          {sectionLessons.length > 0 ? (
+                            sectionLessons.map((lesson, idx) => renderLessonRow(lesson, idx))
+                          ) : (
+                            <p className="text-gray-500 text-center py-2 text-xs">ยังไม่มีบทเรียนในหมวดนี้</p>
+                          )}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  </Accordion>
+                );
+              };
+
+              // ไม่มีหมวด ไม่มีทิป → ไม่ต้องมีแถบแท็บ
+              if (!hasSections && unassignedLessons.length === 0 && relatedTips.length === 0) {
+                if (allLessons.length === 0) {
+                  return <p className="text-gray-400 text-center py-8">ยังไม่มีบทเรียน</p>;
+                }
+                return <div className="space-y-1.5">{allLessons.map((lesson, index) => renderLessonRow(lesson, index))}</div>;
+              }
+
+              const defaultTab = hasSections
+                ? `sec-${sections[0].id}`
+                : unassignedLessons.length > 0
+                  ? 'misc'
+                  : `tip-${relatedTips[0].id}`;
+
               return (
                 <Tabs
-                  defaultValue="basic"
+                  value={contentTab ?? defaultTab}
                   onValueChange={(v) => {
+                    setContentTab(v);
                     const tip = relatedTips.find((t) => `tip-${t.id}` === v);
                     if (tip) loadTipTab(tip);
                   }}
                 >
-                  <TabsList className="mb-3 flex-wrap h-auto gap-1">
-                    <TabsTrigger value="basic">พื้นฐาน</TabsTrigger>
+                  <TabsList className="mb-3">
+                    {sections.map((s) => (
+                      <TabsTrigger key={s.id} value={`sec-${s.id}`}>{sectionLabel(s, language)}</TabsTrigger>
+                    ))}
+                    {unassignedLessons.length > 0 && <TabsTrigger value="misc">อื่นๆ</TabsTrigger>}
                     {relatedTips.map((t) => (
                       <TabsTrigger key={t.id} value={`tip-${t.id}`} title={t.name}>
                         {tipLabel(t)}
                       </TabsTrigger>
                     ))}
                   </TabsList>
-                  <TabsContent value="basic" className="mt-0">
-                    {basicContent}
-                  </TabsContent>
+                  {sections.map((section) => (
+                    <TabsContent key={section.id} value={`sec-${section.id}`} className="mt-0">
+                      {renderSectionCard(section)}
+                    </TabsContent>
+                  ))}
+                  {unassignedLessons.length > 0 && (
+                    <TabsContent value="misc" className="mt-0">
+                      <div className="border border-gray-700 rounded-md overflow-hidden bg-gray-800/20">
+                        <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700">
+                          <div className="flex items-center gap-2"><BookOpen className="h-4 w-4 text-gray-400" /><span className="text-gray-300 text-sm font-medium">บทเรียนอื่นๆ</span></div>
+                          <span className="text-gray-400 text-xs">{unassignedLessons.length} บท</span>
+                        </div>
+                        <div className="p-3 space-y-1.5">{unassignedLessons.map((lesson, idx) => renderLessonRow(lesson, idx))}</div>
+                      </div>
+                    </TabsContent>
+                  )}
                   {relatedTips.map((t) => {
                     const data = tipData[t.id];
                     return (
@@ -1059,6 +1101,7 @@ const CourseDetail = () => {
                             // สิทธิ์/ความคืบหน้า/ปลายทาง = ของ tip เอง ไม่ใช่คอร์สแม่ (ฟรีตาม flag is_free)
                             const tipCtx: LessonRowCtx = {
                               slug: tc.slug,
+                              shareRef: tc.share_code || tc.slug,
                               hasAccess: !!(tc.isEnrolled || tc.hasAccess) || tc.is_free === true,
                               enrollment: tc.enrollment ?? null,
                             };

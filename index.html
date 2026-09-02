@@ -14,6 +14,17 @@
     <title>Triple School - Content Scheduler</title>
     <meta name="description" content="Schedule and automate your content across multiple platforms with AI-powered video generation." />
 
+    <!-- การ์ดพรีวิวตอนแชร์ (ค่ากลางของทั้งเว็บ)
+         หน้าคอร์ส /courses/:ref จะถูกแทนที่ด้วยชื่อ/ปกของคอร์สนั้นตอนเสิร์ฟ
+         (plugin course-og-tags ใน vite.config.ts) — crawler ไม่รัน JS จึงต้องฝังมาจาก server -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Triple School" />
+    <meta property="og:title" content="Triple School — คอร์สสร้างคอนเทนต์ด้วย AI" />
+    <meta property="og:description" content="เรียนสร้างวิดีโอและคอนเทนต์ด้วย AI ตั้งแต่พื้นฐานจนใช้งานจริง" />
+    <meta property="og:image" content="https://www.triple-school.com/648836087_913884651284553_4432160115640312701_n%20(1).png" />
+    <meta property="og:url" content="https://www.triple-school.com" />
+    <meta name="twitter:card" content="summary_large_image" />
+
     <!-- Google Analytics -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-X91J5T18HX"></script>
     <script>
