@@ -766,6 +766,35 @@ async function sectionTitleFallback(title: unknown, categoryId: number | null): 
   return r.rows[0]?.name_th ?? null;
 }
 
+// ============ ลิงก์สั้น /app/courses/{ref} — ตัดสินว่า ref คือบทเรียนหรือคอร์ส ============
+// รหัสบทเรียน/รหัสคอร์ส/slug อยู่เนมสเปซเดียวกัน (ตอนสุ่มกันชนข้ามตาราง) จึงชี้ได้ตัวเดียวเสมอ
+router.get('/resolve/:ref', async (req, res) => {
+  try {
+    const ref = String(req.params.ref || '').trim();
+    if (!ref) return res.status(404).json({ error: 'Not found' });
+    const lesson = (
+      await pool.query(
+        `SELECT l.id AS lesson_id, c.slug FROM lessons l
+         JOIN courses c ON c.id = l.course_id AND c.is_active = true
+         WHERE l.share_code = LOWER($1) AND l.is_active = true`,
+        [ref]
+      )
+    ).rows[0];
+    if (lesson) return res.json({ type: 'lesson', slug: lesson.slug, lesson_id: lesson.lesson_id });
+    const course = (
+      await pool.query(
+        `SELECT slug FROM courses WHERE (slug = $1 OR share_code = LOWER($1)) AND is_active = true`,
+        [ref]
+      )
+    ).rows[0];
+    if (course) return res.json({ type: 'course', slug: course.slug });
+    return res.status(404).json({ error: 'Not found' });
+  } catch (error) {
+    console.error('Error resolving ref:', error);
+    res.status(500).json({ error: 'Failed to resolve' });
+  }
+});
+
 // ============ Admin: list all courses (incl. inactive) ============
 router.get('/admin/all', authenticate, async (req: AuthRequest, res) => {
   try {
@@ -861,11 +890,16 @@ function generateShareCode(): string {
   return code;
 }
 
-/** สุ่มรหัสที่ยังไม่ถูกใช้ (กันชนทั้ง share_code และ slug) */
+/** สุ่มรหัสที่ยังไม่ถูกใช้ — กันชนข้ามเนมสเปซทั้งหมด (course code / slug / lesson code)
+ *  เพราะ /app/courses/{ref} ต้องตัดสินได้ไม่กำกวมว่า ref ชี้บทเรียนหรือคอร์ส */
 async function uniqueShareCode(): Promise<string> {
   for (let i = 0; i < 10; i++) {
     const code = generateShareCode();
-    const taken = await pool.query(`SELECT 1 FROM courses WHERE share_code = $1 OR slug = $1 LIMIT 1`, [code]);
+    const taken = await pool.query(
+      `SELECT 1 FROM courses WHERE share_code = $1 OR slug = $1
+       UNION ALL SELECT 1 FROM lessons WHERE share_code = $1 LIMIT 1`,
+      [code]
+    );
     if (taken.rows.length === 0) return code;
   }
   // โอกาสชน 10 ครั้งติดแทบเป็นศูนย์ (660M ความเป็นไปได้) — เผื่อไว้ด้วยรหัสยาวขึ้น
@@ -1081,7 +1115,7 @@ router.get('/:courseId/sections', optionalAuth, async (req: AuthRequest, res) =>
     `, [courseId]);
     const sections = await Promise.all(sectionsResult.rows.map(async (section) => {
       const lessonsResult = await pool.query(`
-        SELECT id, title, description, youtube_id, duration_minutes, lesson_order, is_preview, section_id
+        SELECT id, title, description, youtube_id, duration_minutes, lesson_order, is_preview, section_id, share_code
         FROM lessons WHERE section_id = $1 AND is_active = true ORDER BY lesson_order ASC
       `, [section.id]);
       const lessons = lessonsResult.rows.map((l) =>
@@ -1321,9 +1355,9 @@ router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) =>
       }
     }
     const result = await pool.query(`
-      INSERT INTO lessons (course_id, section_id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, materials)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *
-    `, [courseId, sectionId, title, description || null, youtube_url, youtube_id, duration_minutes || 0, order, is_preview || false, JSON.stringify(cleanMaterials)]);
+      INSERT INTO lessons (course_id, section_id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, materials, share_code)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *
+    `, [courseId, sectionId, title, description || null, youtube_url, youtube_id, duration_minutes || 0, order, is_preview || false, JSON.stringify(cleanMaterials), await uniqueShareCode()]);
     await pool.query(`
       UPDATE courses SET total_lessons = (SELECT COUNT(*) FROM lessons WHERE course_id = $1 AND is_active = true), updated_at = CURRENT_TIMESTAMP WHERE id = $1
     `, [courseId]);
@@ -1556,7 +1590,7 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
       WHERE s.course_id = $1 AND s.is_active = true ORDER BY s.section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
-      SELECT id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, section_id, cover_url,
+      SELECT id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, section_id, cover_url, share_code,
              ${materialsMetaSql('materials')} AS materials
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
@@ -1596,7 +1630,7 @@ router.get('/:slug', async (req, res) => {
       WHERE s.course_id = $1 AND s.is_active = true ORDER BY s.section_order ASC
     `, [course.id]);
     const lessonsResult = await pool.query(`
-      SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id, cover_url,
+      SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id, cover_url, share_code,
              ${materialsMetaSql('materials')} AS materials
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
