@@ -3,7 +3,7 @@ import { api } from '@/lib/api';
 import StarRating from '@/components/StarRating';
 import CoursePrice from '@/components/CoursePrice';
 import { Badge } from '@/components/ui/badge';
-import { BookOpen, PlayCircle, Star, Sparkles } from 'lucide-react';
+import { BookOpen, PlayCircle, Star, Sparkles, Clock } from 'lucide-react';
 import {
   type BrowseCourse,
   difficultyColors,
@@ -31,7 +31,9 @@ interface NetflixCardProps {
 // scales the card up and reveals meta (rating / lessons / level / price).
 const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statusBadge, hidePrice, fill }: NetflixCardProps) => {
   const reviewCount = Number(course.review_count) || 0;
-  const lessonCount = course.lesson_count || course.total_lessons || 0;
+  // COUNT() จาก pg มาเป็น string — ต้องแปลงเป็นตัวเลข ไม่งั้น "0" เป็น truthy
+  // แล้วเงื่อนไข Coming Soon (=== 0) ไม่ทำงาน
+  const lessonCount = Number(course.lesson_count ?? course.total_lessons ?? 0);
   const width = variant === 'rail' ? 'w-[230px] md:w-[270px] flex-none snap-start' : 'w-full';
   // fill = stretch to the wrapper's height (mosaic hero cell) instead of the
   // fixed 16:9 — the wrapper's grid row-span decides how tall this card is.
@@ -44,10 +46,25 @@ const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statu
       onClick={onClick}
       className={`${width} ${shape} relative rounded-md overflow-hidden bg-gray-800 cursor-pointer group/card transition-transform duration-300 hover:scale-105 hover:z-10 hover:shadow-2xl hover:shadow-black/60`}
     >
-      {/* ไอคอนสำรองอยู่ใต้รูปเสมอ — รูปพัง/ไม่มีปก จะซ่อนตัวเองแล้วเผยไอคอนนี้ */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <BookOpen className="h-10 w-10 text-gray-600" />
-      </div>
+      {/* ชั้นสำรองอยู่ใต้รูปเสมอ — รูปพัง/ไม่มีปก จะซ่อนตัวเองแล้วเผยชั้นนี้
+          คอร์ส Coming Soon (ยังไม่มีบท) ได้ปกออกแบบเอง ไม่ใช่กล่องเทาไอคอนหนังสือ */}
+      {lessonCount === 0 ? (
+        <div className="absolute inset-0 bg-gradient-to-br from-purple-900/70 via-gray-900 to-black flex flex-col items-center justify-center gap-1.5 overflow-hidden">
+          <div aria-hidden className="pointer-events-none absolute -top-8 right-0 h-32 w-32 rounded-full bg-purple-500/25 blur-2xl" />
+          <div aria-hidden className="pointer-events-none absolute bottom-0 -left-6 h-24 w-24 rounded-full bg-[#FFB300]/10 blur-2xl" />
+          <div className="relative flex h-11 w-11 items-center justify-center rounded-full border border-purple-400/40 bg-purple-500/15">
+            <Clock className="h-5 w-5 text-purple-300" />
+          </div>
+          <span className="relative text-sm font-extrabold tracking-widest bg-gradient-to-r from-purple-300 via-purple-200 to-[#FFB300] bg-clip-text text-transparent">
+            COMING SOON
+          </span>
+          <span className="relative text-[10px] text-gray-400">เปิดให้เรียนเร็วๆ นี้</span>
+        </div>
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <BookOpen className="h-10 w-10 text-gray-600" />
+        </div>
+      )}
       <img
         src={api.courseCoverUrl(course, 'card')}
         alt={course.name}
@@ -74,10 +91,12 @@ const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statu
             {reviewCount > 0 && (
               <StarRating value={course.avg_rating ?? 0} count={reviewCount} size={11} />
             )}
-            <span className="flex items-center gap-1">
-              <BookOpen className="h-3 w-3" />
-              {lessonCount} บท
-            </span>
+            {lessonCount > 0 && (
+              <span className="flex items-center gap-1">
+                <BookOpen className="h-3 w-3" />
+                {lessonCount} บท
+              </span>
+            )}
             <Badge className={`${difficultyColors[course.difficulty] || difficultyColors.beginner} border text-[10px] px-1.5 py-0`}>
               {difficultyLabels[course.difficulty] || 'เริ่มต้น'}
             </Badge>
@@ -104,7 +123,13 @@ const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statu
             ขายดี
           </Badge>
         )}
-        {isNewCourse(course.created_at) && (
+        {lessonCount === 0 && (
+          <Badge className="bg-[#FFB300] text-black text-[10px] font-semibold px-1.5 py-0.5 flex items-center gap-0.5">
+            <Clock className="h-2.5 w-2.5" />
+            เร็วๆ นี้
+          </Badge>
+        )}
+        {lessonCount > 0 && isNewCourse(course.created_at) && (
           <Badge className="bg-emerald-500 text-white text-[10px] px-1.5 py-0.5 flex items-center gap-0.5">
             <Sparkles className="h-2.5 w-2.5" />
             ใหม่

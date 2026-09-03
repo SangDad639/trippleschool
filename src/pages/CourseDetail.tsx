@@ -588,9 +588,29 @@ const CourseDetail = () => {
           มือถือ: ปล่อยให้สูงตามเนื้อหา (h-auto) — เดิมตรึง 56vh แล้ววางเนื้อหาแบบ absolute
           ทำให้หัวคอร์ส/ปุ่ม "คอร์สทั้งหมด" ทะลุขึ้นไปโดนตัดใต้ header; เดสก์ท็อปคงเดิม */}
       <section className="relative h-auto min-h-[56vh] md:h-[56vh] md:min-h-[440px] w-full overflow-hidden">
-        <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
-          <BookOpen className="h-20 w-20 text-gray-600" />
-        </div>
+        {/* ฉากหลังสำรองใต้รูป hero — คอร์ส Coming Soon (ยังไม่มีบท) ได้ฉากออกแบบเอง */}
+        {(course.lessons?.length ?? 0) === 0 && Number(course.lesson_count ?? 0) === 0 ? (
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-950 via-gray-900 to-black overflow-hidden">
+            <div aria-hidden className="pointer-events-none absolute -top-24 right-[10%] h-96 w-96 rounded-full bg-purple-600/25 blur-3xl motion-safe:animate-pulse" />
+            <div aria-hidden className="pointer-events-none absolute bottom-[-6rem] left-[30%] h-72 w-72 rounded-full bg-[#FFB300]/10 blur-3xl" />
+            {/* ตัวหนังสือใหญ่จางๆ ฝั่งขวา — ให้บรรยากาศโปสเตอร์ ไม่ชนกับชื่อคอร์สฝั่งซ้าย */}
+            <div className="absolute inset-y-0 right-0 hidden md:flex items-center pr-16">
+              <div className="text-right select-none">
+                <Clock aria-hidden className="ml-auto mb-4 h-16 w-16 text-purple-300/70" />
+                <p className="text-6xl font-extrabold tracking-widest bg-gradient-to-r from-purple-300/60 to-[#FFB300]/60 bg-clip-text text-transparent">
+                  COMING
+                </p>
+                <p className="text-6xl font-extrabold tracking-widest bg-gradient-to-r from-purple-300/60 to-[#FFB300]/60 bg-clip-text text-transparent">
+                  SOON
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="absolute inset-0 bg-gray-800 flex items-center justify-center">
+            <BookOpen className="h-20 w-20 text-gray-600" />
+          </div>
+        )}
         {/* hero ใช้ "ปกสำรอง" ที่แอดมินอัปในฟอร์มคอร์สก่อน — ไม่มี/รูปเสีย ค่อยตกไปใช้
             ปกวิดีโอล่าสุด (การ์ดหน้า /courses, Billboard, og:image ยังใช้ปกวิดีโอล่าสุดเหมือนเดิม) */}
         <img
@@ -1030,11 +1050,37 @@ const CourseDetail = () => {
                 );
               };
 
+              // คอร์สยังไม่มีบทเรียนเลย = Coming Soon — แอดมินสร้างคอร์สล่วงหน้าได้
+              // (คอร์สแบบนี้ถูกคัดออกจาก Billboard/rail หน้า Home แล้ว เหลือโชว์ใน /courses)
+              if (allLessons.length === 0 && relatedTips.length === 0) {
+                return (
+                  <div className="relative overflow-hidden rounded-xl border border-purple-500/30 bg-gradient-to-b from-purple-500/10 via-gray-900/40 to-gray-900/60 px-6 py-12 text-center">
+                    {/* จุดเรืองแสงหลังไอคอน — ตกแต่งเฉยๆ ไม่ขยับเลย์เอาต์ */}
+                    <div aria-hidden className="pointer-events-none absolute left-1/2 top-8 h-40 w-40 -translate-x-1/2 rounded-full bg-purple-500/20 blur-3xl motion-safe:animate-pulse" />
+                    <div className="relative flex flex-col items-center gap-3">
+                      <div className="flex h-16 w-16 items-center justify-center rounded-full border border-purple-400/40 bg-purple-500/15 shadow-lg shadow-purple-500/20">
+                        <Clock className="h-8 w-8 text-purple-300" />
+                      </div>
+                      <h3 className="text-2xl font-extrabold bg-gradient-to-r from-purple-300 via-purple-200 to-[#FFB300] bg-clip-text text-transparent">
+                        เร็วๆ นี้ · Coming Soon
+                      </h3>
+                      <p className="text-gray-300 text-sm max-w-sm">
+                        คอร์สนี้กำลังเตรียมเนื้อหาอยู่ ทีมงานกำลังถ่ายทำและเรียบเรียงบทเรียนให้ครบก่อนเปิดให้เรียน
+                      </p>
+                      <Button
+                        variant="outline"
+                        className="mt-2 h-11 md:h-9 border-purple-400/40 text-purple-200 hover:bg-purple-500/10 hover:text-purple-100"
+                        onClick={() => navigate('/courses')}
+                      >
+                        ดูคอร์สอื่นก่อน
+                      </Button>
+                    </div>
+                  </div>
+                );
+              }
+
               // ไม่มีหมวด ไม่มีทิป → ไม่ต้องมีแถบแท็บ
               if (!hasSections && unassignedLessons.length === 0 && relatedTips.length === 0) {
-                if (allLessons.length === 0) {
-                  return <p className="text-gray-400 text-center py-8">ยังไม่มีบทเรียน</p>;
-                }
                 return <div className="space-y-1.5">{allLessons.map((lesson, index) => renderLessonRow(lesson, index))}</div>;
               }
 

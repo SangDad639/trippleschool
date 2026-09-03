@@ -1305,10 +1305,12 @@ const AdminCourses = () => {
 
   // คอร์สที่ขึ้น Billboard จริงบนหน้าแรก: ตัวที่แอดมินปักไว้ก่อน ไม่มีก็ใช้กติกา
   // อัตโนมัติ (สร้างล่าสุด ไม่นับ Tip) — ตรงกับ logic ใน Storefront.tsx
-  const pinnedBillboard = courses.find((c) => c.is_billboard && c.is_active) ?? null;
+  // คอร์สเปล่า (Coming Soon) ไม่ขึ้น Billboard — เงื่อนไขต้องตรงกับ Storefront
+  const pinnedBillboard =
+    courses.find((c) => c.is_billboard && c.is_active && Number(c.lesson_count) > 0) ?? null;
   const autoBillboard =
     [...courses]
-      .filter((c) => c.is_active && c.content_type !== 'tip')
+      .filter((c) => c.is_active && c.content_type !== 'tip' && Number(c.lesson_count) > 0)
       .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0] ?? null;
   const billboardId = (pinnedBillboard ?? autoBillboard)?.id ?? null;
 

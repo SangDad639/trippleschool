@@ -67,17 +67,21 @@ const Storefront = () => {
       .catch(() => setContinueItems([]));
   }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // หน้า Home โชว์เฉพาะคอร์สที่ "เปิดแล้ว" (มีบทเรียนอย่างน้อย 1 บท) — คอร์สเปล่า
+  // (Coming Soon) ยังอยู่ใน /courses ตามปกติ แต่ไม่ถูกเอามาขึ้น Billboard/rail ใดๆ
+  const launched = courses.filter((c) => Number(c.lesson_count) > 0);
+
   // Billboard: an admin-pinned course wins; otherwise the newest course
   // (created_at DESC). Tips are single-episode extras — they never take the
   // billboard automatically, but an admin may still pin one deliberately.
   const billboard =
-    courses.find((c) => c.is_billboard) ||
-    [...courses]
+    launched.find((c) => c.is_billboard) ||
+    [...launched]
       .filter((c) => c.content_type !== 'tip')
       .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0] ||
-    courses[0] ||
+    launched[0] ||
     null;
-  const rows = buildRows(courses);
+  const rows = buildRows(launched);
 
   const query = searchQuery.trim().toLowerCase();
   const searchResults = query

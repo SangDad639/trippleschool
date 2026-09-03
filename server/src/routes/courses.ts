@@ -946,13 +946,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       await uniqueShareCode(),
     ]);
     const created = result.rows[0];
-    // การปักคือ "ปรับชั่วคราว" — คอร์สใหม่ (ที่เข้าเกณฑ์ Billboard อัตโนมัติ: เป็น
-    // course และ active) ต้องขึ้น Billboard เสมอ จึงถอดปักเก่าทิ้งให้ตอนสร้าง
-    // (สร้าง Tip หรือฉบับร่างไม่แตะปัก เพราะไม่เข้าเกณฑ์อัตโนมัติอยู่แล้ว)
-    if (created.content_type === 'course' && created.is_active) {
-      await pool.query(`UPDATE courses SET is_billboard = false WHERE is_billboard = true`);
-      created.is_billboard = false;
-    }
+    // ไม่ถอดปัก Billboard ตรงนี้แล้ว — คอร์สเพิ่งสร้างยังไม่มีบทเรียน (Coming Soon)
+    // ขึ้น Billboard ไม่ได้ ถอดไปก็ทำให้ปักเดิมหายฟรี · การถอดปักย้ายไปเกิดตอน
+    // "คอร์สได้บทเรียน active บทแรก" ใน POST /:courseId/lessons แทน (= เปิดตัวจริง)
     res.json(created);
   } catch (error) {
     console.error('Error creating course:', error);
@@ -1361,6 +1357,19 @@ router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) =>
     await pool.query(`
       UPDATE courses SET total_lessons = (SELECT COUNT(*) FROM lessons WHERE course_id = $1 AND is_active = true), updated_at = CURRENT_TIMESTAMP WHERE id = $1
     `, [courseId]);
+    // บทแรกของคอร์ส = "เปิดตัวจริง" → ถอดปัก Billboard เก่าทิ้ง ให้คอร์สนี้ขึ้นอัตโนมัติ
+    // (เดิมถอดตอนสร้างคอร์ส แต่คอร์สเปล่า/Coming Soon ขึ้น Billboard ไม่ได้แล้ว จึงย้ายมาที่นี่)
+    const launch = (
+      await pool.query(
+        `SELECT content_type, is_active,
+           (SELECT COUNT(*)::int FROM lessons WHERE course_id = $1 AND is_active = true) AS n
+         FROM courses WHERE id = $1`,
+        [courseId]
+      )
+    ).rows[0];
+    if (launch?.content_type === 'course' && launch.is_active && launch.n === 1) {
+      await pool.query(`UPDATE courses SET is_billboard = false WHERE is_billboard = true`);
+    }
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error creating lesson:', error);
