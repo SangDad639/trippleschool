@@ -236,3 +236,143 @@
     animation: none;
   }
 }
+
+/* ============================================================================
+   LIGHT THEME — palette "ครีมอมทอง" (คลาส `light` บน <html>)
+   สลับที่ Profile → การตั้งค่า · default = dark (หน้าตาดั้งเดิม ไม่ถูกแตะ)
+   ---------------------------------------------------------------------------
+   เว็บนี้เขียนแบบ dark-only มาแต่แรก: นอกจาก token แล้วยังมีคลาสสีเทา/ขาว
+   hardcode กระจาย ~500 จุดใน 48 ไฟล์ — แทนที่จะไล่แก้ทุกไฟล์ ใช้ตาราง override
+   ใต้ scope .light แทน (generate จากรายการคลาสที่ใช้จริงทั้ง repo)
+
+   กติกา:
+   - เพิ่มคลาสเทา/ขาว hardcode ตัวใหม่เมื่อไหร่ ต้องเติมแถวในตารางนี้ด้วย
+   - `:not(.dark-stage *)` = ยกเว้นบริเวณทับรูป (hero, การ์ดปก, วิดีโอ) ซึ่งต้อง
+     คงมืด+ตัวหนังสือขาวทั้งสองธีมแบบ Netflix — แปะคลาส `dark-stage` ที่ container
+   - bg-black/XX และ from/via/to-black ไม่ override เลย: เกือบทั้งหมดเป็นม่านทับรูป
+     หรือฉากหลัง dialog ซึ่งต้องมืดทุกธีมอยู่แล้ว
+   ========================================================================== */
+
+.light {
+  --background: 42 100% 97%;   /* #FFFBF2 ครีมอมทอง */
+  --foreground: 38 33% 9%;     /* #201A10 ดำอมน้ำตาล */
+
+  --card: 0 0% 100%;
+  --card-foreground: 38 33% 9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 38 33% 9%;
+
+  /* ทองเข้มขึ้นหนึ่งสเต็ป (#E6A100) — ทอง #FFB300 เพียวๆ จมบนพื้นครีม */
+  --primary: 42 100% 45%;
+  --primary-foreground: 0 0% 6%;
+  --secondary: 42 100% 45%;
+  --secondary-foreground: 0 0% 6%;
+  --accent: 42 100% 42%;
+  --accent-foreground: 0 0% 6%;
+
+  --muted: 42 60% 93%;
+  --muted-foreground: 38 22% 35%;  /* #6B5D45 น้ำตาลเทา */
+
+  --border: 41 55% 86%;        /* #EFE3C8 ทองอ่อน */
+  --input: 41 55% 92%;
+  --ring: 42 100% 45%;
+
+  --gradient-from: 42 100% 45%;
+  --gradient-via: 37 100% 45%;
+  --gradient-to: 30 100% 45%;
+  --glow-primary: 45 100% 62%;
+  --glow-secondary: 37 100% 62%;
+}
+
+.light .page-wrapper {
+  background: #fffbf2;
+}
+.light .page-wrapper::before,
+.light .page-wrapper::after {
+  opacity: 0.18; /* ลายพื้นหลังจางมากบนพื้นสว่าง ไม่ให้ลายตา */
+}
+
+/* ---------- ตัวหนังสือ ---------- */
+.light .text-white:not(.dark-stage *) { color: #201a10; }
+.light .text-white\/90:not(.dark-stage *) { color: rgba(32, 26, 16, 0.9); }
+.light .text-gray-200:not(.dark-stage *) { color: #4a4030; }
+.light .text-gray-300:not(.dark-stage *) { color: #4a4030; }
+.light .text-gray-400:not(.dark-stage *) { color: #6b5d45; }
+.light .text-gray-500:not(.dark-stage *) { color: #857661; }
+/* ทองเพียวเป็น "ตัวหนังสือ" บนพื้นครีมอ่านยาก → เข้มขึ้น (ปุ่มพื้นทองไม่เกี่ยว) */
+.light .text-\[\#FFB300\]:not(.dark-stage *) { color: #a97800; }
+/* text-black / text-gray-600..900 อ่านออกบนพื้นสว่างอยู่แล้ว — ไม่ต้องแตะ */
+
+/* ---------- พื้นผิว ---------- */
+.light .bg-black:not(.dark-stage *) { background-color: #f3ecdb; }
+.light .bg-gray-900:not(.dark-stage *) { background-color: #ffffff; }
+.light .bg-gray-900\/20:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.04); }
+.light .bg-gray-900\/40:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.05); }
+.light .bg-gray-900\/50:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.06); }
+.light .bg-gray-900\/60:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.07); }
+.light .bg-gray-800:not(.dark-stage *) { background-color: #faf3e3; }
+.light .bg-gray-800\/20:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.03); }
+.light .bg-gray-800\/30:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.04); }
+.light .bg-gray-800\/40:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.05); }
+.light .bg-gray-800\/50:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.06); }
+.light .bg-gray-800\/60:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.07); }
+.light .bg-gray-800\/70:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.08); }
+.light .bg-gray-700:not(.dark-stage *) { background-color: #f1e8d3; }
+.light .bg-gray-700\/60:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.08); }
+.light .bg-gray-600\/60:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.14); }
+.light .bg-gray-600\/70:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.16); }
+.light .bg-gray-600\/80:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.18); }
+/* ทินท์ขาวบนพื้นมืด (ชิปแก้ว) → กลายเป็นทินท์น้ำตาลจางบนพื้นครีม */
+.light .bg-white\/5:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.04); }
+.light .bg-white\/10:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.06); }
+.light .bg-white\/20:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.1); }
+
+/* ---------- เส้นขอบ ---------- */
+.light .border-gray-500:not(.dark-stage *) { border-color: #d9ccaa; }
+.light .border-gray-500\/30:not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.14); }
+.light .border-gray-500\/50:not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.2); }
+.light .border-gray-600:not(.dark-stage *) { border-color: #e2d6b8; }
+.light .border-gray-700:not(.dark-stage *) { border-color: #efe3c8; }
+.light .border-gray-700\/60:not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.1); }
+.light .border-gray-700\/80:not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.12); }
+.light .border-gray-800:not(.dark-stage *) { border-color: #f2e9d4; }
+.light .border-gray-800\/50:not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.08); }
+.light .border-white\/20:not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.15); }
+
+/* ---------- gradient stop สีเทา (ฉากหลังการ์ด/placeholder) ---------- */
+.light .from-gray-700:not(.dark-stage *) { --tw-gradient-from: #f1e8d3 var(--tw-gradient-from-position); --tw-gradient-to: rgb(241 232 211 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.light .to-gray-800:not(.dark-stage *) { --tw-gradient-to: #faf3e3 var(--tw-gradient-to-position); }
+.light .from-gray-900\/60:not(.dark-stage *) { --tw-gradient-from: rgba(60,48,25,0.06) var(--tw-gradient-from-position); --tw-gradient-to: rgb(60 48 25 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.light .via-gray-900:not(.dark-stage *) { --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #fbf5e7 var(--tw-gradient-via-position), var(--tw-gradient-to); }
+.light .via-gray-900\/40:not(.dark-stage *) { --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), rgba(60,48,25,0.04) var(--tw-gradient-via-position), var(--tw-gradient-to); }
+.light .to-gray-900\/60:not(.dark-stage *) { --tw-gradient-to: rgba(60,48,25,0.06) var(--tw-gradient-to-position); }
+
+/* ม่านกันตัวหนังสือฝั่งซ้ายของ hero (from-background via-background/70) —
+   token ตามธีมทำให้กลายเป็นม่านครีมใต้ตัวหนังสือขาว อ่านไม่ออก → ใน dark-stage
+   บังคับกลับเป็นม่านมืดเสมอ · ส่วน fade ล่าง (from-background via-transparent)
+   ปล่อยตามธีม เพื่อให้ hero ละลายเข้าพื้นหน้าเว็บเนียนๆ */
+.light .dark-stage .from-background.via-background\/70 {
+  --tw-gradient-from: rgba(12, 12, 12, 0.92) var(--tw-gradient-from-position);
+  --tw-gradient-to: rgb(12 12 12 / 0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+.light .dark-stage .from-background.via-background\/70.to-transparent {
+  --tw-gradient-stops: var(--tw-gradient-from), rgba(12, 12, 12, 0.65) var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
+/* HeroBillboard ใช้ via-background/60 (คนละตัวกับ hero คอร์สที่ใช้ /70) — จับทั้งคู่ */
+.light .dark-stage .from-background.via-background\/60 {
+  --tw-gradient-from: rgba(12, 12, 12, 0.92) var(--tw-gradient-from-position);
+  --tw-gradient-to: rgb(12 12 12 / 0) var(--tw-gradient-to-position);
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
+}
+.light .dark-stage .from-background.via-background\/60.to-transparent {
+  --tw-gradient-stops: var(--tw-gradient-from), rgba(12, 12, 12, 0.6) var(--tw-gradient-via-position), var(--tw-gradient-to);
+}
+
+/* ม่านล่างของ billboard/hero (from-background via-transparent to-black/30|40):
+   เดิม "สีพื้นตามธีม" ไต่จากขอบล่างถึง ~ครึ่งภาพ — ธีมสว่างเลยเป็นหมอกครีมทับ content
+   → จำกัดครีมไว้แค่ขอบล่าง ~16% ที่เหลือโปร่งใส + ฝาบนมืดเท่าธีมมืด
+   โปสเตอร์กลับมาเต็มอิ่มเหมือนธีมมืด แต่รอยต่อกับพื้นครีมยังเนียน (ผู้ใช้เลือกจาก preview) */
+.light .dark-stage .from-background.via-transparent {
+  --tw-gradient-stops: hsl(var(--background)) 0%, hsl(var(--background) / 0) 16%, rgb(0 0 0 / 0) 55%, rgb(0 0 0 / 0.35) 100%;
+}

@@ -587,7 +587,7 @@ const CourseDetail = () => {
       {/* Netflix-style backdrop hero
           มือถือ: ปล่อยให้สูงตามเนื้อหา (h-auto) — เดิมตรึง 56vh แล้ววางเนื้อหาแบบ absolute
           ทำให้หัวคอร์ส/ปุ่ม "คอร์สทั้งหมด" ทะลุขึ้นไปโดนตัดใต้ header; เดสก์ท็อปคงเดิม */}
-      <section className="relative h-auto min-h-[56vh] md:h-[56vh] md:min-h-[440px] w-full overflow-hidden">
+      <section className="dark-stage relative h-auto min-h-[56vh] md:h-[56vh] md:min-h-[440px] w-full overflow-hidden">
         {/* ฉากหลังสำรองใต้รูป hero — คอร์ส Coming Soon (ยังไม่มีบท) ได้ฉากออกแบบเอง */}
         {(course.lessons?.length ?? 0) === 0 && Number(course.lesson_count ?? 0) === 0 ? (
           <div className="absolute inset-0 bg-gradient-to-br from-purple-950 via-gray-900 to-black overflow-hidden">
@@ -909,7 +909,7 @@ const CourseDetail = () => {
                     onClick={() => navigate(`/app/courses/${ctx.slug}/learn/${lesson.id}`)}
                   >
                     {/* Cover */}
-                    <div className="relative w-28 sm:w-36 md:w-44 aspect-video flex-none rounded-md overflow-hidden bg-gradient-to-br from-gray-700 to-gray-800">
+                    <div className="dark-stage relative w-28 sm:w-36 md:w-44 aspect-video flex-none rounded-md overflow-hidden bg-gradient-to-br from-gray-700 to-gray-800">
                       <div className="absolute inset-0 flex items-center justify-center">
                         <BookOpen className="h-6 w-6 text-gray-600" />
                       </div>

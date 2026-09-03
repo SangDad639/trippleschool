@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { api } from '@/lib/api';
 import type { AffiliateStats } from '@/types/affiliate';
 import {
@@ -12,6 +13,10 @@ import {
   Users,
   Copy,
   Check,
+  Settings,
+  Sun,
+  Moon,
+  Globe,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import TaxInfoSection from '@/components/profile/TaxInfoSection';
@@ -20,7 +25,8 @@ import BankInfoSection from '@/components/profile/BankInfoSection';
 const Profile = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { language, t } = useLanguage();
+  const { language, setLanguage, t } = useLanguage();
+  const { theme, setTheme } = useTheme();
 
   const [stats, setStats] = useState<AffiliateStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -92,6 +98,69 @@ const Profile = () => {
               ) : user?.isAdmin ? (
                 <span className="px-3 py-1 text-xs rounded-full bg-purple-500/20 text-purple-500 font-medium">{t('profile.admin')}</span>
               ) : null}
+            </div>
+          </div>
+
+          {/* Settings — ธีม + ภาษา (ที่เดียวของทั้งเว็บ) */}
+          <div className="bg-card p-6 rounded-xl border border-border space-y-5">
+            <div className="flex items-center gap-2">
+              <Settings className="h-5 w-5 text-[#FFB300]" />
+              <h2 className="text-lg font-semibold">{t('profile.settings')}</h2>
+            </div>
+
+            {/* ธีม มืด/สว่าง */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+              <span className="text-sm text-muted-foreground sm:w-36 shrink-0">{t('profile.theme')}</span>
+              <div className="inline-flex rounded-lg border border-border overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setTheme('dark')}
+                  className={`flex items-center gap-1.5 px-4 h-11 sm:h-9 text-sm transition-colors ${
+                    theme === 'dark' ? 'bg-[#FFB300] text-black font-semibold' : 'bg-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Moon className="h-4 w-4" />
+                  {t('profile.themeDark')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTheme('light')}
+                  className={`flex items-center gap-1.5 px-4 h-11 sm:h-9 text-sm transition-colors ${
+                    theme === 'light' ? 'bg-[#FFB300] text-black font-semibold' : 'bg-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  <Sun className="h-4 w-4" />
+                  {t('profile.themeLight')}
+                </button>
+              </div>
+            </div>
+
+            {/* ภาษา */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+              <span className="text-sm text-muted-foreground sm:w-36 shrink-0 flex items-center gap-1.5">
+                <Globe className="h-4 w-4" />
+                {t('profile.language')}
+              </span>
+              <div className="inline-flex rounded-lg border border-border overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setLanguage('th')}
+                  className={`px-4 h-11 sm:h-9 text-sm transition-colors ${
+                    language === 'th' ? 'bg-[#FFB300] text-black font-semibold' : 'bg-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  ไทย
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLanguage('en')}
+                  className={`px-4 h-11 sm:h-9 text-sm transition-colors ${
+                    language === 'en' ? 'bg-[#FFB300] text-black font-semibold' : 'bg-transparent text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  English
+                </button>
+              </div>
             </div>
           </div>
 

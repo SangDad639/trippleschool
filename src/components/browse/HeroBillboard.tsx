@@ -29,7 +29,7 @@ const HeroBillboard = ({ course }: { course: BrowseCourse }) => {
   const titleParts = splitBilingualTitle(course.name);
 
   return (
-    <section className="relative h-[65vh] min-h-[440px] w-full overflow-hidden">
+    <section className="dark-stage relative h-[65vh] min-h-[440px] w-full overflow-hidden">
       <div className="absolute inset-0 bg-gray-800" />
       <img
         src={api.courseCoverUrl(course, 'hero')}

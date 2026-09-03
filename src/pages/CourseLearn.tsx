@@ -460,7 +460,7 @@ const CourseLearn = () => {
               </div>
             )}
 
-            <div className="relative aspect-video bg-gray-900 rounded-lg overflow-hidden mb-5">
+            <div className="dark-stage relative aspect-video bg-gray-900 rounded-lg overflow-hidden mb-5">
               {!hasAccess && !currentLesson.is_preview ? (
                 <div className="w-full h-full flex flex-col items-center justify-center gap-3 px-6 text-center">
                   <Lock className="h-10 w-10 text-gray-500" />

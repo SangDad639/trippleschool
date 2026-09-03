@@ -131,11 +131,13 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
   // results — keep the bar solid so text stays readable.
   // top-[var(--banner-h)]: หน้าที่ header ลอยทับ hero ต้องเลื่อนลงตามความสูงแบนเนอร์เตือน
   // (แบนเนอร์อยู่ในโฟลว์หัวเอกสาร — ถ้า header ตรึง top-0 มันจะทับแบนเนอร์จนอ่านไม่เห็น)
+  // dark-stage ตอนยังลอยใสทับ hero (hero มืดทุกธีม → เมนูต้องเป็นตัวหนังสือขาวเสมอ)
+  // พอ scroll แล้วพื้นกลายเป็น bg-background ของธีม → ถอด dark-stage ให้ตัวหนังสือตามธีม
   const headerClass = overlay
     ? `fixed top-[var(--banner-h,0px)] inset-x-0 z-50 transition-colors duration-300 ${
         scrolled || searching
           ? 'bg-background/95 border-b border-border/60 backdrop-blur'
-          : 'bg-gradient-to-b from-black/70 to-transparent border-b border-transparent'
+          : 'dark-stage bg-gradient-to-b from-black/70 to-transparent border-b border-transparent'
       }`
     : 'sticky top-0 z-50 border-b border-border/60 bg-background/80 backdrop-blur supports-[backdrop-filter]:bg-background/60';
 

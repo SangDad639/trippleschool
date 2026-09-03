@@ -44,7 +44,7 @@ const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statu
   return (
     <div
       onClick={onClick}
-      className={`${width} ${shape} relative rounded-md overflow-hidden bg-gray-800 cursor-pointer group/card transition-transform duration-300 hover:scale-105 hover:z-10 hover:shadow-2xl hover:shadow-black/60`}
+      className={`${width} ${shape} dark-stage relative rounded-md overflow-hidden bg-gray-800 cursor-pointer group/card transition-transform duration-300 hover:scale-105 hover:z-10 hover:shadow-2xl hover:shadow-black/60`}
     >
       {/* ชั้นสำรองอยู่ใต้รูปเสมอ — รูปพัง/ไม่มีปก จะซ่อนตัวเองแล้วเผยชั้นนี้
           คอร์ส Coming Soon (ยังไม่มีบท) ได้ปกออกแบบเอง ไม่ใช่กล่องเทาไอคอนหนังสือ */}

@@ -34,6 +34,10 @@ const translations = {
   'profile.noSubscriptionDesc': { th: 'สมัครแพ็กเกจเพื่อใช้งาน Content Scheduler', en: 'Subscribe to use Content Scheduler' },
   'profile.subscribe': { th: 'สมัครแพ็กเกจ', en: 'Subscribe' },
   'profile.language': { th: 'ภาษา', en: 'Language' },
+  'profile.settings': { th: 'การตั้งค่า', en: 'Settings' },
+  'profile.theme': { th: 'ธีมหน้าเว็บ', en: 'Theme' },
+  'profile.themeDark': { th: 'มืด', en: 'Dark' },
+  'profile.themeLight': { th: 'สว่าง', en: 'Light' },
 
   // ============ Content Scheduler ============
   'scheduler.title': { th: 'Content Scheduler', en: 'Content Scheduler' },

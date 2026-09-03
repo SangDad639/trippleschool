@@ -28,6 +28,7 @@ import { Loader2 } from "lucide-react";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { SubscriptionProvider } from "@/contexts/SubscriptionContext";
 import { LanguageProvider, useLanguage } from "@/contexts/LanguageContext";
+import { ThemeProvider } from "@/contexts/ThemeContext";
 import SubscriptionWarningBanner from "@/components/SubscriptionWarningBanner";
 import AdminNotificationBanner from "@/components/AdminNotificationBanner";
 import PublicHeader from "@/components/PublicHeader";
@@ -524,6 +525,7 @@ function App() {
       <BrowserRouter>
         <AuthProvider>
           <SubscriptionProvider>
+            <ThemeProvider>
             <LanguageProvider>
               <SubscriptionRedirectHandler />
               {/* แบนเนอร์อยู่ในโฟลว์หัวเอกสาร แล้วบอกความสูงจริงผ่าน --banner-h ให้ header
@@ -543,6 +545,7 @@ function App() {
               </Suspense>
               <Toaster />
             </LanguageProvider>
+            </ThemeProvider>
           </SubscriptionProvider>
         </AuthProvider>
       </BrowserRouter>
