@@ -80,6 +80,16 @@ const htmlUpload = multer({
   },
 });
 
+// ตัวอย่างผลงานของคอร์ส (แท็บ "ตัวอย่าง"): อัปโหลดเฉพาะรูป — วิดีโอใช้ลิงก์ YouTube
+const sampleUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('รองรับเฉพาะไฟล์รูปภาพ (วิดีโอให้แปะลิงก์ YouTube)'));
+  },
+});
+
 // Wrap a multer .single() so filter/size errors return JSON (not an HTML error
 // page) — the client can then show the real reason instead of "Request failed".
 function uploadSingle(mw: multer.Multer, field: string) {
@@ -222,7 +232,7 @@ function extractYoutubeId(url: string): string | null {
 // so old thumbnails keep working until the backfill script has run.
 // prefix ที่ยอมให้ดึงผ่าน proxy สาธารณะนี้ — เดิมรับ key อะไรก็ได้ ทำให้ object อื่น
 // ในบัคเก็ต (เช่นสลิปโอนเงิน payment-slips/…) ถูกดึงได้ถ้ารู้คีย์
-const PUBLIC_IMAGE_PREFIXES = ['course-thumb/', 'lesson-cover/', 'lesson-thumb-cache/', 'course-cover-cache/'];
+const PUBLIC_IMAGE_PREFIXES = ['course-thumb/', 'lesson-cover/', 'lesson-thumb-cache/', 'course-cover-cache/', 'course-sample/'];
 
 router.get('/thumbnails/*', async (req: Request, res: Response) => {
   try {
@@ -470,6 +480,22 @@ router.delete('/lessons/:lessonId/cover', authenticate, async (req: AuthRequest,
 });
 
 // ============ Admin: upload course thumbnail ============
+// รูปตัวอย่างผลงาน (แท็บ "ตัวอย่าง") — เสิร์ฟกลับผ่าน proxy /thumbnails/course-sample/*
+router.post('/upload-sample', authenticate, uploadSingle(sampleUpload, 'sample'), async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+    const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+    const rand = Math.random().toString(36).slice(2, 10);
+    const key = `course-sample/${Date.now()}-${rand}.${ext}`;
+    await uploadFile(req.file.buffer, key, req.file.mimetype, { contentDisposition: 'inline' });
+    res.json({ url: `/api/courses/thumbnails/${key}` });
+  } catch (error) {
+    console.error('Error uploading sample:', error);
+    res.status(500).json({ error: 'Failed to upload sample' });
+  }
+});
+
 router.post('/upload-thumbnail', authenticate, thumbUpload.single('thumbnail'), async (req: AuthRequest, res: Response) => {
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
@@ -867,6 +893,32 @@ router.get('/', async (req, res) => {
 });
 
 /** เครื่องมือที่ใช้ในคอร์ส: กรองเป็น [{name, price}] เท่านั้น — ตัดแถวไม่มีชื่อ + จำกัดความยาว */
+/**
+ * ตัวอย่างผลงาน (แท็บ "ตัวอย่าง"): ไฟล์ต้องเป็นของที่อัปผ่านระบบเราเท่านั้น
+ * (prefix course-sample/) กัน url แปลกปลอมหลุดเข้า DB · YouTube เก็บเป็น id
+ */
+function sanitizeCourseSamples(input: unknown): object[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .slice(0, 20)
+    .map((s: any) => {
+      const orientation = s?.orientation === 'portrait' ? 'portrait' : 'landscape';
+      const title = typeof s?.title === 'string' ? s.title.trim().slice(0, 120) : '';
+      if (s?.type === 'youtube') {
+        const id = typeof s?.youtube_id === 'string' ? s.youtube_id.trim() : extractYoutubeId(String(s?.url || ''));
+        if (!id || !/^[\w-]{6,20}$/.test(id)) return null;
+        return { type: 'youtube', youtube_id: id, orientation, title };
+      }
+      if (s?.type === 'image') {
+        const url = typeof s?.url === 'string' ? s.url.trim().slice(0, 500) : '';
+        if (!url.startsWith('/api/courses/thumbnails/course-sample/')) return null;
+        return { type: 'image', url, orientation, title };
+      }
+      return null;
+    })
+    .filter((x) => x !== null) as object[];
+}
+
 function sanitizeCourseTools(input: unknown): { name: string; price: string }[] {
   if (!Array.isArray(input)) return [];
   return input
@@ -914,7 +966,7 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-      content_type, tag_id, tip_tag_id, tools, is_free,
+      content_type, tag_id, tip_tag_id, tools, samples, is_free,
     } = req.body;
     if (!name || !slug) return res.status(400).json({ error: 'Name and slug are required' });
     const isTip = content_type === 'tip';
@@ -928,9 +980,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
         name, slug, description, short_description, thumbnail_url,
         instructor_name, instructor_avatar, difficulty, duration_hours,
         is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-        content_type, tag_id, tip_tag_id, tools, is_free, share_code
+        content_type, tag_id, tip_tag_id, tools, samples, is_free, share_code
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
       RETURNING *
     `, [
       name, slug, description || null, short_description || null, thumbnail_url || null,
@@ -942,6 +994,7 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       tagId,
       tipTagId,
       JSON.stringify(sanitizeCourseTools(tools)),
+      JSON.stringify(sanitizeCourseSamples(samples)),
       is_free === true,
       await uniqueShareCode(),
     ]);
@@ -966,9 +1019,9 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, is_active, display_order, price, discount_price, learning_outcomes, requirements,
-      content_type, tag_id, tip_tag_id, tools, is_free,
+      content_type, tag_id, tip_tag_id, tools, samples, is_free,
     } = req.body;
-    // tag_id/tip_tag_id/tools/is_free ตั้งเฉพาะเมื่อส่งมา และรองรับส่ง null/'' = ล้างค่า (COALESCE ทำไม่ได้)
+    // tag_id/tip_tag_id/tools/samples/is_free ตั้งเฉพาะเมื่อส่งมา และรองรับส่ง null/'' = ล้างค่า (COALESCE ทำไม่ได้)
     const extraSets: string[] = [];
     const extraParams: any[] = [];
     if (tag_id !== undefined) {
@@ -997,6 +1050,10 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
     if (tools !== undefined) {
       extraParams.push(JSON.stringify(sanitizeCourseTools(tools)));
       extraSets.push(`tools = $${18 + extraParams.length}::jsonb`);
+    }
+    if (samples !== undefined) {
+      extraParams.push(JSON.stringify(sanitizeCourseSamples(samples)));
+      extraSets.push(`samples = $${18 + extraParams.length}::jsonb`);
     }
     if (is_free !== undefined) {
       extraParams.push(is_free === true);

@@ -3076,6 +3076,12 @@ class ApiClient {
     formData.append('thumbnail', file);
     return this.request('/api/courses/upload-thumbnail', { method: 'POST', body: formData });
   }
+  /** รูปตัวอย่างผลงาน (แท็บ "ตัวอย่าง" หน้า Course Detail) — วิดีโอใช้ลิงก์ YouTube ไม่อัปไฟล์ */
+  async uploadCourseSample(file: File): Promise<{ url: string }> {
+    const formData = new FormData();
+    formData.append('sample', file);
+    return this.request('/api/courses/upload-sample', { method: 'POST', body: formData });
+  }
   async uploadCourseMaterial(file: File): Promise<{ url: string; name: string }> {
     const formData = new FormData();
     formData.append('file', file);

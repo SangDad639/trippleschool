@@ -111,6 +111,8 @@ interface Course {
   requirements?: string[];
   /** เครื่องมือที่ใช้ในคอร์ส — price เป็นข้อความอิสระ, ราคาคิดตามเครดิต/แพ็กเกจรายเดือน */
   tools?: { name: string; price: string }[];
+  /** ตัวอย่างผลงาน (แท็บ "ตัวอย่าง") — รูปอัปโหลด หรือวิดีโอ YouTube */
+  samples?: { type: 'image' | 'youtube'; url?: string; youtube_id?: string; orientation: 'landscape' | 'portrait'; title?: string }[];
   enrollment_count?: string; // bigint serialized as string
   avg_rating?: number;
   review_count?: string; // bigint serialized as string
@@ -213,6 +215,9 @@ const CourseDetail = () => {
   const [relatedTips, setRelatedTips] = useState<RelatedTip[]>([]);
   const [tipData, setTipData] = useState<Record<number, TipTabData>>({});
 
+  // แท็บใหญ่ของหน้า: ตัวอย่าง / รายละเอียด / เนื้อหา (null = อัตโนมัติ: มีตัวอย่าง→ตัวอย่าง ไม่มี→รายละเอียด)
+  const [pageTab, setPageTab] = useState<'samples' | 'detail' | 'content' | null>(null);
+
   // แท็บเนื้อหาที่เลือกอยู่ (null = แท็บแรก) — ต้อง controlled เพราะ ?ep= ต้องสลับแท็บ
   // ไปหาบทเป้าหมายให้เองก่อนเลื่อน ไม่งั้นบทที่อยู่แท็บอื่นจะหาไม่เจอ (ไม่ถูก mount)
   const [contentTab, setContentTab] = useState<string | null>(null);
@@ -225,6 +230,7 @@ const CourseDetail = () => {
   useEffect(() => {
     if (slug) {
       setContentTab(null); // เปลี่ยนคอร์ส → กลับไปแท็บแรกของคอร์สใหม่ ไม่จำแท็บของคอร์สก่อน
+      setPageTab(null);
       loadCourse();
       loadReviews();
     }
@@ -267,6 +273,7 @@ const CourseDetail = () => {
       : Number(ep);
     if (!targetId) return;
     setHighlightLessonId(targetId);
+    setPageTab('content'); // ลิงก์เจาะบทเรียน → เข้าแท็บ "เนื้อหา" ให้เลย
     // บทเป้าหมายอาจอยู่แท็บอื่น (แต่ละหมวดเป็นแท็บของตัวเอง) — สลับแท็บให้ก่อน
     // ไม่งั้นแถวไม่ถูก mount แล้วตัวเลื่อนหาไม่เจอ เลิกรอไปเงียบๆ
     const holder = course.sections?.find((s) => (s.lessons || []).some((l) => l.id === targetId));
@@ -400,6 +407,9 @@ const CourseDetail = () => {
       setRefChecking(false);
     }
   };
+
+  // แท็บใหญ่ที่แสดงจริง: ไม่เคยกด → มีตัวอย่างเปิดที่ตัวอย่างก่อน ไม่มีก็รายละเอียด
+  const activePageTab = pageTab ?? ((course?.samples?.length ?? 0) > 0 ? 'samples' : 'detail');
 
   // ลิงก์แชร์ = โดเมนจริง (VITE_SITE_URL) ถ้าตั้งไว้ ไม่งั้นใช้โดเมนที่เปิดอยู่
   const SITE_URL = (import.meta.env.VITE_SITE_URL as string | undefined) || window.location.origin;
@@ -801,7 +811,91 @@ const CourseDetail = () => {
         </div>
       </section>
 
-      <div className="max-w-6xl mx-auto px-4 md:px-12 py-8">
+      <div className="max-w-6xl mx-auto px-4 md:px-12 py-6">
+        {/* ---------- แถบหัวข้อใหญ่: ตัวอย่าง / รายละเอียด / เนื้อหา (Tab จริง สลับทีละหัวข้อ) ----------
+            sticky ใต้ header (h-14 มือถือ / h-16 เดสก์ท็อป + เผื่อความสูงแบนเนอร์เตือน) */}
+        <div className="sticky top-[calc(var(--banner-h,0px)+3.5rem)] lg:top-[calc(var(--banner-h,0px)+4rem)] z-30 -mx-4 md:-mx-12 px-4 md:px-12 bg-background/95 backdrop-blur border-b border-border/60 mb-6">
+          <div className="flex gap-1">
+            {(course.samples?.length ?? 0) > 0 && (
+              <button
+                type="button"
+                onClick={() => setPageTab('samples')}
+                className={`px-4 py-3 text-sm font-semibold border-b-[3px] -mb-px transition-colors ${
+                  activePageTab === 'samples' ? 'text-[#FFB300] border-[#FFB300]' : 'text-gray-400 border-transparent hover:text-white'
+                }`}
+              >
+                ตัวอย่าง
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setPageTab('detail')}
+              className={`px-4 py-3 text-sm font-semibold border-b-[3px] -mb-px transition-colors ${
+                activePageTab === 'detail' ? 'text-[#FFB300] border-[#FFB300]' : 'text-gray-400 border-transparent hover:text-white'
+              }`}
+            >
+              รายละเอียด
+            </button>
+            <button
+              type="button"
+              onClick={() => setPageTab('content')}
+              className={`px-4 py-3 text-sm font-semibold border-b-[3px] -mb-px transition-colors ${
+                activePageTab === 'content' ? 'text-[#FFB300] border-[#FFB300]' : 'text-gray-400 border-transparent hover:text-white'
+              }`}
+            >
+              เนื้อหา
+            </button>
+          </div>
+        </div>
+
+        {/* ---------- แท็บ: ตัวอย่างผลงาน ---------- */}
+        {activePageTab === 'samples' && (course.samples?.length ?? 0) > 0 && (
+          <Card className="mb-6">
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-white text-base flex items-center gap-2">
+                <Play className="h-4 w-4 text-[#FFB300]" />ตัวอย่างผลงานจากคอร์สนี้
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0">
+              <div className="flex flex-wrap gap-3 sm:gap-4 items-start">
+                {course.samples!.map((s, i) => (
+                  <figure
+                    key={i}
+                    className={s.orientation === 'portrait' ? 'w-[47%] sm:w-[200px]' : 'w-full sm:w-[380px]'}
+                  >
+                    <div className={`dark-stage relative rounded-xl overflow-hidden border border-gray-700 bg-gray-900 ${
+                      s.orientation === 'portrait' ? 'aspect-[9/16]' : 'aspect-video'
+                    }`}>
+                      {s.type === 'youtube' ? (
+                        <iframe
+                          src={`https://www.youtube.com/embed/${s.youtube_id}?rel=0`}
+                          title={s.title || 'ตัวอย่างผลงาน'}
+                          className="w-full h-full"
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                        />
+                      ) : (
+                        <img
+                          src={api.mediaUrl(s.url)}
+                          alt={s.title || 'ตัวอย่างผลงาน'}
+                          loading="lazy"
+                          className="w-full h-full object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      )}
+                    </div>
+                    {s.title && (
+                      <figcaption className="mt-1.5 text-xs text-gray-400 line-clamp-2">{s.title}</figcaption>
+                    )}
+                  </figure>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ---------- แท็บ: รายละเอียด (รวม 4 การ์ดเดิม) ---------- */}
+        {activePageTab === 'detail' && (<>
         {course.learning_outcomes && course.learning_outcomes.length > 0 && (
           <Card className="mb-6">
             <CardHeader className="py-3 px-4">
@@ -876,8 +970,10 @@ const CourseDetail = () => {
             <CardContent className="px-4 pb-4 pt-0"><p className="text-gray-300 text-sm whitespace-pre-wrap">{course.description}</p></CardContent>
           </Card>
         )}
+        </>)}
 
-        <Card>
+        {/* ---------- แท็บ: เนื้อหา (เนื้อหาคอร์สเดิมทั้งก้อน) ---------- */}
+        <Card className={activePageTab === 'content' ? '' : 'hidden'}>
           <CardHeader className="py-3 px-4">
             <CardTitle className="text-white text-base flex items-center gap-2"><BookOpen className="h-4 w-4" />เนื้อหาคอร์ส</CardTitle>
           </CardHeader>
