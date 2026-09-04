@@ -7,9 +7,9 @@ import HeroBillboard from '@/components/browse/HeroBillboard';
 import NetflixRow from '@/components/browse/NetflixRow';
 import NetflixCard from '@/components/browse/NetflixCard';
 import FeaturedRow from '@/components/browse/FeaturedRow';
-import { buildRows, type BrowseCourse } from '@/components/browse/browseRows';
+import type { BrowseCourse } from '@/components/browse/browseRows';
 import { Badge } from '@/components/ui/badge';
-import { Loader2 } from 'lucide-react';
+import { ChevronRight, Loader2 } from 'lucide-react';
 
 interface ContinueItem {
   course_id: number;
@@ -81,7 +81,26 @@ const Storefront = () => {
       .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0] ||
     launched[0] ||
     null;
-  const rows = buildRows(launched);
+  // หน้า Home เหลือ 2 หมวดใหญ่ — หมวดย่อยอื่นๆ (Tip/ยอดนิยม/ตามระดับ) ดูได้ที่ /courses
+  // "มาใหม่ล่าสุด" เอาคอร์สล่าสุด 5 ตัวเสมอ (ไม่จำกัดอายุ 30 วันแบบเดิม — กันหมวด
+  // หายทั้งแถวช่วงไม่มีคอร์สใหม่) และไม่นับ Tip ให้ตรงกับหน้า /courses ที่ปุ่มพาไป
+  // 5 ใบทำให้โมเสกเต็มพอดีทั้งสองจอ: desktop hero 2×2 + เล็ก 4 / มือถือ hero เต็มแถว + 2×2
+  const newest5 = [...launched]
+    .filter((c) => c.content_type !== 'tip')
+    .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+    .slice(0, 5);
+  // "คอร์สแนะนำ" กติกาเดิม: is_featured ตามลำดับ display_order จาก backend
+  const featured = launched.filter((c) => c.is_featured);
+
+  const seeAllButton = (
+    <button
+      onClick={() => navigate('/courses')}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#FFB300]/40 px-3 py-1 text-xs md:text-sm font-semibold text-[#FFB300] transition-colors hover:bg-[#FFB300]/10"
+    >
+      ดูทั้งหมด
+      <ChevronRight className="h-3.5 w-3.5" />
+    </button>
+  );
 
   const query = searchQuery.trim().toLowerCase();
   const searchResults = query
@@ -169,27 +188,26 @@ const Storefront = () => {
           </NetflixRow>
         )}
 
-        {rows.map((row) =>
-          // แถวมาใหม่ = mosaic: ใบใหม่สุดเป็นการ์ดใหญ่ซ้าย ที่เหลือกริดเล็กขวา
-          row.key === 'new' ? (
-            <FeaturedRow
-              key={row.key}
-              title={row.title}
-              courses={row.courses}
-              onOpen={(course) => navigate(`/courses/${course.slug}?ep=latest`)}
-            />
-          ) : (
-            <NetflixRow key={row.key} title={row.title}>
-              {row.courses.map((course) => (
-                <NetflixCard
-                  key={`${row.key}-${course.id}`}
-                  course={course}
-                  variant="grid"
-                  onClick={() => navigate(`/courses/${course.slug}?ep=latest`)}
-                />
-              ))}
-            </NetflixRow>
-          )
+        {/* หมวด 1: มาใหม่ล่าสุด — mosaic ใบใหม่สุดเป็นการ์ดใหญ่ซ้าย ที่เหลือกริดเล็กขวา */}
+        <FeaturedRow
+          title="มาใหม่ล่าสุด"
+          action={seeAllButton}
+          courses={newest5}
+          onOpen={(course) => navigate(`/courses/${course.slug}?ep=latest`)}
+        />
+
+        {/* หมวด 2: คอร์สแนะนำ — เหมือนเดิม เพิ่มแค่ปุ่มดูทั้งหมด */}
+        {featured.length > 0 && (
+          <NetflixRow title="คอร์สแนะนำ" action={seeAllButton}>
+            {featured.map((course) => (
+              <NetflixCard
+                key={`featured-${course.id}`}
+                course={course}
+                variant="grid"
+                onClick={() => navigate(`/courses/${course.slug}?ep=latest`)}
+              />
+            ))}
+          </NetflixRow>
         )}
 
         {courses.length === 0 && (
