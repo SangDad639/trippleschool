@@ -2918,9 +2918,52 @@ class ApiClient {
     if (accessToken) params.set('token', accessToken);
     return `${base}?${params.toString()}`;
   }
-  /** Short-lived (10min), single-ebook-scoped token for a members_only ebook's file. */
+  /** Short-lived (10min), single-ebook-scoped token for a members_only/paid ebook's file. */
   async getEbookAccessToken(slug: string): Promise<{ token: string }> {
     return this.request(`/api/ebooks/${encodeURIComponent(slug)}/access-token`);
+  }
+
+  // ============================================
+  // Ebook purchases (ซื้อ Ebook รายเล่ม — สลิป + แอดมินอนุมัติ เหมือนซื้อคอร์ส)
+  // ============================================
+  async purchaseEbook(ebookId: number, slip?: File, refcode?: string) {
+    const formData = new FormData();
+    if (slip) formData.append('slip', slip);
+    if (refcode) formData.append('refcode', refcode);
+    return this.request(`/api/ebook-purchases/${ebookId}/purchase`, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+  async getMyEbookPurchases() {
+    return this.request('/api/ebook-purchases/mine');
+  }
+  async getAdminEbookPurchases(params?: { status?: string; ebook_id?: number; search?: string; limit?: number; offset?: number }): Promise<{
+    purchases: EbookPurchaseAdminDto[];
+    total: number;
+    limit: number;
+    offset: number;
+  }> {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.ebook_id) qs.set('ebook_id', String(params.ebook_id));
+    if (params?.search) qs.set('search', params.search);
+    if (params?.limit !== undefined) qs.set('limit', String(params.limit));
+    if (params?.offset !== undefined) qs.set('offset', String(params.offset));
+    const q = qs.toString();
+    return this.request(`/api/ebook-purchases/admin/all${q ? `?${q}` : ''}`);
+  }
+  async getEbookPurchaseStats(): Promise<{ pending_count: string; approved_count: string; rejected_count: string; total_count: string }> {
+    return this.request('/api/ebook-purchases/admin/stats');
+  }
+  async approveEbookPurchase(id: number) {
+    return this.request(`/api/ebook-purchases/admin/${id}/approve`, { method: 'PUT' });
+  }
+  async rejectEbookPurchase(id: number, reason?: string) {
+    return this.request(`/api/ebook-purchases/admin/${id}/reject`, { method: 'PUT', body: JSON.stringify({ reason }) });
+  }
+  async revokeEbookPurchase(id: number, reason?: string) {
+    return this.request(`/api/ebook-purchases/admin/${id}/revoke`, { method: 'PUT', body: JSON.stringify({ reason }) });
   }
 
   // ============================================
@@ -3507,12 +3550,51 @@ export interface EbookDto {
   is_pdf?: boolean;
   allow_download: boolean;
   members_only: boolean;
-  /** Public responses only — whether the current viewer passes members_only. */
+  /** ⚠️ NUMERIC จาก pg มาเป็น string — ครอบ Number() ก่อนเทียบ/แสดงเสมอ. 0 = ไม่ขายรายเล่ม */
+  price: number | string;
+  pages: number | null;
+  author_name: string | null;
+  author_avatar_url: string | null;
+  /** ประโยคขายตัวหนาใต้ชื่อ (สไตล์ fuzionhub) */
+  hook: string | null;
+  /** "ข้างในมีอะไร" — bullet list */
+  highlights: string[];
+  /** ตัวอย่างผลงาน (แกลเลอรีรูป/คลิป YouTube) — โครงเดียวกับ courses.samples */
+  samples: { type: 'image' | 'youtube'; url?: string; youtube_id?: string; orientation: 'landscape' | 'portrait'; title?: string }[];
+  /** รหัสลิงก์สั้นประจำเล่ม (ใช้แชร์ — /ebooks/{share_code}) */
+  share_code?: string | null;
+  /** Public responses only — whether the current viewer may access the file. */
   entitled?: boolean;
+  /** GET /:slug เท่านั้น — คำสั่งซื้อของ viewer เอง (null = ยังไม่เคยสั่ง) */
+  my_purchase?: {
+    status: 'pending' | 'approved' | 'rejected';
+    paid_amount: number | string | null;
+    refcode: string | null;
+    rejection_reason: string | null;
+  } | null;
   is_active: boolean;
   display_order: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface EbookPurchaseAdminDto {
+  id: number;
+  user_id: number;
+  ebook_id: number;
+  status: 'pending' | 'approved' | 'rejected';
+  slip_url: string | null;
+  paid_amount: number | string | null;
+  refcode: string | null;
+  rejection_reason: string | null;
+  approved_by_email?: string | null;
+  approved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  user_email: string;
+  ebook_title: string;
+  ebook_slug: string;
+  price: number | string;
 }
 
 export interface AgentKnowledgeDto {

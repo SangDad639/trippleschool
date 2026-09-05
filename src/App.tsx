@@ -66,6 +66,7 @@ const MyCourses = lazy(() => import("@/pages/MyCourses"));
 const AdminCourses = lazy(() => import("@/pages/AdminCourses"));
 const AdminArticles = lazy(() => import("@/pages/AdminArticles"));
 const AdminEbooks = lazy(() => import("@/pages/AdminEbooks"));
+const AdminEbookPurchases = lazy(() => import("@/pages/AdminEbookPurchases"));
 const GuideGroup = lazy(() => import("@/pages/GuideGroup"));
 const AdminGuide = lazy(() => import("@/pages/AdminGuide"));
 const AdminEnrollments = lazy(() => import("@/pages/AdminEnrollments"));
@@ -431,6 +432,7 @@ function AppRoutes() {
       <Route path="/admin/courses" element={<ProtectedRoute><AdminCourses /></ProtectedRoute>} />
       <Route path="/admin/articles" element={<ProtectedRoute><AdminArticles /></ProtectedRoute>} />
       <Route path="/admin/ebooks" element={<ProtectedRoute><AdminEbooks /></ProtectedRoute>} />
+      <Route path="/admin/ebook-purchases" element={<ProtectedRoute><AdminEbookPurchases /></ProtectedRoute>} />
       <Route path="/admin/guide" element={<ProtectedRoute><AdminGuide /></ProtectedRoute>} />
       <Route path="/admin/enrollments" element={<ProtectedRoute><AdminEnrollments /></ProtectedRoute>} />
       <Route path="/admin/chats" element={<ProtectedRoute><AdminChats /></ProtectedRoute>} />

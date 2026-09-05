@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api, type EbookDto } from '@/lib/api';
+import SamplesEditor, { type MediaSample } from '@/components/admin/SamplesEditor';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,7 +53,16 @@ const emptyForm = {
   file_name: '',
   is_active: true,
   allow_download: true,
-  members_only: false,
+  // โหมดการเข้าถึง (radio ทางเดียว): free = ใครก็ได้ · members = สมาชิกเท่านั้น ·
+  // sale = ขายรายเล่ม (ต้องตั้งราคา) — แปลงเป็น members_only + price ตอนบันทึก
+  access: 'free' as 'free' | 'members' | 'sale',
+  price: '',
+  pages: '',
+  author_name: '',
+  author_avatar_url: '',
+  hook: '',
+  highlights: [] as string[],
+  samples: [] as MediaSample[],
 };
 
 // Admin CMS ของ Ebook (/admin/ebooks): ลิสต์ + dialog สร้าง/แก้ไข —
@@ -71,8 +81,10 @@ const AdminEbooks = () => {
   const [saving, setSaving] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user?.isAdmin) return;
@@ -108,7 +120,14 @@ const AdminEbooks = () => {
       file_name: e.file_name || '',
       is_active: e.is_active,
       allow_download: e.allow_download,
-      members_only: e.members_only,
+      access: e.members_only ? 'members' : Number(e.price) > 0 ? 'sale' : 'free',
+      price: Number(e.price) > 0 ? String(Number(e.price)) : '',
+      pages: e.pages ? String(e.pages) : '',
+      author_name: e.author_name || '',
+      author_avatar_url: e.author_avatar_url || '',
+      hook: e.hook || '',
+      highlights: Array.isArray(e.highlights) ? e.highlights : [],
+      samples: (Array.isArray(e.samples) ? e.samples : []).map((s) => ({ ...s, title: s.title || '' })),
     });
     setSlugTouched(true);
     setDialogOpen(true);
@@ -139,6 +158,24 @@ const AdminEbooks = () => {
     }
   };
 
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!file.type.startsWith('image/')) return toast.error('รองรับเฉพาะไฟล์รูปภาพ');
+    if (file.size > 15 * 1024 * 1024) return toast.error('ไฟล์ต้องไม่เกิน 15MB');
+    try {
+      setUploadingAvatar(true);
+      const { url } = await api.uploadCourseThumbnail(file);
+      set({ author_avatar_url: url });
+      toast.success('อัปโหลดรูปผู้เขียนสำเร็จ');
+    } catch (err: any) {
+      toast.error(err?.message || 'อัปโหลดไม่สำเร็จ');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -157,6 +194,10 @@ const AdminEbooks = () => {
 
   const handleSave = async () => {
     if (!form.title.trim()) return toast.error('กรุณาใส่ชื่อ Ebook');
+    const priceNum = Number(form.price);
+    if (form.access === 'sale' && (!Number.isFinite(priceNum) || priceNum <= 0)) {
+      return toast.error('โหมดขายรายเล่มต้องตั้งราคามากกว่า 0');
+    }
     try {
       setSaving(true);
       const payload = {
@@ -168,7 +209,14 @@ const AdminEbooks = () => {
         file_name: form.file_name,
         is_active: form.is_active,
         allow_download: form.allow_download,
-        members_only: form.members_only,
+        members_only: form.access === 'members',
+        price: form.access === 'sale' ? priceNum : 0,
+        pages: form.pages.trim() === '' ? null : Number(form.pages),
+        author_name: form.author_name,
+        author_avatar_url: form.author_avatar_url,
+        hook: form.hook,
+        highlights: form.highlights,
+        samples: form.samples,
       };
       if (editing) {
         await api.updateEbook(editing.id, payload);
@@ -225,7 +273,7 @@ const AdminEbooks = () => {
               <BookMarked className="h-6 w-6 text-emerald-400" />
               จัดการ Ebook
             </h1>
-            <p className="text-gray-400">Ebook บนเมนู Ebook — ผู้ใช้ทุกคนดาวน์โหลดฟรี ไม่ต้องล็อกอิน</p>
+            <p className="text-gray-400">Ebook บนเมนู Ebook — ตั้งได้ต่อเล่ม: ฟรี / สมาชิกเท่านั้น / ขายรายเล่ม</p>
           </div>
           <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700">
             <Plus className="h-4 w-4 mr-2" />
@@ -264,6 +312,9 @@ const AdminEbooks = () => {
                     </p>
                   </div>
                   {e.members_only && <Badge className="bg-[#FFB300]/15 text-[#FFB300] border border-[#FFB300]/30">สมาชิกเท่านั้น</Badge>}
+                  {!e.members_only && Number(e.price) > 0 && (
+                    <Badge className="bg-[#FFB300] text-black font-bold">฿{Number(e.price).toLocaleString()}</Badge>
+                  )}
                   {!e.allow_download && <Badge variant="secondary">อ่านอย่างเดียว</Badge>}
                   <Badge variant={e.is_active ? 'default' : 'secondary'}>{e.is_active ? 'เผยแพร่' : 'ซ่อนอยู่'}</Badge>
                   <Button size="sm" variant="ghost" title="เปิดดูหน้าเว็บจริง" onClick={() => window.open(`/ebooks/${e.slug}`, '_blank')}>
@@ -363,8 +414,41 @@ const AdminEbooks = () => {
               </div>
             </div>
 
+            {/* โหมดการเข้าถึง — ทางเดียวจาก 3 ทาง (server บังคับซ้ำ: members_only + ราคา ตั้งพร้อมกันไม่ได้) */}
             <div className="space-y-2 rounded-lg border border-gray-800 bg-gray-900/40 p-3">
-              <div className="flex items-center gap-2">
+              <p className="text-sm font-medium text-white">การเข้าถึง</p>
+              {(
+                [
+                  { value: 'free', label: '🆓 ฟรี — ใครก็ดาวน์โหลด/อ่านได้ ไม่ต้องล็อกอิน' },
+                  { value: 'members', label: '👑 สมาชิกเท่านั้น — ต้องมีแพ็กเกจรายเดือน/รายปี' },
+                  { value: 'sale', label: '💰 ขายรายเล่ม — ตั้งราคา ซื้อด้วยสลิปโอนเหมือนคอร์ส (สมาชิกอ่านได้เลยไม่ต้องซื้อ)' },
+                ] as const
+              ).map((opt) => (
+                <label key={opt.value} className="flex items-center gap-2 cursor-pointer text-sm text-gray-200">
+                  <input
+                    type="radio"
+                    name="ebook-access"
+                    className="accent-[#FFB300]"
+                    checked={form.access === opt.value}
+                    onChange={() => set({ access: opt.value })}
+                  />
+                  {opt.label}
+                </label>
+              ))}
+              {form.access === 'sale' && (
+                <div className="flex items-center gap-2 pl-6 pt-1">
+                  <Label className="whitespace-nowrap">ราคา (บาท) *</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={form.price}
+                    onChange={(e) => set({ price: e.target.value })}
+                    placeholder="เช่น 349"
+                    className="w-32"
+                  />
+                </div>
+              )}
+              <div className="flex items-center gap-2 border-t border-gray-800 pt-2 mt-1">
                 <Checkbox
                   checked={form.allow_download}
                   onCheckedChange={(c) => set({ allow_download: c === true })}
@@ -374,15 +458,93 @@ const AdminEbooks = () => {
                   อนุญาตให้ดาวน์โหลด (ไม่ติ๊ก = อ่านในเว็บได้อย่างเดียว ดาวน์โหลดไม่ได้)
                 </Label>
               </div>
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  checked={form.members_only}
-                  onCheckedChange={(c) => set({ members_only: c === true })}
-                  id="ebook-members-only"
+            </div>
+
+            {/* ข้อมูลหน้า detail (สไตล์ fuzionhub) */}
+            <div className="space-y-4 rounded-lg border border-gray-800 bg-gray-900/40 p-3">
+              <p className="text-sm font-medium text-white">📖 ข้อมูลหน้า Ebook (ไม่บังคับ)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>จำนวนหน้า</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={form.pages}
+                    onChange={(e) => set({ pages: e.target.value })}
+                    placeholder="เช่น 56"
+                    className="mt-1.5"
+                  />
+                </div>
+                <div>
+                  <Label>ชื่อผู้เขียน</Label>
+                  <Input value={form.author_name} onChange={(e) => set({ author_name: e.target.value })} placeholder="เช่น Triple Next" className="mt-1.5" />
+                </div>
+              </div>
+              <div>
+                <Label>รูปผู้เขียน (แสดงเป็นวงกลมเล็กข้างชื่อ)</Label>
+                <div className="mt-1.5 flex items-center gap-3">
+                  {form.author_avatar_url ? (
+                    <img src={api.mediaUrl(form.author_avatar_url, 'card')} alt="ผู้เขียน" className="h-10 w-10 rounded-full object-cover border border-gray-700" />
+                  ) : (
+                    <div className="h-10 w-10 rounded-full bg-gray-800 border border-dashed border-gray-700" />
+                  )}
+                  <Button type="button" variant="outline" size="sm" disabled={uploadingAvatar} onClick={() => avatarInputRef.current?.click()}>
+                    {uploadingAvatar ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Upload className="h-4 w-4 mr-1.5" />}
+                    อัปโหลดรูป
+                  </Button>
+                  {form.author_avatar_url && (
+                    <Button type="button" variant="ghost" size="sm" className="text-red-400" onClick={() => set({ author_avatar_url: '' })}>
+                      <X className="h-4 w-4 mr-1" /> ลบ
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <Label>ประโยคขาย (ตัวหนาใต้ชื่อเล่ม)</Label>
+                <Textarea
+                  value={form.hook}
+                  onChange={(e) => set({ hook: e.target.value })}
+                  rows={2}
+                  placeholder='เช่น "นี่ไม่ใช่หนังสือสอนตั้งแต่ 0 แต่จะพาคุณดูการทำงานจริงทั้งเบื้องหลัง"'
+                  className="mt-1.5"
                 />
-                <Label htmlFor="ebook-members-only" className="cursor-pointer">
-                  เฉพาะสมาชิกเท่านั้น (ไม่ติ๊ก = ใครก็ดูได้ ไม่ต้องล็อกอิน)
-                </Label>
+              </div>
+              <SamplesEditor
+                label='🎞️ ตัวอย่างผลงาน (แกลเลอรีบนหน้า Ebook)'
+                hint='รูปอ่านแนวนอน/แนวตั้งจากไฟล์อัตโนมัติ · วิดีโอแปะลิงก์ YouTube (Shorts = แนวตั้ง) · ไม่ใส่ = ไม่มี section ตัวอย่าง'
+                items={form.samples}
+                onChange={(samples) => set({ samples })}
+              />
+              <div>
+                <Label>ข้างในมีอะไร (bullet โชว์หน้า Ebook — สูงสุด 20 ข้อ)</Label>
+                <div className="mt-1.5 space-y-2">
+                  {form.highlights.map((h, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <Input
+                        value={h}
+                        onChange={(e) =>
+                          set({ highlights: form.highlights.map((x, j) => (j === i ? e.target.value : x)) })
+                        }
+                        placeholder="เช่น เจาะเบื้องหลัง Prompt และไอเดียของงานจริง"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-400 flex-shrink-0"
+                        onClick={() => set({ highlights: form.highlights.filter((_, j) => j !== i) })}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  {form.highlights.length < 20 && (
+                    <Button type="button" variant="outline" size="sm" onClick={() => set({ highlights: [...form.highlights, ''] })}>
+                      <Plus className="h-4 w-4 mr-1.5" />
+                      เพิ่มรายการ
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -403,6 +565,7 @@ const AdminEbooks = () => {
       </Dialog>
 
       <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
+      <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
       <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileUpload} />
     </div>
   );

@@ -1,15 +1,18 @@
 /**
- * Ebooks — free downloads under the "Ebook" menu. Each ebook is public by
- * default (no login/membership required), but an admin can flip either:
- *   - allow_download: false → view-only, no attachment download
- *   - members_only: true    → must be logged in with an active subscription
+ * Ebooks — under the "Ebook" menu. Access modes per ebook (mutually exclusive):
+ *   - ฟรี:      price = 0, members_only = false → anyone, no login
+ *   - สมาชิก:   members_only = true             → active subscription required
+ *   - ขายรายเล่ม: price > 0, members_only = false → bought (ebook_purchases
+ *     approved) OR active subscription (สมาชิกอ่านเล่มขายได้เลย — กติกาธุรกิจ)
+ * Extra flag: allow_download: false → view-only, no attachment download.
  *
  * List/detail responses never include the raw file_url/file_name to the
- * public — only /:slug/file streams bytes, re-checking both flags on every
+ * public — only /:slug/file streams bytes, re-checking entitlement on every
  * request (a stored URL alone must never be enough to get the file; see the
  * gated route below). Cover images and the ebook file itself are uploaded
  * via the existing courses endpoints (/upload-thumbnail, /upload-material);
  * this router only stores the returned pointer and re-serves it itself.
+ * การสั่งซื้อ/อนุมัติอยู่ที่ routes/ebookPurchases.ts (/api/ebook-purchases).
  */
 import { Router, Response } from 'express';
 import jwt from 'jsonwebtoken';
@@ -17,6 +20,7 @@ import pool from '../db.js';
 import { authenticate, optionalAuth, optionalAuthQueryOrHeader, requireAdmin, JWT_SECRET, AuthRequest } from '../middleware/auth.js';
 import { hasActiveSubscription } from '../services/stripeService.js';
 import { getFile } from '../utils/s3.js';
+import { sanitizeCourseSamples } from './courses.js';
 
 const router = Router();
 const EBOOK_FILE_TOKEN_PURPOSE = 'ebook-file';
@@ -53,6 +57,53 @@ function sanitizeSlug(raw: unknown): string {
     .slice(0, 200);
 }
 
+/** "ข้างในมีอะไร" — bullet หน้า detail: string ล้วน ตัดว่าง จำกัด 20 ข้อ/ข้อละ 200 ตัว */
+function sanitizeHighlights(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .filter((s): s is string => typeof s === 'string')
+    .map((s) => s.trim().slice(0, 200))
+    .filter(Boolean)
+    .slice(0, 20);
+}
+
+/** ราคา ≥ 0 ปัด 2 ตำแหน่ง — คืน null เมื่อค่าที่ส่งมาใช้ไม่ได้ (ให้ caller ตอบ 400) */
+function sanitizePrice(v: unknown): number | null {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+/** จำนวนหน้า: int > 0 หรือ null (ไม่กรอก/ล้างค่า) */
+function sanitizePages(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/**
+ * รหัสลิงก์สั้นประจำเล่ม (/ebooks/{code}) — ชุดอักขระเดียวกับคอร์ส (migration 048/058):
+ * ตัด 0/o/1/l/i ที่อ่านสับสน และตัวแรกเป็นตัวอักษรเสมอ
+ */
+function generateShareCode(): string {
+  const letters = 'abcdefghjkmnpqrstuvwxyz';
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789';
+  let code = letters[Math.floor(Math.random() * letters.length)];
+  for (let i = 0; i < 5; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+async function uniqueShareCode(): Promise<string> {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const code = generateShareCode();
+    const clash = await pool.query(
+      `SELECT 1 FROM ebooks WHERE share_code = $1 OR slug = $1 LIMIT 1`,
+      [code]
+    );
+    if (clash.rows.length === 0) return code;
+  }
+  throw new Error('generate ebook share code failed');
+}
+
 /** Extracts the S3 key from a stored courses-materials proxy URL. */
 function materialsKey(fileUrl: unknown): string | null {
   if (typeof fileUrl !== 'string' || !fileUrl.startsWith(MATERIALS_PREFIX)) return null;
@@ -63,17 +114,62 @@ function isPdfFile(row: { file_name: string | null; file_url: string | null }): 
   return (row.file_name || row.file_url || '').toLowerCase().endsWith('.pdf');
 }
 
-/** Admins always qualify; non-members_only ebooks need no check. */
-async function computeEntitled(req: AuthRequest, membersOnly: boolean): Promise<boolean> {
-  if (!membersOnly || req.isAdmin) return true;
+/** เล่มที่ต้องมีสิทธิ์ก่อนถึงจะเข้าไฟล์ได้ = สมาชิกเท่านั้น หรือ เล่มขายรายเล่ม */
+function requiresEntitlement(ebook: { members_only: boolean; price?: number | string | null }): boolean {
+  // NUMERIC จาก pg มาเป็น string — ต้อง Number() ก่อนเทียบเสมอ
+  return ebook.members_only || Number(ebook.price) > 0;
+}
+
+/**
+ * สิทธิ์ของ viewer ต่อ "หลายเล่ม" ในคำขอเดียว — โหลดครั้งเดียวแล้วใช้ซ้ำทุกแถว
+ * (list ยาวจะได้ไม่ยิง subscription/purchase query ซ้ำต่อเล่ม)
+ */
+type EntitleCtx = { isSubscriber: boolean; purchased: Set<number> };
+async function loadEntitleCtx(req: AuthRequest): Promise<EntitleCtx> {
+  if (!req.userId) return { isSubscriber: false, purchased: new Set() };
+  const [sub, bought] = await Promise.all([
+    hasActiveSubscription(req.userId),
+    pool.query(`SELECT ebook_id FROM ebook_purchases WHERE user_id = $1 AND status = 'approved'`, [req.userId]),
+  ]);
+  return { isSubscriber: sub, purchased: new Set(bought.rows.map((r: any) => Number(r.ebook_id))) };
+}
+
+/**
+ * Admins always qualify; free ebooks need no check. เล่มขาย: ซื้อแล้ว (approved)
+ * หรือเป็นสมาชิกก็เข้าได้ — เช็คแถวซื้อเสมอไม่ผูกโหมด กันเคสแอดมินสลับโหมด
+ * เล่มทีหลังแล้วคนที่จ่ายเงินไปแล้วหลุดสิทธิ์
+ */
+function entitledFor(req: AuthRequest, ebook: any, ctx: EntitleCtx): boolean {
+  if (!requiresEntitlement(ebook) || req.isAdmin) return true;
   if (!req.userId) return false;
-  return hasActiveSubscription(req.userId);
+  return ctx.isSubscriber || ctx.purchased.has(Number(ebook.id));
+}
+
+/** สิทธิ์ต่อเล่มเดียว (detail / file / access-token) */
+async function computeEntitled(req: AuthRequest, ebook: any): Promise<boolean> {
+  if (!requiresEntitlement(ebook) || req.isAdmin) return true;
+  if (!req.userId) return false;
+  return entitledFor(req, ebook, await loadEntitleCtx(req));
 }
 
 /** Public-facing row: strips the raw file pointer, adds viewer-relative flags. */
-function publicRow(row: any, entitled: boolean) {
+function publicRow(row: any, entitled: boolean, myPurchase?: any) {
   const { file_url, file_name, ...rest } = row;
-  return { ...rest, has_file: !!file_url, is_pdf: isPdfFile(row), entitled };
+  return {
+    ...rest,
+    has_file: !!file_url,
+    is_pdf: isPdfFile(row),
+    entitled,
+    // คำสั่งซื้อของ viewer เอง (เฉพาะหน้า detail) — ให้ FE โชว์สถานะ รออนุมัติ/ถูกปฏิเสธ
+    my_purchase: myPurchase
+      ? {
+          status: myPurchase.status,
+          paid_amount: myPurchase.paid_amount,
+          refcode: myPurchase.refcode,
+          rejection_reason: myPurchase.rejection_reason,
+        }
+      : null,
+  };
 }
 
 // ============ Admin: list all (incl. inactive) ============
@@ -94,10 +190,8 @@ router.get('/', optionalAuth, async (req: AuthRequest, res: Response) => {
     const result = await pool.query(
       `SELECT * FROM ebooks WHERE is_active = true ORDER BY display_order ASC, created_at DESC`
     );
-    const rows = await Promise.all(
-      result.rows.map(async (row) => publicRow(row, await computeEntitled(req, row.members_only)))
-    );
-    res.json(rows);
+    const ctx = await loadEntitleCtx(req);
+    res.json(result.rows.map((row) => publicRow(row, entitledFor(req, row, ctx))));
   } catch (error) {
     console.error('Error fetching ebooks:', error);
     res.status(500).json({ error: 'โหลด Ebook ไม่สำเร็จ' });
@@ -108,13 +202,23 @@ router.get('/', optionalAuth, async (req: AuthRequest, res: Response) => {
 // Admins may open inactive ebooks (preview before publishing).
 router.get('/:slug', optionalAuth, async (req: AuthRequest, res: Response) => {
   try {
-    const result = await pool.query(`SELECT * FROM ebooks WHERE slug = $1`, [req.params.slug]);
+    // รับทั้ง slug ปกติและรหัสลิงก์สั้น (/ebooks/{share_code}) — แบบเดียวกับคอร์ส
+    const result = await pool.query(`SELECT * FROM ebooks WHERE slug = $1 OR share_code = LOWER($1)`, [req.params.slug]);
     const ebook = result.rows[0];
     if (!ebook || (!ebook.is_active && !req.isAdmin)) {
       return res.status(404).json({ error: 'ไม่พบ Ebook' });
     }
-    const entitled = await computeEntitled(req, ebook.members_only);
-    res.json(publicRow(ebook, entitled));
+    const entitled = await computeEntitled(req, ebook);
+    // แนบสถานะคำสั่งซื้อของ viewer (ถ้ามี) ให้หน้า detail โชว์ รออนุมัติ/ถูกปฏิเสธ ได้
+    let myPurchase: any = null;
+    if (req.userId) {
+      const p = await pool.query(
+        `SELECT status, paid_amount, refcode, rejection_reason FROM ebook_purchases WHERE user_id = $1 AND ebook_id = $2`,
+        [req.userId, ebook.id]
+      );
+      myPurchase = p.rows[0] || null;
+    }
+    res.json(publicRow(ebook, entitled, myPurchase));
   } catch (error) {
     console.error('Error fetching ebook:', error);
     res.status(500).json({ error: 'โหลด Ebook ไม่สำเร็จ' });
@@ -130,7 +234,8 @@ router.get('/:slug', optionalAuth, async (req: AuthRequest, res: Response) => {
 // logged in when the ebook is members_only.
 router.get('/:slug/file', optionalAuthQueryOrHeader, async (req: AuthRequest, res: Response) => {
   try {
-    const result = await pool.query(`SELECT * FROM ebooks WHERE slug = $1`, [req.params.slug]);
+    // รับทั้ง slug ปกติและรหัสลิงก์สั้น (/ebooks/{share_code}) — แบบเดียวกับคอร์ส
+    const result = await pool.query(`SELECT * FROM ebooks WHERE slug = $1 OR share_code = LOWER($1)`, [req.params.slug]);
     const ebook = result.rows[0];
     if (!ebook || (!ebook.is_active && !req.isAdmin)) {
       return res.status(404).json({ error: 'ไม่พบ Ebook' });
@@ -142,7 +247,8 @@ router.get('/:slug/file', optionalAuthQueryOrHeader, async (req: AuthRequest, re
     if (mode === 'download' && !ebook.allow_download) {
       return res.status(403).json({ error: 'Ebook นี้เปิดให้อ่านอย่างเดียว ดาวน์โหลดไม่ได้' });
     }
-    if (ebook.members_only && !req.isAdmin) {
+    // ครอบทั้งเล่มสมาชิกและเล่มขายรายเล่ม — เล่มขายที่หลุด gate นี้ = โหลดฟรีได้
+    if (requiresEntitlement(ebook) && !req.isAdmin) {
       const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
       const scopedTokenOk = queryToken ? verifyEbookFileToken(queryToken, ebook.slug) : false;
       if (!scopedTokenOk) {
@@ -151,9 +257,11 @@ router.get('/:slug/file', optionalAuthQueryOrHeader, async (req: AuthRequest, re
         if (!req.userId) {
           return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน', code: 'AUTH_REQUIRED' });
         }
-        const active = await hasActiveSubscription(req.userId);
-        if (!active) {
-          return res.status(403).json({ error: 'Ebook นี้สำหรับสมาชิกเท่านั้น', code: 'MEMBERS_ONLY', subscriptionUrl: '/pricing' });
+        if (!(await computeEntitled(req, ebook))) {
+          if (ebook.members_only) {
+            return res.status(403).json({ error: 'Ebook นี้สำหรับสมาชิกเท่านั้น', code: 'MEMBERS_ONLY', subscriptionUrl: '/pricing' });
+          }
+          return res.status(403).json({ error: 'ต้องซื้อ Ebook เล่มนี้ก่อนถึงจะเข้าถึงไฟล์ได้', code: 'PURCHASE_REQUIRED' });
         }
       }
     }
@@ -181,19 +289,20 @@ router.get('/:slug/file', optionalAuthQueryOrHeader, async (req: AuthRequest, re
 // accepts, so a plain <a>/<iframe> link never needs the long-lived session JWT.
 router.get('/:slug/access-token', authenticate, async (req: AuthRequest, res: Response) => {
   try {
-    const result = await pool.query(`SELECT * FROM ebooks WHERE slug = $1`, [req.params.slug]);
+    // รับทั้ง slug ปกติและรหัสลิงก์สั้น (/ebooks/{share_code}) — แบบเดียวกับคอร์ส
+    const result = await pool.query(`SELECT * FROM ebooks WHERE slug = $1 OR share_code = LOWER($1)`, [req.params.slug]);
     const ebook = result.rows[0];
     if (!ebook || (!ebook.is_active && !req.isAdmin)) {
       return res.status(404).json({ error: 'ไม่พบ Ebook' });
     }
-    if (!ebook.members_only) {
+    if (!requiresEntitlement(ebook)) {
       return res.status(400).json({ error: 'Ebook นี้ไม่ต้องขอสิทธิ์เข้าถึง' });
     }
-    if (!req.isAdmin) {
-      const active = await hasActiveSubscription(req.userId!);
-      if (!active) {
+    if (!req.isAdmin && !(await computeEntitled(req, ebook))) {
+      if (ebook.members_only) {
         return res.status(403).json({ error: 'Ebook นี้สำหรับสมาชิกเท่านั้น', code: 'MEMBERS_ONLY', subscriptionUrl: '/pricing' });
       }
+      return res.status(403).json({ error: 'ต้องซื้อ Ebook เล่มนี้ก่อนถึงจะเข้าถึงไฟล์ได้', code: 'PURCHASE_REQUIRED' });
     }
     const token = jwt.sign({ purpose: EBOOK_FILE_TOKEN_PURPOSE, slug: ebook.slug }, JWT_SECRET, { expiresIn: '10m' });
     res.json({ token });
@@ -206,13 +315,21 @@ router.get('/:slug/access-token', authenticate, async (req: AuthRequest, res: Re
 // ============ Admin: create ============
 router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const { title, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only } = req.body;
+    const { title, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only, author_name, author_avatar_url, hook } = req.body;
     if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'กรุณาใส่ชื่อ Ebook' });
     const slug = sanitizeSlug(req.body.slug) || sanitizeSlug(title);
     if (!slug) return res.status(400).json({ error: 'สร้าง slug จากชื่อไม่ได้ — กรุณากำหนด slug เอง (a-z, 0-9, -)' });
+    const price = req.body.price === undefined || req.body.price === '' ? 0 : sanitizePrice(req.body.price);
+    if (price === null) return res.status(400).json({ error: 'ราคาไม่ถูกต้อง' });
+    const membersOnly = typeof members_only === 'boolean' ? members_only : false;
+    // โหมดต่อเล่มต้องชัดทางเดียว: สมาชิกเท่านั้น กับ ขายรายเล่ม ตั้งพร้อมกันไม่ได้
+    if (membersOnly && price > 0) {
+      return res.status(400).json({ error: 'เลือกได้อย่างเดียว: "สมาชิกเท่านั้น" หรือ "ขายรายเล่ม (ตั้งราคา)"' });
+    }
     const result = await pool.query(
-      `INSERT INTO ebooks (title, slug, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+      `INSERT INTO ebooks (title, slug, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only,
+                           price, pages, author_name, author_avatar_url, hook, highlights, samples, share_code)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb, $18) RETURNING *`,
       [
         title.trim(),
         slug,
@@ -223,7 +340,15 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
         typeof is_active === 'boolean' ? is_active : true,
         Number.isInteger(display_order) ? display_order : 0,
         typeof allow_download === 'boolean' ? allow_download : true,
-        typeof members_only === 'boolean' ? members_only : false,
+        membersOnly,
+        price,
+        req.body.pages === undefined ? null : sanitizePages(req.body.pages),
+        typeof author_name === 'string' && author_name.trim() ? author_name.trim().slice(0, 255) : null,
+        typeof author_avatar_url === 'string' && author_avatar_url ? author_avatar_url : null,
+        typeof hook === 'string' && hook.trim() ? hook.trim().slice(0, 1000) : null,
+        JSON.stringify(sanitizeHighlights(req.body.highlights)),
+        JSON.stringify(sanitizeCourseSamples(req.body.samples)),
+        await uniqueShareCode(),
       ]
     );
     res.json(result.rows[0]);
@@ -239,9 +364,25 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Bad ebook id' });
-    const { title, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only } = req.body;
+    const { title, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only, author_name, author_avatar_url, hook } = req.body;
     const slug = req.body.slug !== undefined ? sanitizeSlug(req.body.slug) : undefined;
     if (slug === '') return res.status(400).json({ error: 'slug ไม่ถูกต้อง (a-z, 0-9, -)' });
+    // ราคา: '' = ล้างเป็น 0 (เลิกขาย), ค่าเพี้ยน → 400
+    let price: number | null | undefined = undefined;
+    if (req.body.price !== undefined) {
+      price = req.body.price === '' || req.body.price === null ? 0 : sanitizePrice(req.body.price);
+      if (price === null) return res.status(400).json({ error: 'ราคาไม่ถูกต้อง' });
+    }
+    // กันโหมดชนกันแบบ partial update: ต้องรู้ค่าปลายทางจริงทั้งคู่ก่อนตัดสิน
+    if (price !== undefined || typeof members_only === 'boolean') {
+      const cur = await pool.query(`SELECT price, members_only FROM ebooks WHERE id = $1`, [id]);
+      if (cur.rows.length === 0) return res.status(404).json({ error: 'ไม่พบ Ebook' });
+      const nextPrice = price !== undefined ? price : Number(cur.rows[0].price) || 0;
+      const nextMembers = typeof members_only === 'boolean' ? members_only : cur.rows[0].members_only;
+      if (nextMembers && nextPrice > 0) {
+        return res.status(400).json({ error: 'เลือกได้อย่างเดียว: "สมาชิกเท่านั้น" หรือ "ขายรายเล่ม (ตั้งราคา)"' });
+      }
+    }
     // Unspecified fields stay untouched; sending '' explicitly clears a nullable field.
     const nullable = (v: unknown) => (v === undefined ? undefined : typeof v === 'string' && v === '' ? null : v);
     const sets: string[] = [];
@@ -261,6 +402,19 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     add('display_order', Number.isInteger(display_order) ? display_order : undefined);
     add('allow_download', typeof allow_download === 'boolean' ? allow_download : undefined);
     add('members_only', typeof members_only === 'boolean' ? members_only : undefined);
+    add('price', price);
+    if (req.body.pages !== undefined) add('pages', sanitizePages(req.body.pages));
+    add('author_name', nullable(typeof author_name === 'string' ? author_name.trim().slice(0, 255) : author_name));
+    add('author_avatar_url', nullable(author_avatar_url));
+    add('hook', nullable(typeof hook === 'string' ? hook.trim().slice(0, 1000) : hook));
+    if (req.body.highlights !== undefined) {
+      params.push(JSON.stringify(sanitizeHighlights(req.body.highlights)));
+      sets.push(`highlights = $${params.length}::jsonb`);
+    }
+    if (req.body.samples !== undefined) {
+      params.push(JSON.stringify(sanitizeCourseSamples(req.body.samples)));
+      sets.push(`samples = $${params.length}::jsonb`);
+    }
     if (sets.length === 0) return res.status(400).json({ error: 'ไม่มีข้อมูลให้แก้ไข' });
     params.push(id);
     const result = await pool.query(

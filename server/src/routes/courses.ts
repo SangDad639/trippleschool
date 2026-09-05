@@ -897,7 +897,8 @@ router.get('/', async (req, res) => {
  * ตัวอย่างผลงาน (แท็บ "ตัวอย่าง"): ไฟล์ต้องเป็นของที่อัปผ่านระบบเราเท่านั้น
  * (prefix course-sample/) กัน url แปลกปลอมหลุดเข้า DB · YouTube เก็บเป็น id
  */
-function sanitizeCourseSamples(input: unknown): object[] {
+// export ให้ ebooks.ts ใช้ด้วย — Ebook มีแกลเลอรีตัวอย่างโครงเดียวกันเป๊ะ
+export function sanitizeCourseSamples(input: unknown): object[] {
   if (!Array.isArray(input)) return [];
   return input
     .slice(0, 20)

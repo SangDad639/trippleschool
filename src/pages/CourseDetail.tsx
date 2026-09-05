@@ -8,6 +8,7 @@ import { shareLink } from '@/lib/shareLink';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import PublicHeader from '@/components/PublicHeader';
+import SamplesGallery from '@/components/SamplesGallery';
 import AgentChatWidget from '@/components/AgentChatWidget';
 import CoursePrice from '@/components/CoursePrice';
 import StarRating from '@/components/StarRating';
@@ -857,39 +858,7 @@ const CourseDetail = () => {
               </CardTitle>
             </CardHeader>
             <CardContent className="px-4 pb-4 pt-0">
-              <div className="flex flex-wrap gap-3 sm:gap-4 items-start">
-                {course.samples!.map((s, i) => (
-                  <figure
-                    key={i}
-                    className={s.orientation === 'portrait' ? 'w-[47%] sm:w-[200px]' : 'w-full sm:w-[380px]'}
-                  >
-                    <div className={`dark-stage relative rounded-xl overflow-hidden border border-gray-700 bg-gray-900 ${
-                      s.orientation === 'portrait' ? 'aspect-[9/16]' : 'aspect-video'
-                    }`}>
-                      {s.type === 'youtube' ? (
-                        <iframe
-                          src={`https://www.youtube.com/embed/${s.youtube_id}?rel=0`}
-                          title={s.title || 'ตัวอย่างผลงาน'}
-                          className="w-full h-full"
-                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                          allowFullScreen
-                        />
-                      ) : (
-                        <img
-                          src={api.mediaUrl(s.url)}
-                          alt={s.title || 'ตัวอย่างผลงาน'}
-                          loading="lazy"
-                          className="w-full h-full object-cover"
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                        />
-                      )}
-                    </div>
-                    {s.title && (
-                      <figcaption className="mt-1.5 text-xs text-gray-400 line-clamp-2">{s.title}</figcaption>
-                    )}
-                  </figure>
-                ))}
-              </div>
+              <SamplesGallery samples={course.samples!} />
             </CardContent>
           </Card>
         )}

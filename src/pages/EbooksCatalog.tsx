@@ -4,10 +4,10 @@ import PublicHeader from '@/components/PublicHeader';
 import { Badge } from '@/components/ui/badge';
 import EbookCard from '@/components/ebooks/EbookCard';
 import { api, type EbookDto } from '@/lib/api';
-import { Download, Loader2, BookMarked } from 'lucide-react';
+import { BookOpen, Loader2, BookMarked } from 'lucide-react';
 
-// คลัง Ebook ฟรี — วางเลย์เอาต์ชุดเดียวกับหน้า /programs แต่ไม่มีป้าย/แถบชวนสมัคร
-// สมาชิกใดๆ เพราะดาวน์โหลดได้ฟรีทุกคน ไม่ต้องล็อกอิน
+// คลัง E-book — เลย์เอาต์ชุดเดียวกับหน้า /programs มีทั้งเล่มฟรี เล่มสำหรับสมาชิก
+// และเล่มขายรายเล่ม (ป้ายราคาบนการ์ด — ซื้อ/อ่านที่หน้า detail ของแต่ละเล่ม)
 const EbooksCatalog = () => {
   const [ebooks, setEbooks] = useState<EbookDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,14 +28,14 @@ const EbooksCatalog = () => {
     <div className="min-h-screen bg-background text-foreground overflow-x-clip">
       <PublicHeader />
 
-      {/* Top bar: title + free badge */}
+      {/* Top bar: title + badge */}
       <div className="px-4 md:px-12 pt-8 pb-5 flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex-1">
-          <h1 className="text-2xl md:text-3xl font-bold">Ebook ฟรี</h1>
-          <p className="text-gray-400 text-sm mt-1">ดาวน์โหลดได้ทันที ไม่ต้องเป็นสมาชิกและไม่มีค่าใช้จ่าย</p>
+          <h1 className="text-2xl md:text-3xl font-bold">E-book</h1>
+          <p className="text-gray-400 text-sm mt-1">รวมคู่มือและเทคนิคฉบับอ่านจบเล่ม — มีทั้งเล่มฟรีและเล่มพรีเมียม</p>
         </div>
         <Badge className="self-start sm:self-auto bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 shrink-0">
-          <Download className="h-3.5 w-3.5 mr-1" /> ดาวน์โหลดฟรี ไม่ต้องเป็นสมาชิก
+          <BookOpen className="h-3.5 w-3.5 mr-1" /> อ่านออนไลน์ได้ทันที
         </Badge>
       </div>
 
