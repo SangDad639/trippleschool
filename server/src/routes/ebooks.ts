@@ -19,7 +19,8 @@ import jwt from 'jsonwebtoken';
 import pool from '../db.js';
 import { authenticate, optionalAuth, optionalAuthQueryOrHeader, requireAdmin, JWT_SECRET, AuthRequest } from '../middleware/auth.js';
 import { hasActiveSubscription } from '../services/stripeService.js';
-import { getFile } from '../utils/s3.js';
+import { getFile, uploadFile } from '../utils/s3.js';
+import { makePreviewPdf } from '../utils/pdfPreview.js';
 import { sanitizeCourseSamples } from './courses.js';
 
 const router = Router();
@@ -154,11 +155,14 @@ async function computeEntitled(req: AuthRequest, ebook: any): Promise<boolean> {
 
 /** Public-facing row: strips the raw file pointer, adds viewer-relative flags. */
 function publicRow(row: any, entitled: boolean, myPurchase?: any) {
-  const { file_url, file_name, ...rest } = row;
+  // preview_*_url ก็ถูก strip เหมือน file_url — ประตูเดียวที่เสิร์ฟตัวอย่างคือ /:slug/preview-file
+  const { file_url, file_name, preview_file_url, preview_cache_url, ...rest } = row;
   return {
     ...rest,
     has_file: !!file_url,
     is_pdf: isPdfFile(row),
+    // มีตัวอย่างให้อ่านไหม: ไฟล์ตัวอย่างอัพเอง หรือ ตั้งจำนวนหน้าไว้และมีไฟล์เต็มให้ตัด
+    has_preview: !!preview_file_url || (Number(row.preview_pages) > 0 && !!file_url),
     entitled,
     // คำสั่งซื้อของ viewer เอง (เฉพาะหน้า detail) — ให้ FE โชว์สถานะ รออนุมัติ/ถูกปฏิเสธ
     my_purchase: myPurchase
@@ -283,6 +287,70 @@ router.get('/:slug/file', optionalAuthQueryOrHeader, async (req: AuthRequest, re
   }
 });
 
+// ============ Public: อ่านตัวอย่างจำกัดหน้า (เล่มสมาชิก/เล่มขาย) ============
+// เปิดสาธารณะโดยตั้งใจ — ไฟล์ที่เสิร์ฟมีแค่หน้าตัวอย่างจริงๆ (ตัดด้วย pdf-lib หรือ
+// ไฟล์ที่แอดมินอัพเอง) ไฟล์เต็มยังอยู่หลัง gate /:slug/file ตามเดิม
+// ลำดับ: ① ไฟล์ตัวอย่างอัพเอง (override) ② แคชที่เคยตัดไว้ ③ ตัดสดจากไฟล์เต็มแล้วแคช
+router.get('/:slug/preview-file', async (req, res: Response) => {
+  try {
+    const result = await pool.query(`SELECT * FROM ebooks WHERE slug = $1 OR share_code = LOWER($1)`, [req.params.slug]);
+    const ebook = result.rows[0];
+    if (!ebook || !ebook.is_active) return res.status(404).json({ error: 'ไม่พบ Ebook' });
+    // เล่มฟรีไม่มีตัวอย่าง — อ่านเต็มได้อยู่แล้ว
+    if (!requiresEntitlement(ebook)) return res.status(404).json({ error: 'เล่มนี้อ่านได้เต็มเล่มอยู่แล้ว' });
+
+    const sendPdf = (body: Buffer | NodeJS.ReadableStream) => {
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline');
+      // ตัวอย่างเป็นของสาธารณะโดยนิยาม — แคชได้ (ต่างจากไฟล์เต็มที่ no-store)
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      if (Buffer.isBuffer(body)) res.end(body);
+      else (body as any).pipe(res);
+    };
+
+    // ① ไฟล์ตัวอย่างที่แอดมินอัพเอง — ใช้แทนการตัดอัตโนมัติเสมอ
+    const overrideKey = materialsKey(ebook.preview_file_url);
+    if (overrideKey) {
+      const obj = await getFile(overrideKey);
+      return sendPdf(obj.Body as any);
+    }
+
+    const previewPages = Number(ebook.preview_pages) || 0;
+    const fullKey = materialsKey(ebook.file_url);
+    if (previewPages <= 0 || !fullKey) {
+      return res.status(404).json({ error: 'เล่มนี้ไม่มีตัวอย่างให้อ่าน' });
+    }
+
+    // ② แคชที่ตัดไว้แล้ว (พังค่อยตกไปตัดใหม่ — เช่น object ถูกลบ)
+    if (ebook.preview_cache_url) {
+      try {
+        const cached = await getFile(ebook.preview_cache_url);
+        return sendPdf(cached.Body as any);
+      } catch {
+        /* แคชหาย → ตัดใหม่ด้านล่าง */
+      }
+    }
+
+    // ③ ตัดสดจากไฟล์เต็ม แล้วแคชลง S3 (ครั้งเดียวต่อการตั้งค่า)
+    const obj = await getFile(fullKey);
+    const chunks: Buffer[] = [];
+    for await (const c of obj.Body as any) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+    const out = await makePreviewPdf(Buffer.concat(chunks), previewPages);
+    if (!out) {
+      // ไฟล์เข้ารหัส/เสีย หรือทั้งเล่มสั้นกว่าจำนวนหน้าตัวอย่างจนตัดแล้วเท่ากับแจกทั้งเล่ม
+      return res.status(404).json({ error: 'ทำไฟล์ตัวอย่างไม่ได้ — ลองอัพไฟล์ตัวอย่างเองในหน้าแอดมิน' });
+    }
+    const rand = Math.random().toString(36).slice(2, 10);
+    const cacheKey = `ebook-preview/${ebook.id}-${previewPages}p-${rand}.pdf`;
+    await uploadFile(out, cacheKey, 'application/pdf', { contentDisposition: 'inline' });
+    await pool.query(`UPDATE ebooks SET preview_cache_url = $1 WHERE id = $2`, [cacheKey, ebook.id]);
+    return sendPdf(out);
+  } catch (error) {
+    console.error('Error serving ebook preview:', error);
+    res.status(500).json({ error: 'โหลดตัวอย่างไม่สำเร็จ' });
+  }
+});
+
 // ============ Mint a scoped file token for a members_only ebook ============
 // Requires a real session (Authorization header) — re-checks the subscription
 // right now, then issues the short-lived single-ebook token /:slug/file
@@ -328,8 +396,9 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
     }
     const result = await pool.query(
       `INSERT INTO ebooks (title, slug, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only,
-                           price, pages, author_name, author_avatar_url, hook, highlights, samples, share_code, cover_orientation)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb, $18, $19) RETURNING *`,
+                           price, pages, author_name, author_avatar_url, hook, highlights, samples, share_code, cover_orientation,
+                           preview_pages, preview_file_url)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb, $18, $19, $20, $21) RETURNING *`,
       [
         title.trim(),
         slug,
@@ -350,6 +419,8 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
         JSON.stringify(sanitizeCourseSamples(req.body.samples)),
         await uniqueShareCode(),
         cover_orientation === 'portrait' ? 'portrait' : 'landscape',
+        Number.isInteger(Number(req.body.preview_pages)) && Number(req.body.preview_pages) > 0 ? Number(req.body.preview_pages) : 0,
+        typeof req.body.preview_file_url === 'string' && req.body.preview_file_url ? req.body.preview_file_url : null,
       ]
     );
     res.json(result.rows[0]);
@@ -418,6 +489,15 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     }
     if (cover_orientation !== undefined) {
       add('cover_orientation', cover_orientation === 'portrait' ? 'portrait' : 'landscape');
+    }
+    if (req.body.preview_pages !== undefined) {
+      const pv = Number(req.body.preview_pages);
+      add('preview_pages', Number.isInteger(pv) && pv > 0 ? pv : 0);
+    }
+    add('preview_file_url', nullable(req.body.preview_file_url));
+    // ไฟล์เต็มหรือจำนวนหน้าตัวอย่างเปลี่ยน → แคชที่ตัดไว้ใช้ไม่ได้แล้ว ล้างทิ้งให้ตัดใหม่รอบหน้า
+    if (file_url !== undefined || req.body.preview_pages !== undefined) {
+      add('preview_cache_url', null);
     }
     if (sets.length === 0) return res.status(400).json({ error: 'ไม่มีข้อมูลให้แก้ไข' });
     params.push(id);

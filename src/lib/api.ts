@@ -2922,6 +2922,10 @@ class ApiClient {
   async getEbookAccessToken(slug: string): Promise<{ token: string }> {
     return this.request(`/api/ebooks/${encodeURIComponent(slug)}/access-token`);
   }
+  /** ไฟล์ "อ่านตัวอย่างจำกัดหน้า" (สาธารณะ — มีแค่หน้าตัวอย่างจริงๆ ไม่ใช่ไฟล์เต็ม) */
+  ebookPreviewUrl(slug: string): string {
+    return this.mediaUrl(`/api/ebooks/${encodeURIComponent(slug)}/preview-file`);
+  }
 
   // ============================================
   // Ebook purchases (ซื้อ Ebook รายเล่ม — สลิป + แอดมินอนุมัติ เหมือนซื้อคอร์ส)
@@ -3565,6 +3569,12 @@ export interface EbookDto {
   share_code?: string | null;
   /** แนวภาพปก — การ์ดหน้า /ebooks ปรับทรงตามค่านี้ (detect ตอนอัป + แอดมินสลับได้) */
   cover_orientation?: 'landscape' | 'portrait';
+  /** จำนวนหน้าที่ให้อ่านตัวอย่างฟรี (0 = ปิด) — เฉพาะเล่มสมาชิก/เล่มขาย */
+  preview_pages?: number;
+  /** Admin-only — ไฟล์ตัวอย่างที่อัพเอง (ใช้แทนการตัดอัตโนมัติ); public ถูก strip เหลือ has_preview */
+  preview_file_url?: string | null;
+  /** Public responses only — เล่มนี้มีตัวอย่างให้อ่านไหม (เสิร์ฟผ่าน ebookPreviewUrl) */
+  has_preview?: boolean;
   /** Public responses only — whether the current viewer may access the file. */
   entitled?: boolean;
   /** GET /:slug เท่านั้น — คำสั่งซื้อของ viewer เอง (null = ยังไม่เคยสั่ง) */

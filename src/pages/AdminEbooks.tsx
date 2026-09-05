@@ -65,6 +65,10 @@ const emptyForm = {
   samples: [] as EbookMediaSample[],
   // แนวภาพปก — detect อัตโนมัติตอนอัปโหลด สลับเองได้ (การ์ดหน้า /ebooks ปรับทรงตามค่านี้)
   cover_orientation: 'landscape' as 'landscape' | 'portrait',
+  // อ่านตัวอย่างจำกัดหน้า (เฉพาะเล่มสมาชิก/เล่มขาย): 0 = ปิด · ไฟล์ตัวอย่างอัพเอง = override
+  preview_pages: '',
+  preview_file_url: '',
+  preview_file_name: '',
 };
 
 // Admin CMS ของ Ebook (/admin/ebooks): ลิสต์ + dialog สร้าง/แก้ไข —
@@ -84,9 +88,11 @@ const AdminEbooks = () => {
   const [uploadingCover, setUploadingCover] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [uploadingPreview, setUploadingPreview] = useState(false);
   const coverInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
+  const previewFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!user?.isAdmin) return;
@@ -131,6 +137,9 @@ const AdminEbooks = () => {
       highlights: Array.isArray(e.highlights) ? e.highlights : [],
       samples: (Array.isArray(e.samples) ? e.samples : []).map((s) => ({ ...s, title: s.title || '' })),
       cover_orientation: e.cover_orientation === 'portrait' ? 'portrait' : 'landscape',
+      preview_pages: e.preview_pages && Number(e.preview_pages) > 0 ? String(e.preview_pages) : '',
+      preview_file_url: e.preview_file_url || '',
+      preview_file_name: e.preview_file_url ? 'ไฟล์ตัวอย่างที่อัพไว้' : '',
     });
     setSlugTouched(true);
     setDialogOpen(true);
@@ -202,6 +211,22 @@ const AdminEbooks = () => {
     }
   };
 
+  const handlePreviewFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      setUploadingPreview(true);
+      const { url, name } = await api.uploadCourseMaterial(file);
+      set({ preview_file_url: url, preview_file_name: name });
+      toast.success(`แนบไฟล์ตัวอย่าง ${name} แล้ว`);
+    } catch (err: any) {
+      toast.error(err?.message || 'อัปโหลดไม่สำเร็จ');
+    } finally {
+      setUploadingPreview(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!form.title.trim()) return toast.error('กรุณาใส่ชื่อ Ebook');
     const priceNum = Number(form.price);
@@ -228,6 +253,8 @@ const AdminEbooks = () => {
         highlights: form.highlights,
         samples: form.samples,
         cover_orientation: form.cover_orientation,
+        preview_pages: form.preview_pages.trim() === '' ? 0 : Number(form.preview_pages),
+        preview_file_url: form.preview_file_url,
       };
       if (editing) {
         await api.updateEbook(editing.id, payload);
@@ -475,6 +502,39 @@ const AdminEbooks = () => {
                   />
                 </div>
               )}
+              {/* อ่านตัวอย่างจำกัดหน้า — เฉพาะเล่มที่ล็อกสิทธิ์ (เล่มฟรีอ่านเต็มได้อยู่แล้ว) */}
+              {form.access !== 'free' && (
+                <div className="space-y-2 border-t border-gray-800 pt-2 mt-1">
+                  <div className="flex items-center gap-2">
+                    <Label className="whitespace-nowrap">📖 อ่านตัวอย่างฟรีได้กี่หน้า</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={form.preview_pages}
+                      onChange={(e) => set({ preview_pages: e.target.value })}
+                      placeholder="0 = ปิด"
+                      className="w-28"
+                    />
+                    <span className="text-xs text-gray-500">ระบบตัดจากไฟล์เต็มให้อัตโนมัติ</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 pl-0">
+                    <Button type="button" variant="outline" size="sm" disabled={uploadingPreview} onClick={() => previewFileInputRef.current?.click()}>
+                      {uploadingPreview ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Upload className="h-4 w-4 mr-1.5" />}
+                      ไฟล์ตัวอย่างอัพเอง (ไม่บังคับ)
+                    </Button>
+                    {form.preview_file_url ? (
+                      <span className="flex items-center gap-1.5 text-xs text-emerald-300">
+                        <CheckCircle2 className="h-3.5 w-3.5" /> {form.preview_file_name || 'แนบแล้ว'}
+                        <button type="button" className="text-red-400 hover:text-red-300" title="เอาไฟล์ตัวอย่างออก" onClick={() => set({ preview_file_url: '', preview_file_name: '' })}>
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    ) : (
+                      <span className="text-xs text-gray-500">ถ้าอัพไว้ จะใช้ไฟล์นี้แทนการตัดอัตโนมัติ</span>
+                    )}
+                  </div>
+                </div>
+              )}
               <div className="flex items-center gap-2 border-t border-gray-800 pt-2 mt-1">
                 <Checkbox
                   checked={form.allow_download}
@@ -589,6 +649,7 @@ const AdminEbooks = () => {
       <input ref={coverInputRef} type="file" accept="image/*" className="hidden" onChange={handleCoverUpload} />
       <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
       <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileUpload} />
+      <input ref={previewFileInputRef} type="file" accept=".pdf" className="hidden" onChange={handlePreviewFileUpload} />
     </div>
   );
 };

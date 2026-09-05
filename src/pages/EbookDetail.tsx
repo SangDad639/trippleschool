@@ -48,6 +48,8 @@ const EbookDetail = () => {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [showReader, setShowReader] = useState(false);
+  // ตัวอ่าน "ตัวอย่างจำกัดหน้า" สำหรับคนยังไม่มีสิทธิ์ (ไฟล์ที่ได้มีแค่หน้าตัวอย่างจริงๆ)
+  const [showPreview, setShowPreview] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
   // ซื้อรายเล่ม — dialog โค้ดผู้แนะนำ + สลิป (mirror โฟลว์ซื้อคอร์สใน CourseDetail)
@@ -81,6 +83,7 @@ const EbookDetail = () => {
     setLoading(true);
     setNotFound(false);
     setShowReader(false);
+    setShowPreview(false);
     setAccessToken(null);
     window.scrollTo(0, 0);
     void loadEbook();
@@ -278,6 +281,19 @@ const EbookDetail = () => {
   if (ebook.is_pdf && hasFile) metaParts.push('อ่านออนไลน์ได้ทันที');
   if (ebook.allow_download && hasFile) metaParts.push('ดาวน์โหลดเก็บไว้ได้');
 
+  // ปุ่ม "อ่านตัวอย่างฟรี N หน้า" — โผล่เฉพาะคนที่ยังไม่มีสิทธิ์และเล่มมีตัวอย่าง
+  const previewPagesNum = Number(ebook.preview_pages) || 0;
+  const previewButton = locked && ebook.has_preview ? (
+    <Button
+      variant="outline"
+      onClick={() => setShowPreview((v) => !v)}
+      className="w-full sm:w-auto h-10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+    >
+      <BookOpen className="h-4 w-4 mr-1.5" />
+      {showPreview ? 'ซ่อนตัวอย่าง' : `อ่านตัวอย่างฟรี${previewPagesNum > 0 ? ` ${previewPagesNum} หน้าแรก` : ''}`}
+    </Button>
+  ) : null;
+
   // ปุ่มอ่าน/ดาวน์โหลด (ใช้ซ้ำทั้งเคสฟรีและเคสมีสิทธิ์แล้ว)
   const readerButtons = (
     <div className="flex flex-wrap gap-3">
@@ -408,6 +424,7 @@ const EbookDetail = () => {
                       ดูแพ็กเกจสมาชิก
                       <ArrowRight className="h-4 w-4 ml-1.5" />
                     </Button>
+                    {previewButton && <div>{previewButton}</div>}
                   </div>
                 ) : forSale && locked ? (
                   myPurchase?.status === 'pending' ? (
@@ -415,20 +432,26 @@ const EbookDetail = () => {
                       <p className="text-sm text-yellow-200/90">
                         ⏳ ส่งคำสั่งซื้อแล้ว (ยอดโอน ฿{Number(myPurchase.paid_amount ?? price).toLocaleString()}) — รอแอดมินตรวจสอบสลิป
                       </p>
-                      <Button variant="outline" size="sm" onClick={openBuyDialog}>
-                        <Upload className="h-4 w-4 mr-1.5" />
-                        อัปเดตสลิปใหม่
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" onClick={openBuyDialog}>
+                          <Upload className="h-4 w-4 mr-1.5" />
+                          อัปเดตสลิปใหม่
+                        </Button>
+                        {previewButton}
+                      </div>
                     </div>
                   ) : myPurchase?.status === 'rejected' ? (
                     <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 space-y-3">
                       <p className="text-sm text-red-300">
                         ❌ คำสั่งซื้อถูกปฏิเสธ{myPurchase.rejection_reason ? ` — ${myPurchase.rejection_reason}` : ''}
                       </p>
-                      <Button onClick={openBuyDialog} className="bg-purple-600 hover:bg-purple-700">
-                        <ShoppingCart className="h-4 w-4 mr-2" />
-                        ส่งคำสั่งซื้อใหม่
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button onClick={openBuyDialog} className="bg-purple-600 hover:bg-purple-700">
+                          <ShoppingCart className="h-4 w-4 mr-2" />
+                          ส่งคำสั่งซื้อใหม่
+                        </Button>
+                        {previewButton}
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-2.5">
@@ -436,10 +459,13 @@ const EbookDetail = () => {
                         <span className="text-3xl font-bold text-[#FFB300]">฿{price.toLocaleString()}</span>
                         <span className="text-gray-500 text-sm pb-1">จ่ายครั้งเดียว อ่านได้ตลอด</span>
                       </div>
-                      <Button onClick={openBuyDialog} className="w-full sm:w-auto h-11 px-8 bg-purple-600 hover:bg-purple-700">
-                        <ShoppingCart className="h-4 w-4 mr-2" />
-                        ซื้อ E-book เล่มนี้
-                      </Button>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button onClick={openBuyDialog} className="w-full sm:w-auto h-11 px-8 bg-purple-600 hover:bg-purple-700">
+                          <ShoppingCart className="h-4 w-4 mr-2" />
+                          ซื้อ E-book เล่มนี้
+                        </Button>
+                        {previewButton}
+                      </div>
                       <p className="text-gray-500 text-xs">
                         หรือ{' '}
                         <Link to="/pricing" className="text-[#FFB300] hover:underline">
@@ -483,6 +509,33 @@ const EbookDetail = () => {
                   not real DRM (Ctrl+S / dev tools still work), but removes the
                   obvious one-click download affordance from the reader itself. */}
               <iframe src={`${viewHref}#toolbar=0`} title={`อ่าน ${ebook.title}`} className="w-full h-[60vh] md:h-[80vh] bg-white" />
+            </div>
+          )}
+
+          {/* ตัวอ่าน "ตัวอย่างจำกัดหน้า" — ไฟล์ที่โหลดมามีแค่หน้าตัวอย่างจริงๆ ไม่ใช่ไฟล์เต็ม */}
+          {showPreview && locked && ebook.has_preview && (
+            <div className="border-t border-gray-800 bg-[#0d0d14]">
+              <iframe
+                src={`${api.ebookPreviewUrl(ebook.slug)}#toolbar=0`}
+                title={`ตัวอย่าง ${ebook.title}`}
+                className="w-full h-[60vh] md:h-[80vh] bg-white"
+              />
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 px-4 py-3 border-t border-gray-800">
+                <p className="text-sm text-gray-300">
+                  📖 นี่คือตัวอย่างบางส่วนเท่านั้น{previewPagesNum > 0 ? ` (${previewPagesNum} หน้าแรก)` : ''} — อ่านเต็มเล่มได้เลย
+                </p>
+                {forSale ? (
+                  <Button size="sm" onClick={openBuyDialog} className="bg-purple-600 hover:bg-purple-700">
+                    <ShoppingCart className="h-4 w-4 mr-1.5" />
+                    ซื้อ ฿{price.toLocaleString()}
+                  </Button>
+                ) : (
+                  <Button size="sm" onClick={() => navigate('/pricing')} className="bg-purple-600 hover:bg-purple-700">
+                    <Crown className="h-4 w-4 mr-1.5" />
+                    สมัครสมาชิก
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </div>
