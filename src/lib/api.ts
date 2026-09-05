@@ -3563,6 +3563,8 @@ export interface EbookDto {
   samples: { type: 'image' | 'youtube'; url?: string; youtube_id?: string; orientation: 'landscape' | 'portrait'; title?: string }[];
   /** รหัสลิงก์สั้นประจำเล่ม (ใช้แชร์ — /ebooks/{share_code}) */
   share_code?: string | null;
+  /** แนวภาพปก — การ์ดหน้า /ebooks ปรับทรงตามค่านี้ (detect ตอนอัป + แอดมินสลับได้) */
+  cover_orientation?: 'landscape' | 'portrait';
   /** Public responses only — whether the current viewer may access the file. */
   entitled?: boolean;
   /** GET /:slug เท่านั้น — คำสั่งซื้อของ viewer เอง (null = ยังไม่เคยสั่ง) */

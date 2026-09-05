@@ -16,19 +16,36 @@ const EbookCard = ({ ebook }: EbookCardProps) => {
   const locked = ebook.members_only && ebook.entitled === false;
   const buyable = forSale && ebook.entitled === false;
   const viewOnly = !locked && !buyable && ebook.allow_download === false;
+  // ทรงการ์ดตามแนวปก: แนวนอน = 16:9 เดิม · ปกหนังสือแนวตั้ง = 3:4 (หน้า catalog
+  // จัดกลุ่มสองแนวแยกกริดกันอยู่แล้ว การ์ดจึงไม่ต้องกลัวแถวเบี้ยว)
+  const portraitCover = ebook.cover_orientation === 'portrait';
 
   return (
     <Link
       to={`/ebooks/${ebook.slug}`}
-      className="relative block aspect-video rounded-md overflow-hidden bg-gray-800 group/card transition-transform duration-300 hover:scale-105 hover:z-10 hover:shadow-2xl hover:shadow-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/70"
+      className={`relative block rounded-md overflow-hidden bg-gray-800 group/card transition-transform duration-300 hover:scale-105 hover:z-10 hover:shadow-2xl hover:shadow-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/70 ${
+        portraitCover ? 'aspect-[3/4]' : 'aspect-video'
+      }`}
     >
       {ebook.cover_url ? (
-        <img
-          src={api.mediaUrl(ebook.cover_url, 'card')}
-          alt={ebook.title}
-          loading="lazy"
-          className="absolute inset-0 w-full h-full object-cover"
-        />
+        <>
+          {/* ปกรองรับทั้งแนวนอนและแนวตั้ง: ช่องการ์ดคงที่ 16:9 (กริดเรียบ) แต่รูปใช้
+              object-contain บนพื้นปกเดียวกันแบบเบลอ — ปกแนวนอนเต็มช่องเหมือนเดิม
+              ปกหนังสือแนวตั้งโชว์เต็มใบตรงกลาง ไม่โดน crop หัว-ท้าย */}
+          <img
+            src={api.mediaUrl(ebook.cover_url, 'card')}
+            alt=""
+            aria-hidden
+            loading="lazy"
+            className="absolute inset-0 w-full h-full object-cover blur-xl scale-110 opacity-60"
+          />
+          <img
+            src={api.mediaUrl(ebook.cover_url, 'card')}
+            alt={ebook.title}
+            loading="lazy"
+            className="absolute inset-0 w-full h-full object-contain"
+          />
+        </>
       ) : (
         <div className="absolute inset-0 flex items-center justify-center">
           <BookMarked className="h-10 w-10 text-gray-600" />

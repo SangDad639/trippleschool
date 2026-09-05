@@ -315,7 +315,7 @@ router.get('/:slug/access-token', authenticate, async (req: AuthRequest, res: Re
 // ============ Admin: create ============
 router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const { title, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only, author_name, author_avatar_url, hook } = req.body;
+    const { title, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only, author_name, author_avatar_url, hook, cover_orientation } = req.body;
     if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'กรุณาใส่ชื่อ Ebook' });
     const slug = sanitizeSlug(req.body.slug) || sanitizeSlug(title);
     if (!slug) return res.status(400).json({ error: 'สร้าง slug จากชื่อไม่ได้ — กรุณากำหนด slug เอง (a-z, 0-9, -)' });
@@ -328,8 +328,8 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
     }
     const result = await pool.query(
       `INSERT INTO ebooks (title, slug, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only,
-                           price, pages, author_name, author_avatar_url, hook, highlights, samples, share_code)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb, $18) RETURNING *`,
+                           price, pages, author_name, author_avatar_url, hook, highlights, samples, share_code, cover_orientation)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb, $18, $19) RETURNING *`,
       [
         title.trim(),
         slug,
@@ -349,6 +349,7 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
         JSON.stringify(sanitizeHighlights(req.body.highlights)),
         JSON.stringify(sanitizeCourseSamples(req.body.samples)),
         await uniqueShareCode(),
+        cover_orientation === 'portrait' ? 'portrait' : 'landscape',
       ]
     );
     res.json(result.rows[0]);
@@ -364,7 +365,7 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Bad ebook id' });
-    const { title, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only, author_name, author_avatar_url, hook } = req.body;
+    const { title, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only, author_name, author_avatar_url, hook, cover_orientation } = req.body;
     const slug = req.body.slug !== undefined ? sanitizeSlug(req.body.slug) : undefined;
     if (slug === '') return res.status(400).json({ error: 'slug ไม่ถูกต้อง (a-z, 0-9, -)' });
     // ราคา: '' = ล้างเป็น 0 (เลิกขาย), ค่าเพี้ยน → 400
@@ -414,6 +415,9 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     if (req.body.samples !== undefined) {
       params.push(JSON.stringify(sanitizeCourseSamples(req.body.samples)));
       sets.push(`samples = $${params.length}::jsonb`);
+    }
+    if (cover_orientation !== undefined) {
+      add('cover_orientation', cover_orientation === 'portrait' ? 'portrait' : 'landscape');
     }
     if (sets.length === 0) return res.status(400).json({ error: 'ไม่มีข้อมูลให้แก้ไข' });
     params.push(id);

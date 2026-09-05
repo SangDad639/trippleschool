@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api, type EbookDto } from '@/lib/api';
-import SamplesEditor, { type MediaSample } from '@/components/admin/SamplesEditor';
+import EbookSamplesEditor, { type EbookMediaSample } from '@/components/ebooks/EbookSamplesEditor';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -62,7 +62,9 @@ const emptyForm = {
   author_avatar_url: '',
   hook: '',
   highlights: [] as string[],
-  samples: [] as MediaSample[],
+  samples: [] as EbookMediaSample[],
+  // แนวภาพปก — detect อัตโนมัติตอนอัปโหลด สลับเองได้ (การ์ดหน้า /ebooks ปรับทรงตามค่านี้)
+  cover_orientation: 'landscape' as 'landscape' | 'portrait',
 };
 
 // Admin CMS ของ Ebook (/admin/ebooks): ลิสต์ + dialog สร้าง/แก้ไข —
@@ -128,6 +130,7 @@ const AdminEbooks = () => {
       hook: e.hook || '',
       highlights: Array.isArray(e.highlights) ? e.highlights : [],
       samples: (Array.isArray(e.samples) ? e.samples : []).map((s) => ({ ...s, title: s.title || '' })),
+      cover_orientation: e.cover_orientation === 'portrait' ? 'portrait' : 'landscape',
     });
     setSlugTouched(true);
     setDialogOpen(true);
@@ -148,9 +151,16 @@ const AdminEbooks = () => {
     if (file.size > 15 * 1024 * 1024) return toast.error('ไฟล์ต้องไม่เกิน 15MB');
     try {
       setUploadingCover(true);
+      // อ่านแนวปกจากขนาดรูปจริง (เหมือน samples) — การ์ดหน้า /ebooks จะได้ทรงถูกทันที
+      const orientation = await new Promise<'landscape' | 'portrait'>((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve(img.naturalHeight > img.naturalWidth ? 'portrait' : 'landscape');
+        img.onerror = () => resolve('landscape');
+        img.src = URL.createObjectURL(file);
+      });
       const { url } = await api.uploadCourseThumbnail(file);
-      set({ cover_url: url });
-      toast.success('อัปโหลดภาพปกสำเร็จ');
+      set({ cover_url: url, cover_orientation: orientation });
+      toast.success(`อัปโหลดภาพปกสำเร็จ (${orientation === 'portrait' ? 'แนวตั้ง' : 'แนวนอน'})`);
     } catch (err: any) {
       toast.error(err?.message || 'อัปโหลดไม่สำเร็จ');
     } finally {
@@ -217,6 +227,7 @@ const AdminEbooks = () => {
         hook: form.hook,
         highlights: form.highlights,
         samples: form.samples,
+        cover_orientation: form.cover_orientation,
       };
       if (editing) {
         await api.updateEbook(editing.id, payload);
@@ -298,7 +309,7 @@ const AdminEbooks = () => {
               <Card key={e.id}>
                 <CardContent className="flex items-center gap-3 py-3">
                   {e.cover_url ? (
-                    <img src={api.mediaUrl(e.cover_url, 'card')} alt="" className="w-20 h-11 rounded object-cover flex-shrink-0" />
+                    <img src={api.mediaUrl(e.cover_url, 'card')} alt="" className="w-20 h-11 rounded object-contain bg-gray-800 flex-shrink-0" />
                   ) : (
                     <div className="w-20 h-11 rounded bg-gray-700 flex items-center justify-center flex-shrink-0">
                       <BookMarked className="h-5 w-5 text-gray-500" />
@@ -369,12 +380,18 @@ const AdminEbooks = () => {
               <Textarea value={form.description} onChange={(e) => set({ description: e.target.value })} rows={3} placeholder="สรุปสั้นๆ ว่า Ebook เล่มนี้เกี่ยวกับอะไร" className="mt-1.5" />
             </div>
 
-            {/* ภาพปก */}
+            {/* ภาพปก — รองรับทั้งแนวนอน 16:9 และปกหนังสือแนวตั้ง (หน้าเว็บโชว์เต็มใบ ไม่ crop) */}
             <div>
-              <Label>ภาพปก (แนะนำ 16:9)</Label>
+              <Label>ภาพปก (แนวนอน 16:9 หรือปกหนังสือแนวตั้งก็ได้)</Label>
               <div className="mt-1.5 flex items-start gap-3">
                 {form.cover_url ? (
-                  <img src={api.mediaUrl(form.cover_url, 'card')} alt="ปก" className="w-40 aspect-video rounded object-cover border border-gray-700" />
+                  <img
+                    src={api.mediaUrl(form.cover_url, 'card')}
+                    alt="ปก"
+                    className={`rounded object-contain bg-gray-900 border border-gray-700 ${
+                      form.cover_orientation === 'portrait' ? 'w-24 aspect-[3/4]' : 'w-40 aspect-video'
+                    }`}
+                  />
                 ) : (
                   <div className="w-40 aspect-video rounded bg-gray-800 border border-dashed border-gray-700 flex items-center justify-center text-gray-500 text-xs">
                     ยังไม่มีปก
@@ -386,9 +403,19 @@ const AdminEbooks = () => {
                     อัปโหลดปก
                   </Button>
                   {form.cover_url && (
-                    <Button type="button" variant="ghost" size="sm" className="text-red-400 block" onClick={() => set({ cover_url: '' })}>
-                      <X className="h-4 w-4 mr-1" /> ลบปก
-                    </Button>
+                    <>
+                      {/* แนวถูก detect จากรูปตอนอัป — ปุ่มนี้ไว้สลับมือเผื่ออ่านพลาด */}
+                      <Button
+                        type="button" variant="outline" size="sm" className="block"
+                        title="สลับแนวปก (มีผลกับทรงการ์ดหน้า /ebooks)"
+                        onClick={() => set({ cover_orientation: form.cover_orientation === 'portrait' ? 'landscape' : 'portrait' })}
+                      >
+                        {form.cover_orientation === 'portrait' ? '↕ ปกแนวตั้ง' : '↔ ปกแนวนอน'}
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" className="text-red-400 block" onClick={() => set({ cover_url: '' })}>
+                        <X className="h-4 w-4 mr-1" /> ลบปก
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>
@@ -509,12 +536,7 @@ const AdminEbooks = () => {
                   className="mt-1.5"
                 />
               </div>
-              <SamplesEditor
-                label='🎞️ ตัวอย่างผลงาน (แกลเลอรีบนหน้า Ebook)'
-                hint='รูปอ่านแนวนอน/แนวตั้งจากไฟล์อัตโนมัติ · วิดีโอแปะลิงก์ YouTube (Shorts = แนวตั้ง) · ไม่ใส่ = ไม่มี section ตัวอย่าง'
-                items={form.samples}
-                onChange={(samples) => set({ samples })}
-              />
+              <EbookSamplesEditor items={form.samples} onChange={(samples) => set({ samples })} />
               <div>
                 <Label>ข้างในมีอะไร (bullet โชว์หน้า Ebook — สูงสุด 20 ข้อ)</Label>
                 <div className="mt-1.5 space-y-2">

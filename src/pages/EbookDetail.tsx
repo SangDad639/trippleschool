@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import { api, type EbookDto } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 import PublicHeader from '@/components/PublicHeader';
-import SamplesGallery from '@/components/SamplesGallery';
+import EbookSamplesGallery from '@/components/ebooks/EbookSamplesGallery';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -317,14 +317,23 @@ const EbookDetail = () => {
 
         <div className="rounded-2xl border border-gray-800 bg-gray-900/40 overflow-hidden">
           <div className="grid lg:grid-cols-5 gap-0">
-            {/* Cover — object-contain รองรับทั้งปก 16:9 เดิมและปกหนังสือแนวตั้ง */}
-            <div className="relative lg:col-span-2 bg-[#0d0d14] p-4 lg:p-6 flex items-center justify-center">
+            {/* Cover — รองรับทั้งปกแนวนอน 16:9 และปกหนังสือแนวตั้ง: รูปจริง object-contain
+                ไม่โดน crop ส่วนพื้นหลังเป็นปกเดียวกันเบลอๆ ให้กรอบไม่โล่งตอนปกแนวตั้ง */}
+            <div className="relative lg:col-span-2 bg-[#0d0d14] p-4 lg:p-6 flex items-center justify-center overflow-hidden">
               {ebook.cover_url ? (
-                <img
-                  src={api.mediaUrl(ebook.cover_url, 'hero')}
-                  alt={ebook.title}
-                  className="w-full max-h-[420px] rounded-lg border border-gray-800 object-contain"
-                />
+                <>
+                  <img
+                    src={api.mediaUrl(ebook.cover_url, 'card')}
+                    alt=""
+                    aria-hidden
+                    className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110 opacity-40"
+                  />
+                  <img
+                    src={api.mediaUrl(ebook.cover_url, 'hero')}
+                    alt={ebook.title}
+                    className="relative w-full max-h-[420px] rounded-lg border border-gray-800 object-contain drop-shadow-2xl"
+                  />
+                </>
               ) : (
                 <div className="w-full aspect-video rounded-lg border border-dashed border-gray-800 flex items-center justify-center">
                   <BookMarked className="h-12 w-12 text-gray-600" />
@@ -488,7 +497,7 @@ const EbookDetail = () => {
               <Play className="h-4 w-4 text-[#FFB300]" />
               ตัวอย่างผลงานจาก E-book เล่มนี้
             </h2>
-            <SamplesGallery samples={ebook.samples} />
+            <EbookSamplesGallery samples={ebook.samples} />
           </div>
         )}
 

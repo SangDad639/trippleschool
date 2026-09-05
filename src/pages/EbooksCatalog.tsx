@@ -56,11 +56,30 @@ const EbooksCatalog = () => {
               <span className="text-gray-400 text-sm whitespace-nowrap">{ebooks.length} เล่ม</span>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {ebooks.map((ebook) => (
-                <EbookCard key={ebook.slug} ebook={ebook} />
-              ))}
-            </div>
+            {/* จัดกลุ่มตามแนวปก (แบบเดียวกับแกลเลอรีตัวอย่าง): ปกแนวนอนกริด 16:9 เดิม
+                แล้วปกหนังสือแนวตั้งต่อเป็นกริดการ์ดทรง 3:4 ของตัวเอง — แถวเรียบไม่มีรู */}
+            {(() => {
+              const landscape = ebooks.filter((e) => e.cover_orientation !== 'portrait');
+              const portrait = ebooks.filter((e) => e.cover_orientation === 'portrait');
+              return (
+                <div className="space-y-3 md:space-y-4">
+                  {landscape.length > 0 && (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                      {landscape.map((ebook) => (
+                        <EbookCard key={ebook.slug} ebook={ebook} />
+                      ))}
+                    </div>
+                  )}
+                  {portrait.length > 0 && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                      {portrait.map((ebook) => (
+                        <EbookCard key={ebook.slug} ebook={ebook} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </>
         )}
       </div>
