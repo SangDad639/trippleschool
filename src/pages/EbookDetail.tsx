@@ -462,7 +462,8 @@ const EbookDetail = () => {
                   readerButtons
                 )}
 
-                {/* แชร์ Ebook — มือถือเปิด share sheet ของเครื่อง, เดสก์ท็อปเปิด dialog คัดลอกลิงก์ */}
+                {/* แชร์ Ebook — มือถือเปิด share sheet ของเครื่อง, เดสก์ท็อปเปิด dialog คัดลอกลิงก์
+                    (รายละเอียดถูกย้ายไปเป็น block ของตัวเองใต้ hero — hero โล่ง ปุ่มซื้อเด่น) */}
                 <Button
                   variant="outline"
                   onClick={handleShare}
@@ -471,10 +472,6 @@ const EbookDetail = () => {
                   <Share2 className="h-4 w-4 mr-1.5" />
                   แชร์ E-book เล่มนี้
                 </Button>
-
-                {ebook.description && (
-                  <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-line">{ebook.description}</p>
-                )}
               </div>
             </div>
           </div>
@@ -490,14 +487,11 @@ const EbookDetail = () => {
           )}
         </div>
 
-        {/* ตัวอย่างผลงาน — แกลเลอรีรูป/คลิป YouTube (โครงเดียวกับแท็บตัวอย่างของคอร์ส) */}
-        {ebook.samples.length > 0 && (
+        {/* ลำดับ block ใต้ hero (user เคาะ): รายละเอียด → ข้างในมีอะไร → ตัวอย่างผลงาน */}
+        {ebook.description && (
           <div className="mt-6 rounded-2xl border border-gray-800 bg-gray-900/40 p-6 lg:p-8">
-            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-              <Play className="h-4 w-4 text-[#FFB300]" />
-              ตัวอย่างผลงานจาก E-book เล่มนี้
-            </h2>
-            <EbookSamplesGallery samples={ebook.samples} />
+            <h2 className="text-lg font-bold text-white mb-4">📄 รายละเอียด</h2>
+            <p className="text-gray-300 text-sm leading-relaxed whitespace-pre-line">{ebook.description}</p>
           </div>
         )}
 
@@ -513,6 +507,17 @@ const EbookDetail = () => {
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {/* ตัวอย่างผลงาน — ปิดท้ายเป็นโชว์เคส: แนวนอนใหญ่แถวละ 1 · แนวตั้งแถวละ 2 */}
+        {ebook.samples.length > 0 && (
+          <div className="mt-6 rounded-2xl border border-gray-800 bg-gray-900/40 p-6 lg:p-8">
+            <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+              <Play className="h-4 w-4 text-[#FFB300]" />
+              ตัวอย่างผลงานจาก E-book เล่มนี้
+            </h2>
+            <EbookSamplesGallery samples={ebook.samples} />
           </div>
         )}
       </div>

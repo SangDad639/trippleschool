@@ -10,8 +10,8 @@ export interface EbookSampleItem {
 
 // แกลเลอรี "ตัวอย่างผลงาน" ของหน้า Ebook — แยก component จากฝั่งคอร์สตามที่ user สั่ง
 // (โครงเริ่มจากตัวคอร์ส แต่ต่อจากนี้ปรับฝั่งไหนไม่กระทบอีกฝั่ง)
-// จัดกลุ่ม: แนวนอนเรียงกริดของตัวเองก่อน แล้วแนวตั้งต่อเป็นกริดแยก → เต็มแถวเรียบ
-// ทุกส่วนผสมรูป+YouTube (ลำดับที่แอดมินจัดคงอยู่ภายในกลุ่ม)
+// จัดกลุ่ม: แนวนอนก่อนแล้วค่อยแนวตั้ง — แนวนอนใหญ่เต็มความกว้าง "แถวละ 1"
+// (คลิป YouTube ดูชัดกดเล่นได้เลย) · แนวตั้ง "แถวละ 2" ทุกขนาดจอ
 const EbookSamplesGallery = ({ samples }: { samples: EbookSampleItem[] }) => {
   const landscape = samples.filter((s) => s.orientation !== 'portrait');
   const portrait = samples.filter((s) => s.orientation === 'portrait');
@@ -50,12 +50,12 @@ const EbookSamplesGallery = ({ samples }: { samples: EbookSampleItem[] }) => {
   return (
     <div className="space-y-3 sm:space-y-4">
       {landscape.length > 0 && (
-        <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-1">
           {landscape.map(renderItem)}
         </div>
       )}
       {portrait.length > 0 && (
-        <div className="grid gap-3 sm:gap-4 grid-cols-2 sm:grid-cols-4 lg:grid-cols-5">
+        <div className="grid gap-3 sm:gap-4 grid-cols-2">
           {portrait.map(renderItem)}
         </div>
       )}
