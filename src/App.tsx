@@ -66,7 +66,6 @@ const MyCourses = lazy(() => import("@/pages/MyCourses"));
 const AdminCourses = lazy(() => import("@/pages/AdminCourses"));
 const AdminArticles = lazy(() => import("@/pages/AdminArticles"));
 const AdminEbooks = lazy(() => import("@/pages/AdminEbooks"));
-const AdminEbookPurchases = lazy(() => import("@/pages/AdminEbookPurchases"));
 const GuideGroup = lazy(() => import("@/pages/GuideGroup"));
 const AdminGuide = lazy(() => import("@/pages/AdminGuide"));
 const AdminEnrollments = lazy(() => import("@/pages/AdminEnrollments"));
@@ -83,6 +82,11 @@ const AuthPage = () => {
   const [searchParams] = useSearchParams();
   const refcode = searchParams.get('ref');
   const isLogin = location.pathname === "/login";
+  // ?redirect=/path — กลับไปหน้าที่มาก่อนล็อกอิน (เช่น หน้า Ebook ที่กำลังอ่านตัวอย่าง)
+  // รับเฉพาะ path ภายในเว็บ (ขึ้นต้น / และไม่ใช่ //host) กัน open redirect
+  const redirectParam = searchParams.get('redirect');
+  const afterAuthPath =
+    redirectParam && redirectParam.startsWith('/') && !redirectParam.startsWith('//') ? redirectParam : '/courses';
 
   // เก็บโค้ดจากลิงก์แนะนำไว้ prefill ช่องโค้ดตอน checkout (ซื้อคอร์ส/สมัครสมาชิก)
   useEffect(() => {
@@ -121,7 +125,7 @@ const AuthPage = () => {
     try {
       if (isLogin) {
         await login(email, password);
-        navigate('/courses', { replace: true });
+        navigate(afterAuthPath, { replace: true });
       } else {
         const result = await register(
           email,
@@ -137,7 +141,7 @@ const AuthPage = () => {
           window.ttq?.track('CompleteRegistration');
           window.fbq?.('track', 'CompleteRegistration');
           window.gtag?.('event', 'sign_up', { method: 'email' });
-          navigate('/courses', { replace: true });
+          navigate(afterAuthPath, { replace: true });
         } else {
           setError(t('auth.registerFailed'));
         }
@@ -245,7 +249,7 @@ const AuthPage = () => {
                       window.fbq?.('track', 'CompleteRegistration');
                       window.gtag?.('event', 'sign_up', { method: 'google' });
                     }
-                    navigate('/courses', { replace: true });
+                    navigate(afterAuthPath, { replace: true });
                   } catch (err: any) {
                     setError(err.message || 'Google login failed');
                   }
@@ -432,7 +436,6 @@ function AppRoutes() {
       <Route path="/admin/courses" element={<ProtectedRoute><AdminCourses /></ProtectedRoute>} />
       <Route path="/admin/articles" element={<ProtectedRoute><AdminArticles /></ProtectedRoute>} />
       <Route path="/admin/ebooks" element={<ProtectedRoute><AdminEbooks /></ProtectedRoute>} />
-      <Route path="/admin/ebook-purchases" element={<ProtectedRoute><AdminEbookPurchases /></ProtectedRoute>} />
       <Route path="/admin/guide" element={<ProtectedRoute><AdminGuide /></ProtectedRoute>} />
       <Route path="/admin/enrollments" element={<ProtectedRoute><AdminEnrollments /></ProtectedRoute>} />
       <Route path="/admin/chats" element={<ProtectedRoute><AdminChats /></ProtectedRoute>} />

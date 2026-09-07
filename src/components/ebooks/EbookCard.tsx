@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
 import { api, type EbookDto } from '@/lib/api';
-import { BookMarked, ArrowRight, Download, BookOpen, Lock, Crown, ShoppingCart } from 'lucide-react';
+import { BookMarked, ArrowRight, Download, BookOpen, Lock, Crown } from 'lucide-react';
 
 interface EbookCardProps {
   ebook: EbookDto;
@@ -9,13 +9,11 @@ interface EbookCardProps {
 
 // การ์ด Ebook ในหน้า /ebooks — จังหวะเดียวกับการ์ดโปรแกรม/บทความ (16:9, ชื่อบน
 // แถบไล่สี, รายละเอียดโผล่ตอน hover) ป้าย/ไอคอนเปลี่ยนตามสิทธิ์จริงของเล่มนั้นๆ:
-// เฉพาะสมาชิก (ล็อก), ขายรายเล่ม (ราคา+ตะกร้า), อ่านอย่างเดียว, หรือฟรี (ค่าเริ่มต้น)
+// เฉพาะสมาชิก (ล็อก), อ่านอย่างเดียว, หรือฟรี (ค่าเริ่มต้น) — เลิกขายรายเล่มแล้ว
 const EbookCard = ({ ebook }: EbookCardProps) => {
-  const price = Number(ebook.price) || 0; // NUMERIC จาก pg เป็น string — ต้อง Number()
-  const forSale = price > 0 && !ebook.members_only;
   const locked = ebook.members_only && ebook.entitled === false;
-  const buyable = forSale && ebook.entitled === false;
-  const viewOnly = !locked && !buyable && ebook.allow_download === false;
+  // อ่านในเว็บอย่างเดียว: เล่มปิดดาวน์โหลด หรือผู้ดูโหลดไม่ได้ (สมาชิกรายเดือนกับเล่มสมาชิก)
+  const viewOnly = !locked && (ebook.allow_download === false || ebook.can_download === false);
   // ทรงการ์ดตามแนวปก: แนวนอน = 16:9 เดิม · ปกหนังสือแนวตั้ง = 3:4 (หน้า catalog
   // จัดกลุ่มสองแนวแยกกริดกันอยู่แล้ว การ์ดจึงไม่ต้องกลัวแถวเบี้ยว)
   const portraitCover = ebook.cover_orientation === 'portrait';
@@ -59,16 +57,8 @@ const EbookCard = ({ ebook }: EbookCardProps) => {
         {/* Meta revealed on hover */}
         <div className="max-h-0 opacity-0 group-hover/card:max-h-24 group-hover/card:opacity-100 group-hover/card:mt-1.5 transition-all duration-300 overflow-hidden">
           {ebook.description && <p className="text-[11px] text-gray-300 line-clamp-2">{ebook.description}</p>}
-          <span className={`mt-1 flex items-center gap-1 text-[11px] font-medium ${locked || buyable ? 'text-[#FFB300]' : 'text-emerald-400'}`}>
-            {locked
-              ? 'สำหรับสมาชิก'
-              : buyable
-                ? `ซื้อ ฿${price.toLocaleString()}`
-                : forSale
-                  ? 'อ่านได้เลย'
-                  : viewOnly
-                    ? 'อ่านในเว็บ'
-                    : 'ดาวน์โหลดฟรี'}
+          <span className={`mt-1 flex items-center gap-1 text-[11px] font-medium ${locked ? 'text-[#FFB300]' : 'text-emerald-400'}`}>
+            {locked ? 'สำหรับสมาชิก' : viewOnly ? 'อ่านในเว็บ' : ebook.members_only ? 'อ่าน + ดาวน์โหลดได้' : 'ดาวน์โหลดฟรี'}
             <ArrowRight className="h-3 w-3" />
           </span>
         </div>
@@ -78,8 +68,6 @@ const EbookCard = ({ ebook }: EbookCardProps) => {
       <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/card:opacity-100 transition-opacity duration-300 pointer-events-none">
         {locked ? (
           <Lock className="h-10 w-10 text-white/90 drop-shadow-lg -translate-y-4" />
-        ) : buyable ? (
-          <ShoppingCart className="h-10 w-10 text-white/90 drop-shadow-lg -translate-y-4" />
         ) : viewOnly ? (
           <BookOpen className="h-10 w-10 text-white/90 drop-shadow-lg -translate-y-4" />
         ) : (
@@ -87,17 +75,9 @@ const EbookCard = ({ ebook }: EbookCardProps) => {
         )}
       </div>
 
-      {locked ? (
+      {ebook.members_only ? (
         <Badge className="absolute top-2 left-2 bg-[#FFB300]/15 text-[#FFB300] border border-[#FFB300]/40 text-[10px] px-1.5 py-0.5 backdrop-blur">
           <Crown className="h-2.5 w-2.5 mr-1" /> สมาชิก
-        </Badge>
-      ) : buyable ? (
-        <Badge className="absolute top-2 left-2 bg-[#FFB300] text-black border-0 text-[10px] font-bold px-1.5 py-0.5">
-          ฿{price.toLocaleString()}
-        </Badge>
-      ) : forSale ? (
-        <Badge className="absolute top-2 left-2 bg-emerald-500/90 text-white border-0 text-[10px] px-1.5 py-0.5">
-          อ่านได้เลย
         </Badge>
       ) : (
         <Badge className="absolute top-2 left-2 bg-emerald-500/90 text-white border-0 text-[10px] px-1.5 py-0.5">

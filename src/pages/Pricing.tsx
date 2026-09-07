@@ -4,7 +4,7 @@ import PublicHeader from '@/components/PublicHeader';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { PRICING, perMonthOfYearly, yearlySavings } from '@/lib/pricing';
-import { Calendar, Crown, Check, X, Sparkles, ArrowRight, ShoppingCart } from 'lucide-react';
+import { Calendar, Crown, Check, X, Sparkles, ArrowRight, ShoppingCart, BookOpen, Download, Eye } from 'lucide-react';
 
 type ApiPlan = Awaited<ReturnType<typeof api.getSubscriptionPlans>>['plans'][number];
 
@@ -36,6 +36,7 @@ const MONTHLY_GETS = [
   'คอร์สสร้างผลงาน',
   'คอร์สใหม่ที่เพิ่มระหว่างสมาชิกยังไม่หมดอายุ',
   'เนื้อหาอัปเดตที่เปิดให้สมาชิก',
+  'อ่าน Ebook สมาชิกออนไลน์ได้ทุกเล่ม (ดูได้อย่างเดียว — ดาวน์โหลดไม่ได้)',
   'โปรแกรมหรือสิทธิ์อื่นตามรายละเอียดแพ็กเกจ',
 ];
 const MONTHLY_NOTE = 'เมื่อสมาชิกหมดอายุ สิทธิ์เข้าเรียนทุกคอร์สและสิทธิ์สมาชิกจะสิ้นสุดลง';
@@ -44,9 +45,51 @@ const YEARLY_GETS = [
   'คอร์สทั้งหมดที่มีอยู่ในวันที่สมัคร',
   'คอร์สใหม่ที่เพิ่มเข้ามาระหว่างสมาชิกยังไม่หมดอายุ',
   'เนื้อหาอัปเดต',
+  'อ่าน + ดาวน์โหลด Ebook สมาชิกได้ทุกเล่ม เก็บไว้อ่านออฟไลน์',
   'โปรแกรมหรือสิทธิ์สำหรับสมาชิกรายปีตามที่กำหนด',
 ];
 const YEARLY_NOTE = 'เมื่อสมาชิกหมดอายุ ต้องต่ออายุจึงจะเข้าเรียนและใช้สิทธิ์สมาชิกต่อได้';
+
+/*
+ * ตารางเทียบสิทธิ์ (user เคาะ 7 ก.ย. 2026: ให้เด่นกว่าข้อมูลอื่น) — สมาชิกรายเดือนอ่าน Ebook
+ * ได้อย่างเดียว · สมาชิกรายปีดาวน์โหลด Ebook ได้ (server บังคับที่ปุ่มดาวน์โหลดจริงด้วย)
+ */
+type BenefitCell = { kind: 'yes' | 'no' | 'view' | 'dl' | 'text'; label: string };
+const BENEFIT_ROWS: { label: string; hot?: boolean; perCourse: BenefitCell; monthly: BenefitCell; yearly: BenefitCell }[] = [
+  {
+    label: 'เข้าเรียนทุกคอร์ส (รวมคอร์สใหม่ระหว่างเป็นสมาชิก)',
+    perCourse: { kind: 'text', label: 'เฉพาะที่ซื้อ' },
+    monthly: { kind: 'yes', label: '✓' },
+    yearly: { kind: 'yes', label: '✓' },
+  },
+  {
+    label: '📚 อ่าน Ebook สมาชิกทุกเล่ม (ออนไลน์)',
+    hot: true,
+    perCourse: { kind: 'no', label: '—' },
+    monthly: { kind: 'view', label: '👀 ดูได้อย่างเดียว' },
+    yearly: { kind: 'yes', label: '✓ อ่านได้' },
+  },
+  {
+    label: '⬇️ ดาวน์โหลด Ebook เก็บไว้อ่านออฟไลน์',
+    hot: true,
+    perCourse: { kind: 'no', label: '—' },
+    monthly: { kind: 'no', label: '✗ ไม่ได้' },
+    yearly: { kind: 'dl', label: '✓ ดาวน์โหลดได้' },
+  },
+  {
+    label: 'โปรแกรม/สิทธิ์พิเศษสำหรับสมาชิก',
+    perCourse: { kind: 'no', label: '—' },
+    monthly: { kind: 'yes', label: '✓' },
+    yearly: { kind: 'yes', label: '✓ + สิทธิ์รายปี' },
+  },
+];
+const CELL_CLASS: Record<BenefitCell['kind'], string> = {
+  yes: 'text-emerald-400 font-semibold',
+  no: 'text-gray-500',
+  view: 'text-yellow-200 font-semibold',
+  dl: 'text-[#FFB300] font-bold',
+  text: 'text-gray-400',
+};
 
 const Pricing = () => {
   const navigate = useNavigate();
@@ -109,6 +152,59 @@ const Pricing = () => {
           </div>
         </div>
 
+        {/* ตารางเทียบสิทธิ์ — กรอบทองให้เด่นกว่าการ์ดราคา (มือถือ: ตารางเลื่อนแนวนอนในกรอบตัวเอง) */}
+        <div className="max-w-5xl mx-auto mb-10 rounded-2xl border-2 border-[#FFB300]/60 bg-gradient-to-b from-[#FFB300]/10 to-[#FFB300]/[0.03] shadow-2xl shadow-yellow-500/15 ring-4 ring-[#FFB300]/10 overflow-hidden">
+          <div className="flex items-center gap-3 px-4 sm:px-6 py-3.5 border-b border-[#FFB300]/30">
+            <Sparkles className="h-5 w-5 text-[#FFB300]" />
+            <h2 className="text-lg sm:text-xl font-bold">สิทธิ์ที่ได้รับ</h2>
+            <span className="text-xs sm:text-sm text-muted-foreground">เทียบกันชัดๆ ก่อนตัดสินใจ</span>
+          </div>
+          {/* มือถือ: การ์ดต่อสิทธิ์ — ตารางกว้างเกินจอ 390 ทำให้คอลัมน์รายเดือน/รายปี (ข้อมูลสำคัญ) ถูกซ่อนหลังการเลื่อน */}
+          <div className="sm:hidden divide-y divide-white/5">
+            {BENEFIT_ROWS.map((row) => (
+              <div key={row.label} className={`px-4 py-3 ${row.hot ? 'bg-[#FFB300]/[0.08]' : ''}`}>
+                <p className={`text-sm mb-2 ${row.hot ? 'font-bold' : 'font-medium'}`}>{row.label}</p>
+                <div className="grid grid-cols-3 gap-1.5 text-center text-xs">
+                  {([['ซื้อรายชิ้น', row.perCourse], ['รายเดือน', row.monthly], ['👑 รายปี', row.yearly]] as [string, BenefitCell][]).map(([head, cell]) => (
+                    <div key={head} className="rounded-lg bg-black/25 px-1.5 py-1.5">
+                      <div className={`text-[10px] mb-0.5 ${head.includes('รายปี') ? 'text-[#FFB300]' : 'text-muted-foreground'}`}>{head}</div>
+                      <div className={`${CELL_CLASS[cell.kind]} leading-snug`}>{cell.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="hidden sm:block overflow-x-auto">
+            <table className="w-full min-w-[560px] text-sm">
+              <thead>
+                <tr className="text-xs sm:text-sm text-muted-foreground">
+                  <th className="text-left font-semibold px-4 sm:px-6 py-3 w-[40%]">สิทธิ์</th>
+                  <th className="text-center font-semibold px-3 py-3">ซื้อรายชิ้น</th>
+                  <th className="text-center font-semibold px-3 py-3">รายเดือน</th>
+                  <th className="text-center font-semibold px-3 py-3 text-[#FFB300]">👑 รายปี</th>
+                </tr>
+              </thead>
+              <tbody>
+                {BENEFIT_ROWS.map((row) => (
+                  <tr
+                    key={row.label}
+                    className={`border-t border-white/5 ${row.hot ? 'bg-[#FFB300]/[0.08] text-[15px]' : ''}`}
+                  >
+                    <td className={`px-4 sm:px-6 py-3 text-left text-foreground ${row.hot ? 'font-bold' : 'font-medium'}`}>{row.label}</td>
+                    {([row.perCourse, row.monthly, row.yearly] as BenefitCell[]).map((cell, i) => (
+                      <td key={i} className={`px-3 py-3 text-center whitespace-nowrap ${CELL_CLASS[cell.kind]}`}>{cell.label}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="px-4 sm:px-6 py-3 text-xs text-muted-foreground border-t border-[#FFB300]/20">
+            📌 Ebook ฟรีอ่าน/ดาวน์โหลดได้ทุกคนตามที่แต่ละเล่มกำหนด · สิทธิ์ดาวน์โหลดใช้ได้ระหว่างสมาชิกรายปียังไม่หมดอายุ
+          </p>
+        </div>
+
         {/* 3 Cards */}
         <div className="grid md:grid-cols-3 gap-6 max-w-6xl mx-auto items-start">
           {/* ---- 1. ซื้อคอร์สรายชิ้น ---- */}
@@ -169,10 +265,23 @@ const Pricing = () => {
               <span className="ml-2 px-2 py-1 rounded-md bg-red-500/20 text-red-400 text-sm font-medium">-50%</span>
             </div>
 
-            <Button onClick={() => goCheckout('monthly')} className="w-full h-12 text-base font-bold mb-6 mt-4">
+            <Button onClick={() => goCheckout('monthly')} className="w-full h-12 text-base font-bold mb-4 mt-4">
               สมัครรายเดือน
               <ArrowRight className="h-4 w-4 ml-1.5" />
             </Button>
+
+            {/* กล่อง Ebook — รายเดือนอ่านออนไลน์อย่างเดียว */}
+            <div className="mb-5 rounded-xl border border-[#FFB300]/50 bg-[#FFB300]/10 p-3.5">
+              <p className="font-semibold text-sm flex items-center gap-1.5 mb-1">
+                <BookOpen className="h-4 w-4 text-[#FFB300]" /> Ebook: อ่านออนไลน์ได้ทุกเล่ม
+              </p>
+              <p className="text-sm text-yellow-100/90 flex items-center gap-1.5">
+                <Eye className="h-4 w-4 shrink-0" /> ดูได้อย่างเดียวในเว็บ — ดาวน์โหลดไฟล์ไม่ได้
+              </p>
+              <span className="inline-block mt-2 text-[11px] px-2 py-0.5 rounded-full bg-black/30 text-muted-foreground">
+                อยากเก็บไฟล์ไว้? เลือกรายปี
+              </span>
+            </div>
 
             <p className="text-xs font-semibold text-green-400 mb-2">✓ สิทธิ์ที่ได้รับ</p>
             <ul className="space-y-2 mb-4">
@@ -216,11 +325,24 @@ const Pricing = () => {
             <Button
               onClick={() => goCheckout('yearly')}
 
-              className="w-full h-12 text-base font-bold mb-6 mt-4 bg-gradient-to-r from-[#FFD700] via-[#FFB300] to-[#FFA500] text-black"
+              className="w-full h-12 text-base font-bold mb-4 mt-4 bg-gradient-to-r from-[#FFD700] via-[#FFB300] to-[#FFA500] text-black"
             >
               สมัครรายปี
               <ArrowRight className="h-4 w-4 ml-1.5" />
             </Button>
+
+            {/* กล่อง Ebook — รายปีดาวน์โหลดได้ (สิทธิ์เฉพาะรายปี) */}
+            <div className="mb-5 rounded-xl border border-[#FFB300]/60 bg-[#FFB300]/15 p-3.5">
+              <p className="font-semibold text-sm flex items-center gap-1.5 mb-1">
+                <BookOpen className="h-4 w-4 text-[#FFB300]" /> Ebook: อ่าน + ดาวน์โหลดได้ทุกเล่ม
+              </p>
+              <p className="text-sm text-yellow-100/90 flex items-center gap-1.5">
+                <Download className="h-4 w-4 shrink-0 text-[#FFB300]" /> ดาวน์โหลดไฟล์เก็บไว้อ่านออฟไลน์ได้ตลอดอายุสมาชิก
+              </p>
+              <span className="inline-block mt-2 text-[11px] px-2 py-0.5 rounded-full bg-black/30 text-[#FFB300] font-medium">
+                สิทธิ์เฉพาะรายปี
+              </span>
+            </div>
 
             <p className="text-xs font-semibold text-green-400 mb-2">✓ สิทธิ์ที่ได้รับ</p>
             <ul className="space-y-2 mb-4">

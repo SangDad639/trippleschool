@@ -740,7 +740,7 @@ const AdminAffiliate = () => {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-sm text-muted-foreground">
-                % เดียวกันทุกคน ทุกสินค้า (แพ็กเกจ / คอร์ส / Ebook) คิดจากยอดที่ผู้ซื้อจ่ายจริงก่อน VAT
+                % เดียวกันทุกคน ทุกสินค้า (แพ็กเกจ / คอร์ส) คิดจากยอดที่ผู้ซื้อจ่ายจริงก่อน VAT
                 • เฉพาะการสมัครครั้งแรกของผู้ซื้อ (ต่ออายุไม่ได้ค่าคอม) • เจ้าของโค้ดต้องเป็นสมาชิกที่ยังไม่หมดอายุ
               </p>
               <div className="flex items-center gap-2">

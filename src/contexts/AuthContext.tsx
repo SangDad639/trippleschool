@@ -12,6 +12,10 @@ interface User {
   isGuideAdmin?: boolean;
   isApproved?: boolean;
   subscriptionExpiresAt?: string | null;
+  /** slug แผนที่ active (monthly / yearly / แผนที่แอดมินสร้าง) — null = ไม่ใช่สมาชิก */
+  subscriptionPlan?: string | null;
+  /** สมาชิกรายปี (แผน ≥ 365 วัน) — ได้สิทธิ์เพิ่ม เช่น ดาวน์โหลด Ebook */
+  isYearlyMember?: boolean;
   refcode?: string;
   createdAt?: string;
 }
@@ -69,6 +73,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             isGuideAdmin: userData.isGuideAdmin,
             isApproved: userData.isApproved,
             subscriptionExpiresAt: userData.subscriptionExpiresAt,
+            subscriptionPlan: userData.subscriptionPlan ?? null,
+            isYearlyMember: !!userData.isYearlyMember,
             refcode: userData.refcode,
             createdAt: userData.createdAt,
           });
@@ -103,6 +109,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isGuideAdmin: response.user.isGuideAdmin,
         isApproved: response.user.isApproved,
         subscriptionExpiresAt: response.user.subscriptionExpiresAt,
+        subscriptionPlan: response.user.subscriptionPlan ?? null,
+        isYearlyMember: !!response.user.isYearlyMember,
         refcode: response.user.refcode,
         createdAt: response.user.createdAt,
       });
@@ -128,6 +136,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isGuideAdmin: response.user.isGuideAdmin,
         isApproved: response.user.isApproved,
         subscriptionExpiresAt: response.user.subscriptionExpiresAt,
+        subscriptionPlan: response.user.subscriptionPlan ?? null,
+        isYearlyMember: !!response.user.isYearlyMember,
         refcode: response.user.refcode,
         createdAt: response.user.createdAt,
       });
@@ -163,6 +173,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           isGuideAdmin: response.user.isGuideAdmin,
           isApproved: response.user.isApproved,
           subscriptionExpiresAt: response.user.subscriptionExpiresAt,
+          subscriptionPlan: response.user.subscriptionPlan ?? null,
+          isYearlyMember: !!response.user.isYearlyMember,
           refcode: response.user.refcode,
           createdAt: response.user.createdAt,
         });
@@ -192,6 +204,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isGuideAdmin: userData.isGuideAdmin,
         isApproved: userData.isApproved,
         subscriptionExpiresAt: userData.subscriptionExpiresAt,
+        subscriptionPlan: userData.subscriptionPlan ?? null,
+        isYearlyMember: !!userData.isYearlyMember,
         refcode: userData.refcode,
       });
     } catch (error) {

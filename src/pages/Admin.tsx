@@ -971,12 +971,6 @@ const Admin = () => {
               </Button>
               <Button
                 variant="outline"
-                onClick={() => navigate('/admin/ebook-purchases')}
-              >
-                อนุมัติซื้อ Ebook
-              </Button>
-              <Button
-                variant="outline"
                 onClick={() => navigate('/admin/chats')}
               >
                 แชทลูกค้า

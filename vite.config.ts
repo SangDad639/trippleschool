@@ -163,6 +163,11 @@ export default defineConfig({
     ]
   },
   plugins: [react(), guideClipsFeed(), cacheHeaders(), courseOgTags(OG_API_BASE)],
+  // pdf.js ถูก import แบบ dynamic ครั้งแรกตอนกด "อ่านตัวอย่าง" — pre-bundle ไว้ก่อน
+  // ไม่งั้น dev server จะ optimize ใหม่แล้ว reload ทั้งหน้ากลางคัน
+  optimizeDeps: {
+    include: ['pdfjs-dist/legacy/build/pdf.mjs'],
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

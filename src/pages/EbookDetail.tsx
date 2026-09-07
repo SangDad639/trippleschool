@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api, type EbookDto } from '@/lib/api';
@@ -7,13 +7,11 @@ import PublicHeader from '@/components/PublicHeader';
 import EbookSamplesGallery from '@/components/ebooks/EbookSamplesGallery';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from '@/components/ui/dialog';
 import {
   ArrowLeft,
@@ -26,19 +24,20 @@ import {
   Download,
   Link2,
   Loader2,
+  Lock,
   Play,
   Share2,
-  ShoppingCart,
-  Upload,
 } from 'lucide-react';
 
-const MAX_SLIP_BYTES = 5 * 1024 * 1024;
+// ตัวอ่านตัวอย่างแบบเลื่อนต่อเนื่องลาก pdf.js (~400KB) มาด้วย — โหลดเฉพาะตอนกด "อ่านตัวอย่างฟรี"
+const EbookWebtoonPreview = lazy(() => import('@/components/ebooks/EbookWebtoonPreview'));
 
 // หน้ารายละเอียด Ebook /ebooks/:slug — โครงตามดีไซน์อ้างอิง fuzionhub:
 // ปกใหญ่ + ชื่อ + ผู้เขียน + ประโยคขาย (hook) + "X หน้า · อ่านออนไลน์ได้ทันที"
-// + กล่องราคา/CTA + section "ข้างในมีอะไร" (highlights)
-// โหมดต่อเล่ม: ฟรี / สมาชิกเท่านั้น / ขายรายเล่ม (ซื้อด้วยสลิป+แอดมินอนุมัติ เหมือนคอร์ส)
+// + กล่อง CTA + section "ข้างในมีอะไร" (highlights)
+// โหมดต่อเล่ม (เลิกขายรายเล่มแล้ว 7 ก.ย. 2026): ฟรี / สมาชิกเท่านั้น
 // สิทธิ์การเข้าถึงจริงมาจาก server เสมอ — ปุ่มที่เห็นแค่สะท้อนสิทธิ์นั้น ไม่ใช่ตัวตัดสินเอง
+// (entitled = อ่านได้ · can_download = ดาวน์โหลดได้ — เล่มสมาชิกโหลดได้เฉพาะสมาชิกรายปี)
 const EbookDetail = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -50,21 +49,15 @@ const EbookDetail = () => {
   const [showReader, setShowReader] = useState(false);
   // ตัวอ่าน "ตัวอย่างจำกัดหน้า" สำหรับคนยังไม่มีสิทธิ์ (ไฟล์ที่ได้มีแค่หน้าตัวอย่างจริงๆ)
   const [showPreview, setShowPreview] = useState(false);
+  // เลื่อนต่อเนื่อง (ค่าเริ่มต้น) → ถ้าเรนเดอร์ไม่ได้ ตกไปใช้ iframe PDF แบบเดิม
+  const [previewMode, setPreviewMode] = useState<'webtoon' | 'pdf'>('webtoon');
+  const previewRef = useRef<HTMLDivElement>(null);
+  const heroRef = useRef<HTMLDivElement>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
-
-  // ซื้อรายเล่ม — dialog โค้ดผู้แนะนำ + สลิป (mirror โฟลว์ซื้อคอร์สใน CourseDetail)
-  const [buyDialogOpen, setBuyDialogOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
   // แชร์ Ebook: ลิงก์สั้น /ebooks/{share_code} (เล่มเก่าที่ยังไม่มีรหัสตกไปใช้ slug)
   const [shareDialogOpen, setShareDialogOpen] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
-  const [slipFile, setSlipFile] = useState<File | null>(null);
-  const [slipPreview, setSlipPreview] = useState('');
-  const [refCode, setRefCode] = useState('');
-  const [refCheck, setRefCheck] = useState<{ valid: boolean; pct: number; reason?: string; code: string } | null>(null);
-  const [refChecking, setRefChecking] = useState(false);
-  const slipInputRef = useRef<HTMLInputElement>(null);
 
   const loadEbook = useCallback(async () => {
     if (!slug) return;
@@ -84,6 +77,7 @@ const EbookDetail = () => {
     setNotFound(false);
     setShowReader(false);
     setShowPreview(false);
+    setPreviewMode('webtoon');
     setAccessToken(null);
     window.scrollTo(0, 0);
     void loadEbook();
@@ -127,14 +121,11 @@ const EbookDetail = () => {
     }
   };
 
-  const price = Number(ebook?.price) || 0;
-  const forSale = !!ebook && price > 0 && !ebook.members_only;
-  const requiresEntitlement = !!ebook && (ebook.members_only || price > 0);
+  const requiresEntitlement = !!ebook && ebook.members_only;
   const entitled = ebook?.entitled === true;
   const locked = requiresEntitlement && !entitled;
-  const myPurchase = ebook?.my_purchase ?? null;
 
-  // ไฟล์ของเล่มสมาชิก/เล่มขาย ต้องใช้ token สั้นๆ เฉพาะเล่ม — <a>/<iframe> ธรรมดา
+  // ไฟล์ของเล่มสมาชิกต้องใช้ token สั้นๆ เฉพาะเล่ม — <a>/<iframe> ธรรมดา
   // ส่ง Authorization header ไม่ได้ และฝัง session token ยาว 7 วันลง URL จะรั่ว
   // เข้า download history ของเบราว์เซอร์ เล่มฟรีไม่ต้องใช้เลย
   useEffect(() => {
@@ -156,94 +147,21 @@ const EbookDetail = () => {
     };
   }, [ebook, requiresEntitlement, locked]);
 
-  const validateCode = async (raw: string, silent = false) => {
-    const code = raw.trim();
-    if (!code) { setRefCheck(null); return null; }
-    try {
-      setRefChecking(true);
-      const r = await api.validateRefcode(code);
-      const state = { valid: r.valid, pct: r.discount_percent, reason: r.reason, code: code.toLowerCase() };
-      setRefCheck(state);
-      if (!silent) {
-        if (r.valid) toast.success(`ใช้โค้ดสำเร็จ 🎉 ลด ${r.discount_percent}%`);
-        else toast.error(r.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : r.reason === 'OWNER_INACTIVE' ? 'โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)' : 'ไม่พบโค้ดนี้');
-      }
-      return state;
-    } catch {
-      if (!silent) toast.error('ตรวจสอบโค้ดไม่สำเร็จ ลองใหม่อีกครั้ง');
-      return null;
-    } finally {
-      setRefChecking(false);
-    }
+  // ปุ่ม "อ่านตัวอย่าง" อยู่ใน hero เหนือตัวอ่าน → เปิดแล้วเลื่อนลงไปให้เห็นทันที
+  useEffect(() => {
+    if (!showPreview) return;
+    const t = window.setTimeout(() => previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    return () => window.clearTimeout(t);
+  }, [showPreview]);
+
+  const openPreview = () => {
+    // อุ่น pdf.js ไว้ตั้งแต่กดปุ่ม — ไม่ต้องรอ chunk ตัวอ่าน → chunk pdf.js → worker เป็นทอดๆ
+    void import('@/lib/pdfjs').then((m) => m.loadPdfjs()).catch(() => { /* ตัวอ่านจะรายงาน error เอง */ });
+    setShowPreview(true);
   };
-
-  const openBuyDialog = () => {
-    if (!isAuthenticated) {
-      navigate('/login');
-      return;
-    }
-    setSlipFile(null);
-    setSlipPreview('');
-    // prefill: โค้ดที่เคยใช้กับคำสั่งซื้อนี้ (resubmit) มาก่อนโค้ดจากลิงก์แนะนำ
-    const prefill = myPurchase?.refcode || localStorage.getItem('ts_ref') || '';
-    setRefCode(prefill);
-    setRefCheck(null);
-    setBuyDialogOpen(true);
-    if (prefill.trim()) void validateCode(prefill, true);
-  };
-
-  // ยอดโอนจริง: โค้ด valid → ลดสด (สูตร round2 ตรง server); ไม่กรอกโค้ดแต่คำสั่งซื้อเดิม
-  // บันทึกยอดลดไว้ (resubmit สลิป) → ใช้ยอดที่บันทึก (server คงค่าเดิมเมื่อไม่ส่งโค้ด)
-  const storedPaid =
-    myPurchase && (myPurchase.status === 'pending' || myPurchase.status === 'rejected') && myPurchase.paid_amount != null
-      ? Number(myPurchase.paid_amount)
-      : null;
-  const effectiveBuyAmount = refCheck?.valid
-    ? Math.round(price * (1 - refCheck.pct / 100) * 100) / 100
-    : (storedPaid ?? price);
-
-  const handleSlipChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) {
-      toast.error('กรุณาเลือกไฟล์รูปภาพ');
-      return;
-    }
-    if (file.size > MAX_SLIP_BYTES) {
-      toast.error('ไฟล์ใหญ่เกิน 5MB');
-      return;
-    }
-    setSlipFile(file);
-    setSlipPreview(URL.createObjectURL(file));
-  };
-
-  const handleConfirmBuy = async () => {
-    if (!ebook) return;
-    if (!slipFile) {
-      toast.error('กรุณาอัปโหลดสลิปการโอนเงิน');
-      return;
-    }
-    // มีโค้ดในช่องแต่ยังไม่ validate → ห้ามส่งเงียบๆ (ยอดบนจออาจไม่ตรงยอดหลังลด)
-    const typed = refCode.trim().toLowerCase();
-    if (typed && !(refCheck?.valid && refCheck.code === typed)) {
-      toast.error('กดปุ่ม "ใช้โค้ด" เพื่อตรวจสอบโค้ดก่อน หรือลบโค้ดออกจากช่อง');
-      return;
-    }
-    try {
-      setSubmitting(true);
-      await api.purchaseEbook(ebook.id, slipFile, refCheck?.valid ? refCheck.code : undefined);
-      toast.success('ส่งคำขอแล้ว รอแอดมินอนุมัติ');
-      setBuyDialogOpen(false);
-      await loadEbook();
-    } catch (error: any) {
-      console.error('Failed to purchase ebook:', error);
-      if (error?.errorCode === 'INVALID_REFCODE' || error?.errorCode === 'REFCODE_LOCKED') {
-        setRefCheck(null);
-      }
-      toast.error(error?.message || 'ส่งคำขอไม่สำเร็จ');
-    } finally {
-      setSubmitting(false);
-    }
+  const closePreview = () => {
+    setShowPreview(false);
+    heroRef.current?.scrollIntoView({ block: 'start' });
   };
 
   if (loading) {
@@ -271,7 +189,10 @@ const EbookDetail = () => {
   const hasFile = !!ebook.has_file;
   const tokenReady = !requiresEntitlement || !!accessToken;
   const waitingForAccess = !locked && hasFile && !tokenReady;
-  const canDownload = !locked && hasFile && ebook.allow_download && tokenReady;
+  // สิทธิ์ดาวน์โหลดมาจาก server (can_download) — เล่มสมาชิก: รายปีเท่านั้น
+  const canDownload = !locked && hasFile && ebook.can_download === true && tokenReady;
+  // อ่านได้แต่โหลดไม่ได้เพราะเป็นสมาชิกรายเดือน (เล่มเปิดให้โหลด แต่ server ไม่ให้สิทธิ์)
+  const downloadNeedsYearly = !locked && hasFile && requiresEntitlement && ebook.allow_download && ebook.can_download === false;
   const canView = !locked && hasFile && ebook.is_pdf && tokenReady;
   const downloadHref = canDownload ? api.ebookFileUrl(ebook.slug, 'download', accessToken || undefined) : '';
   const viewHref = canView ? api.ebookFileUrl(ebook.slug, 'view', accessToken || undefined) : '';
@@ -279,41 +200,92 @@ const EbookDetail = () => {
   const metaParts: string[] = [];
   if (ebook.pages) metaParts.push(`${ebook.pages} หน้า`);
   if (ebook.is_pdf && hasFile) metaParts.push('อ่านออนไลน์ได้ทันที');
-  if (ebook.allow_download && hasFile) metaParts.push('ดาวน์โหลดเก็บไว้ได้');
+  if (ebook.allow_download && hasFile) metaParts.push(ebook.members_only ? 'สมาชิกรายปีดาวน์โหลดเก็บไว้ได้' : 'ดาวน์โหลดเก็บไว้ได้');
 
   // ปุ่ม "อ่านตัวอย่างฟรี N หน้า" — โผล่เฉพาะคนที่ยังไม่มีสิทธิ์และเล่มมีตัวอย่าง
   const previewPagesNum = Number(ebook.preview_pages) || 0;
   const previewButton = locked && ebook.has_preview ? (
     <Button
       variant="outline"
-      onClick={() => setShowPreview((v) => !v)}
-      className="w-full sm:w-auto h-10 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+      onClick={() => (showPreview ? closePreview() : openPreview())}
+      className="w-full sm:w-auto h-11 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
     >
       <BookOpen className="h-4 w-4 mr-1.5" />
       {showPreview ? 'ซ่อนตัวอย่าง' : `อ่านตัวอย่างฟรี${previewPagesNum > 0 ? ` ${previewPagesNum} หน้าแรก` : ''}`}
     </Button>
   ) : null;
 
+  // บล็อกท้ายตัวอย่าง — ชวนสมัครสมาชิก (ปุ่มเดียว → /pricing); รับจำนวนหน้าจริงที่ตัวอ่านเรนเดอร์ได้
+  const previewCta = (renderedPages: number) => (
+    <div className="text-center space-y-5">
+      <div className="space-y-2">
+        <p className="text-2xl sm:text-3xl font-bold text-white text-balance">
+          คุณอ่านตัวอย่างครบ{renderedPages > 0 ? ` ${renderedPages} หน้า` : ''}แล้ว 🎉
+        </p>
+        <p className="text-base sm:text-lg text-gray-300">
+          {ebook.pages ? `เล่มเต็มมี ${ebook.pages} หน้า — ` : ''}
+          สมัครสมาชิกเพื่ออ่านต่อจนจบ
+        </p>
+        <p className="text-sm sm:text-base text-gray-400">อ่าน Ebook ได้ทุกเล่ม + เข้าเรียนได้ทุกคอร์ส · สมาชิกรายปีดาวน์โหลด Ebook เก็บไว้ได้</p>
+      </div>
+      <Button
+        onClick={() => navigate('/pricing')}
+        className="w-full sm:w-auto h-14 sm:h-16 px-8 sm:px-12 text-lg sm:text-xl font-bold bg-purple-600 hover:bg-purple-700 shadow-lg shadow-purple-900/40"
+      >
+        <Crown className="h-6 w-6 mr-2.5" />
+        สมัครสมาชิก อ่านต่อได้เลย
+      </Button>
+      {!isAuthenticated && (
+        <p className="text-sm text-gray-500">
+          มีบัญชีอยู่แล้ว?{' '}
+          <Link to={`/login?redirect=${encodeURIComponent(`/ebooks/${ebook.slug}`)}`} className="text-[#FFB300] hover:underline">
+            เข้าสู่ระบบ
+          </Link>
+        </p>
+      )}
+    </div>
+  );
+
   // ปุ่มอ่าน/ดาวน์โหลด (ใช้ซ้ำทั้งเคสฟรีและเคสมีสิทธิ์แล้ว)
   const readerButtons = (
-    <div className="flex flex-wrap gap-3">
-      {canDownload && (
-        <Button asChild className="flex-1 basis-48 h-11 bg-purple-600 hover:bg-purple-700">
-          <a href={downloadHref} download>
-            <Download className="h-4 w-4 mr-2" />
-            ดาวน์โหลด Ebook
-          </a>
-        </Button>
-      )}
-      {canView && (
-        <Button
-          variant="outline"
-          className="flex-1 basis-48 h-11 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
-          onClick={() => setShowReader((v) => !v)}
-        >
-          <BookOpen className="h-4 w-4 mr-2" />
-          {showReader ? 'ซ่อนตัวอ่าน' : 'อ่านในเว็บ'}
-        </Button>
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-3">
+        {canDownload && (
+          <Button asChild className="flex-1 basis-48 h-11 bg-purple-600 hover:bg-purple-700">
+            <a href={downloadHref} download>
+              <Download className="h-4 w-4 mr-2" />
+              ดาวน์โหลด Ebook
+            </a>
+          </Button>
+        )}
+        {downloadNeedsYearly && (
+          <Button
+            variant="outline"
+            onClick={() => navigate('/pricing')}
+            className="flex-1 basis-48 h-11 border-[#FFB300]/40 text-[#FFB300] hover:bg-[#FFB300]/10 hover:text-[#FFB300]"
+            title="สมาชิกรายเดือนอ่านในเว็บได้อย่างเดียว — อัปเกรดเป็นรายปีเพื่อดาวน์โหลด"
+          >
+            <Lock className="h-4 w-4 mr-2" />
+            ดาวน์โหลดได้เฉพาะสมาชิกรายปี
+          </Button>
+        )}
+        {canView && (
+          <Button
+            variant="outline"
+            className="flex-1 basis-48 h-11 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+            onClick={() => setShowReader((v) => !v)}
+          >
+            <BookOpen className="h-4 w-4 mr-2" />
+            {showReader ? 'ซ่อนตัวอ่าน' : 'อ่านในเว็บ'}
+          </Button>
+        )}
+      </div>
+      {downloadNeedsYearly && (
+        <p className="text-xs text-gray-500">
+          สมาชิกรายเดือนอ่านในเว็บได้อย่างเดียว ·{' '}
+          <Link to="/pricing" className="text-[#FFB300] hover:underline">อัปเกรดเป็นรายปี</Link>{' '}
+          เพื่อดาวน์โหลดเก็บไว้อ่านออฟไลน์
+        </p>
       )}
     </div>
   );
@@ -331,7 +303,9 @@ const EbookDetail = () => {
           กลับไปหน้า Ebook
         </Link>
 
-        <div className="rounded-2xl border border-gray-800 bg-gray-900/40 overflow-hidden">
+        {/* overflow-clip (ไม่ใช่ hidden): ตัดมุมโค้งได้เหมือนกัน แต่ไม่กลายเป็น scrollport
+            ของ position:sticky — แถบสถานะของตัวอ่านตัวอย่างข้างในต้องติดใต้ header ได้ */}
+        <div ref={heroRef} className="rounded-2xl border border-gray-800 bg-gray-900/40 overflow-clip scroll-mt-14 lg:scroll-mt-16">
           <div className="grid lg:grid-cols-5 gap-0">
             {/* Cover — รองรับทั้งปกแนวนอน 16:9 และปกหนังสือแนวตั้ง: รูปจริง object-contain
                 ไม่โดน crop ส่วนพื้นหลังเป็นปกเดียวกันเบลอๆ ให้กรอบไม่โล่งตอนปกแนวตั้ง */}
@@ -364,19 +338,9 @@ const EbookDetail = () => {
                   <Badge className="bg-[#FFB300]/15 text-[#FFB300] border border-[#FFB300]/30">
                     <Crown className="h-3.5 w-3.5 mr-1" /> {locked ? 'สำหรับสมาชิกเท่านั้น' : 'สิทธิพิเศษสมาชิก'}
                   </Badge>
-                ) : forSale ? (
-                  <Badge className="bg-[#FFB300]/15 text-[#FFB300] border border-[#FFB300]/30">
-                    <ShoppingCart className="h-3.5 w-3.5 mr-1" /> E-book ขายรายเล่ม
-                  </Badge>
                 ) : (
                   <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
                     <Download className="h-3.5 w-3.5 mr-1" /> ดาวน์โหลดฟรี ไม่ต้องเป็นสมาชิก
-                  </Badge>
-                )}
-                {forSale && entitled && (
-                  <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                    <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-                    {myPurchase?.status === 'approved' ? 'ซื้อแล้ว' : 'อ่านได้ด้วยสิทธิ์สมาชิก'}
                   </Badge>
                 )}
                 {!locked && hasFile && !ebook.allow_download && (
@@ -420,61 +384,12 @@ const EbookDetail = () => {
                       <Crown className="inline h-4 w-4 mr-1.5 text-[#FFB300]" />
                       Ebook เล่มนี้สำหรับสมาชิกรายเดือน/รายปีเท่านั้น
                     </p>
-                    <Button onClick={() => navigate('/pricing')} className="bg-purple-600 hover:bg-purple-700">
+                    <Button onClick={() => navigate('/pricing')} className="w-full sm:w-auto h-12 px-8 text-base font-semibold bg-purple-600 hover:bg-purple-700">
                       ดูแพ็กเกจสมาชิก
                       <ArrowRight className="h-4 w-4 ml-1.5" />
                     </Button>
                     {previewButton && <div>{previewButton}</div>}
                   </div>
-                ) : forSale && locked ? (
-                  myPurchase?.status === 'pending' ? (
-                    <div className="rounded-xl border border-yellow-500/30 bg-yellow-500/5 p-4 space-y-3">
-                      <p className="text-sm text-yellow-200/90">
-                        ⏳ ส่งคำสั่งซื้อแล้ว (ยอดโอน ฿{Number(myPurchase.paid_amount ?? price).toLocaleString()}) — รอแอดมินตรวจสอบสลิป
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" size="sm" onClick={openBuyDialog}>
-                          <Upload className="h-4 w-4 mr-1.5" />
-                          อัปเดตสลิปใหม่
-                        </Button>
-                        {previewButton}
-                      </div>
-                    </div>
-                  ) : myPurchase?.status === 'rejected' ? (
-                    <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 space-y-3">
-                      <p className="text-sm text-red-300">
-                        ❌ คำสั่งซื้อถูกปฏิเสธ{myPurchase.rejection_reason ? ` — ${myPurchase.rejection_reason}` : ''}
-                      </p>
-                      <div className="flex flex-wrap gap-2">
-                        <Button onClick={openBuyDialog} className="bg-purple-600 hover:bg-purple-700">
-                          <ShoppingCart className="h-4 w-4 mr-2" />
-                          ส่งคำสั่งซื้อใหม่
-                        </Button>
-                        {previewButton}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="space-y-2.5">
-                      <div className="flex items-end gap-2">
-                        <span className="text-3xl font-bold text-[#FFB300]">฿{price.toLocaleString()}</span>
-                        <span className="text-gray-500 text-sm pb-1">จ่ายครั้งเดียว อ่านได้ตลอด</span>
-                      </div>
-                      <div className="flex flex-col sm:flex-row gap-2">
-                        <Button onClick={openBuyDialog} className="w-full sm:w-auto h-11 px-8 bg-purple-600 hover:bg-purple-700">
-                          <ShoppingCart className="h-4 w-4 mr-2" />
-                          ซื้อ E-book เล่มนี้
-                        </Button>
-                        {previewButton}
-                      </div>
-                      <p className="text-gray-500 text-xs">
-                        หรือ{' '}
-                        <Link to="/pricing" className="text-[#FFB300] hover:underline">
-                          สมัครสมาชิก
-                        </Link>{' '}
-                        อ่านได้ทุกเล่ม + เข้าเรียนได้ทุกคอร์ส
-                      </p>
-                    </div>
-                  )
                 ) : !hasFile ? (
                   <Button disabled className="flex-1 basis-48 h-11 bg-purple-600 disabled:opacity-60">
                     <Download className="h-4 w-4 mr-2" />
@@ -488,8 +403,7 @@ const EbookDetail = () => {
                   readerButtons
                 )}
 
-                {/* แชร์ Ebook — มือถือเปิด share sheet ของเครื่อง, เดสก์ท็อปเปิด dialog คัดลอกลิงก์
-                    (รายละเอียดถูกย้ายไปเป็น block ของตัวเองใต้ hero — hero โล่ง ปุ่มซื้อเด่น) */}
+                {/* แชร์ Ebook — มือถือเปิด share sheet ของเครื่อง, เดสก์ท็อปเปิด dialog คัดลอกลิงก์ */}
                 <Button
                   variant="outline"
                   onClick={handleShare}
@@ -512,30 +426,39 @@ const EbookDetail = () => {
             </div>
           )}
 
-          {/* ตัวอ่าน "ตัวอย่างจำกัดหน้า" — ไฟล์ที่โหลดมามีแค่หน้าตัวอย่างจริงๆ ไม่ใช่ไฟล์เต็ม */}
+          {/* ตัวอ่าน "ตัวอย่างจำกัดหน้า" — ไฟล์ที่โหลดมามีแค่หน้าตัวอย่างจริงๆ ไม่ใช่ไฟล์เต็ม
+              ค่าเริ่มต้นเลื่อนอ่านต่อเนื่อง (จบแล้วเจอบล็อกชวนสมัคร) — พังค่อยตกไป iframe PDF */}
           {showPreview && locked && ebook.has_preview && (
-            <div className="border-t border-gray-800 bg-[#0d0d14]">
-              <iframe
-                src={`${api.ebookPreviewUrl(ebook.slug)}#toolbar=0`}
-                title={`ตัวอย่าง ${ebook.title}`}
-                className="w-full h-[60vh] md:h-[80vh] bg-white"
-              />
-              <div className="flex flex-col sm:flex-row items-center justify-center gap-3 px-4 py-3 border-t border-gray-800">
-                <p className="text-sm text-gray-300">
-                  📖 นี่คือตัวอย่างบางส่วนเท่านั้น{previewPagesNum > 0 ? ` (${previewPagesNum} หน้าแรก)` : ''} — อ่านเต็มเล่มได้เลย
-                </p>
-                {forSale ? (
-                  <Button size="sm" onClick={openBuyDialog} className="bg-purple-600 hover:bg-purple-700">
-                    <ShoppingCart className="h-4 w-4 mr-1.5" />
-                    ซื้อ ฿{price.toLocaleString()}
-                  </Button>
-                ) : (
-                  <Button size="sm" onClick={() => navigate('/pricing')} className="bg-purple-600 hover:bg-purple-700">
-                    <Crown className="h-4 w-4 mr-1.5" />
-                    สมัครสมาชิก
-                  </Button>
-                )}
-              </div>
+            <div ref={previewRef} className="border-t border-gray-800 bg-[#0d0d14] scroll-mt-14 lg:scroll-mt-16">
+              {previewMode === 'webtoon' ? (
+                <Suspense
+                  fallback={
+                    <div className="flex items-center justify-center gap-2 py-16 text-sm text-gray-400">
+                      <Loader2 className="h-4 w-4 animate-spin" /> กำลังโหลดตัวอ่าน…
+                    </div>
+                  }
+                >
+                  <EbookWebtoonPreview
+                    slug={ebook.slug}
+                    version={`${previewPagesNum}-${ebook.updated_at}`}
+                    title={ebook.title}
+                    previewPages={previewPagesNum}
+                    totalPages={ebook.pages ? Number(ebook.pages) : null}
+                    cta={previewCta}
+                    onClose={closePreview}
+                    onFallback={() => setPreviewMode('pdf')}
+                  />
+                </Suspense>
+              ) : (
+                <>
+                  <iframe
+                    src={`${api.ebookPreviewUrl(ebook.slug, `${previewPagesNum}-${ebook.updated_at}`)}#toolbar=0`}
+                    title={`ตัวอย่าง ${ebook.title}`}
+                    className="w-full h-[60vh] md:h-[80vh] bg-white"
+                  />
+                  <div className="px-4 py-8 border-t border-gray-800">{previewCta(previewPagesNum)}</div>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -574,104 +497,6 @@ const EbookDetail = () => {
           </div>
         )}
       </div>
-
-      {/* Buy / slip-upload dialog (mirror ซื้อคอร์ส) */}
-      <Dialog open={buyDialogOpen} onOpenChange={(open) => { if (!submitting) setBuyDialogOpen(open); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5 text-purple-400" />
-              ซื้อ E-book เล่มนี้
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3 rounded-md bg-gray-800/50 px-3 py-2.5">
-              <span className="text-white text-sm font-medium truncate">{ebook.title}</span>
-              <span className="text-[#FFB300] font-bold whitespace-nowrap">฿{price.toLocaleString()}</span>
-            </div>
-
-            {/* โค้ดผู้แนะนำ = ส่วนลดตอนซื้อ + เจ้าของโค้ดได้ค่าคอม */}
-            <div className="space-y-1.5">
-              <p className="text-gray-300 text-xs font-medium">🎟️ โค้ดผู้แนะนำ (ถ้ามี)</p>
-              <div className="flex gap-2">
-                <Input
-                  value={refCode}
-                  onChange={(e) => { setRefCode(e.target.value); setRefCheck(null); }}
-                  placeholder="กรอกโค้ดเพื่อรับส่วนลด"
-                  className="h-11 md:h-9 font-mono"
-                  disabled={submitting}
-                />
-                <Button
-                  variant="outline"
-                  onClick={() => void validateCode(refCode)}
-                  disabled={refChecking || !refCode.trim() || submitting}
-                  className="h-11 md:h-9 text-xs shrink-0 border-purple-500/40 text-purple-300 hover:bg-purple-500/10"
-                >
-                  {refChecking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'ใช้โค้ด'}
-                </Button>
-              </div>
-              {refCheck?.valid && (
-                <p className="text-green-400 text-xs">
-                  ✅ ใช้โค้ดแล้ว ลด {refCheck.pct}% (−฿{(price - effectiveBuyAmount).toLocaleString()})
-                </p>
-              )}
-              {refCheck && !refCheck.valid && (
-                <p className="text-red-400 text-xs">
-                  ❌ {refCheck.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : refCheck.reason === 'OWNER_INACTIVE' ? 'โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)' : 'ไม่พบโค้ดนี้ ตรวจสอบอีกครั้ง'}
-                </p>
-              )}
-            </div>
-
-            <p className="text-gray-400 text-sm">
-              โอนเงินจำนวน{' '}
-              {effectiveBuyAmount !== price && (
-                <span className="line-through text-gray-500 mr-1">฿{price.toLocaleString()}</span>
-              )}
-              <span className="text-purple-400 font-semibold">฿{effectiveBuyAmount.toLocaleString()}</span> แล้วอัปโหลดสลิปการโอนเงินเพื่อให้แอดมินตรวจสอบ
-            </p>
-            {storedPaid != null && !refCheck?.valid && myPurchase?.refcode && (
-              <p className="text-green-400/80 text-xs">
-                🎟️ คำสั่งซื้อนี้ใช้โค้ด <span className="font-mono">{myPurchase.refcode}</span> ไปแล้ว — ยอดโอนตามส่วนลดเดิม
-              </p>
-            )}
-
-            <input ref={slipInputRef} type="file" accept="image/*" className="hidden" onChange={handleSlipChange} />
-
-            {slipPreview ? (
-              <div className="space-y-2">
-                <div className="flex items-center justify-center bg-gray-900 rounded-lg p-3">
-                  <img src={slipPreview} alt="สลิปการโอนเงิน" className="max-h-72 max-w-full object-contain rounded" />
-                </div>
-                <Button variant="outline" onClick={() => slipInputRef.current?.click()} className="w-full">
-                  <Upload className="h-4 w-4 mr-2" />
-                  เลือกรูปอื่น
-                </Button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => slipInputRef.current?.click()}
-                className="w-full flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-gray-700 hover:border-purple-500/50 bg-gray-800/30 py-8 transition-colors"
-              >
-                <Upload className="h-7 w-7 text-gray-400" />
-                <span className="text-gray-300 text-sm">อัปโหลดสลิปการโอนเงิน</span>
-                <span className="text-gray-500 text-xs">รูปภาพ ขนาดไม่เกิน 5MB</span>
-              </button>
-            )}
-          </div>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setBuyDialogOpen(false)} disabled={submitting}>
-              ยกเลิก
-            </Button>
-            <Button onClick={handleConfirmBuy} disabled={submitting} className="bg-purple-600 hover:bg-purple-700">
-              {submitting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              ยืนยัน
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* แชร์ Ebook (เดสก์ท็อป / เครื่องที่ไม่มี share sheet) — โครงเดียวกับ dialog แชร์คอร์ส */}
       <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>

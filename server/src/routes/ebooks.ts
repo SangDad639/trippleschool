@@ -1,9 +1,8 @@
 /**
- * Ebooks — under the "Ebook" menu. Access modes per ebook (mutually exclusive):
- *   - ฟรี:      price = 0, members_only = false → anyone, no login
- *   - สมาชิก:   members_only = true             → active subscription required
- *   - ขายรายเล่ม: price > 0, members_only = false → bought (ebook_purchases
- *     approved) OR active subscription (สมาชิกอ่านเล่มขายได้เลย — กติกาธุรกิจ)
+ * Ebooks — under the "Ebook" menu. Access modes per ebook (2 โหมด — เลิกขายรายเล่มแล้ว 7 ก.ย. 2026, migration 063):
+ *   - ฟรี:    members_only = false → anyone, no login (ดาวน์โหลดตาม allow_download ของเล่ม)
+ *   - สมาชิก: members_only = true  → สมาชิกที่ยังไม่หมดอายุ · อ่านในเว็บได้ทุกแผน
+ *             แต่ **ดาวน์โหลดได้เฉพาะสมาชิกรายปี** (รายเดือนดูอย่างเดียว — services/membership.ts)
  * Extra flag: allow_download: false → view-only, no attachment download.
  *
  * List/detail responses never include the raw file_url/file_name to the
@@ -12,15 +11,15 @@
  * gated route below). Cover images and the ebook file itself are uploaded
  * via the existing courses endpoints (/upload-thumbnail, /upload-material);
  * this router only stores the returned pointer and re-serves it itself.
- * การสั่งซื้อ/อนุมัติอยู่ที่ routes/ebookPurchases.ts (/api/ebook-purchases).
+ * ตัวอย่างอ่านฟรี (N หน้าแรก) เสิร์ฟสาธารณะที่ /:slug/preview-file — ไฟล์ถูกตัดจริงด้วย pdf-lib
  */
 import { Router, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import pool from '../db.js';
 import { authenticate, optionalAuth, optionalAuthQueryOrHeader, requireAdmin, JWT_SECRET, AuthRequest } from '../middleware/auth.js';
-import { hasActiveSubscription } from '../services/stripeService.js';
+import { getMembership } from '../services/membership.js';
 import { getFile, uploadFile } from '../utils/s3.js';
-import { makePreviewPdf } from '../utils/pdfPreview.js';
+import { makePreviewPdf, countPdfPages } from '../utils/pdfPreview.js';
 import { sanitizeCourseSamples } from './courses.js';
 
 const router = Router();
@@ -32,16 +31,25 @@ const EBOOK_FILE_TOKEN_PURPOSE = 'ebook-file';
  * (7d) and grants full account access, so embedding it in a plain <a>/<iframe>
  * URL would leak it into browser download history for every ebook — even
  * free ones. This token can only ever be used to fetch one specific ebook's
- * file, and only after hasActiveSubscription was already re-checked at mint
- * time (see /:slug/access-token below).
+ * file, and only after membership was already re-checked at mint time
+ * (see /:slug/access-token below). `dl` = สิทธิ์ดาวน์โหลด (สมาชิกรายปี/แอดมิน) ณ ตอน mint
  */
-function verifyEbookFileToken(token: string, slug: string): boolean {
+function verifyEbookFileToken(token: string, slug: string): { dl: boolean } | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { purpose?: string; slug?: string };
-    return decoded.purpose === EBOOK_FILE_TOKEN_PURPOSE && decoded.slug === slug;
+    const decoded = jwt.verify(token, JWT_SECRET) as { purpose?: string; slug?: string; dl?: boolean };
+    if (decoded.purpose !== EBOOK_FILE_TOKEN_PURPOSE || decoded.slug !== slug) return null;
+    return { dl: decoded.dl === true };
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** อ่าน object จาก S3 เป็น Buffer ทั้งก้อน (ไฟล์ Ebook ขนาดหลักสิบ MB — ใช้เฉพาะงานตัด/นับหน้า) */
+async function readS3(key: string): Promise<Buffer> {
+  const obj = await getFile(key);
+  const chunks: Buffer[] = [];
+  for await (const c of obj.Body as any) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
+  return Buffer.concat(chunks);
 }
 
 const MATERIALS_PREFIX = '/api/courses/materials/';
@@ -66,13 +74,6 @@ function sanitizeHighlights(input: unknown): string[] {
     .map((s) => s.trim().slice(0, 200))
     .filter(Boolean)
     .slice(0, 20);
-}
-
-/** ราคา ≥ 0 ปัด 2 ตำแหน่ง — คืน null เมื่อค่าที่ส่งมาใช้ไม่ได้ (ให้ caller ตอบ 400) */
-function sanitizePrice(v: unknown): number | null {
-  const n = Number(v);
-  if (!Number.isFinite(n) || n < 0) return null;
-  return Math.round(n * 100) / 100;
 }
 
 /** จำนวนหน้า: int > 0 หรือ null (ไม่กรอก/ล้างค่า) */
@@ -115,46 +116,41 @@ function isPdfFile(row: { file_name: string | null; file_url: string | null }): 
   return (row.file_name || row.file_url || '').toLowerCase().endsWith('.pdf');
 }
 
-/** เล่มที่ต้องมีสิทธิ์ก่อนถึงจะเข้าไฟล์ได้ = สมาชิกเท่านั้น หรือ เล่มขายรายเล่ม */
-function requiresEntitlement(ebook: { members_only: boolean; price?: number | string | null }): boolean {
-  // NUMERIC จาก pg มาเป็น string — ต้อง Number() ก่อนเทียบเสมอ
-  return ebook.members_only || Number(ebook.price) > 0;
+/** เล่มที่ต้องมีสิทธิ์ก่อนถึงจะเข้าไฟล์ได้ = สมาชิกเท่านั้น */
+function requiresEntitlement(ebook: { members_only: boolean }): boolean {
+  return !!ebook.members_only;
 }
 
 /**
  * สิทธิ์ของ viewer ต่อ "หลายเล่ม" ในคำขอเดียว — โหลดครั้งเดียวแล้วใช้ซ้ำทุกแถว
- * (list ยาวจะได้ไม่ยิง subscription/purchase query ซ้ำต่อเล่ม)
+ * (list ยาวจะได้ไม่ยิง membership query ซ้ำต่อเล่ม)
  */
-type EntitleCtx = { isSubscriber: boolean; purchased: Set<number> };
+type EntitleCtx = { isSubscriber: boolean; isYearly: boolean };
 async function loadEntitleCtx(req: AuthRequest): Promise<EntitleCtx> {
-  if (!req.userId) return { isSubscriber: false, purchased: new Set() };
-  const [sub, bought] = await Promise.all([
-    hasActiveSubscription(req.userId),
-    pool.query(`SELECT ebook_id FROM ebook_purchases WHERE user_id = $1 AND status = 'approved'`, [req.userId]),
-  ]);
-  return { isSubscriber: sub, purchased: new Set(bought.rows.map((r: any) => Number(r.ebook_id))) };
+  if (!req.userId) return { isSubscriber: false, isYearly: false };
+  const m = await getMembership(req.userId);
+  return { isSubscriber: m.active, isYearly: m.isYearly };
 }
 
-/**
- * Admins always qualify; free ebooks need no check. เล่มขาย: ซื้อแล้ว (approved)
- * หรือเป็นสมาชิกก็เข้าได้ — เช็คแถวซื้อเสมอไม่ผูกโหมด กันเคสแอดมินสลับโหมด
- * เล่มทีหลังแล้วคนที่จ่ายเงินไปแล้วหลุดสิทธิ์
- */
+/** Admins always qualify; free ebooks need no check; เล่มสมาชิก = สมาชิกที่ยังไม่หมดอายุ (ทุกแผน) */
 function entitledFor(req: AuthRequest, ebook: any, ctx: EntitleCtx): boolean {
   if (!requiresEntitlement(ebook) || req.isAdmin) return true;
   if (!req.userId) return false;
-  return ctx.isSubscriber || ctx.purchased.has(Number(ebook.id));
+  return ctx.isSubscriber;
 }
 
-/** สิทธิ์ต่อเล่มเดียว (detail / file / access-token) */
-async function computeEntitled(req: AuthRequest, ebook: any): Promise<boolean> {
+/**
+ * ดาวน์โหลดไฟล์ได้ไหม (กติกา 7 ก.ย.): เล่มฟรี = ตาม allow_download ของเล่ม ·
+ * เล่มสมาชิก = allow_download && (แอดมิน หรือ สมาชิกรายปี) — รายเดือนอ่านในเว็บได้อย่างเดียว
+ */
+function canDownloadFor(req: AuthRequest, ebook: any, ctx: EntitleCtx): boolean {
+  if (!ebook.allow_download) return false;
   if (!requiresEntitlement(ebook) || req.isAdmin) return true;
-  if (!req.userId) return false;
-  return entitledFor(req, ebook, await loadEntitleCtx(req));
+  return ctx.isSubscriber && ctx.isYearly;
 }
 
 /** Public-facing row: strips the raw file pointer, adds viewer-relative flags. */
-function publicRow(row: any, entitled: boolean, myPurchase?: any) {
+function publicRow(row: any, entitled: boolean, canDownload: boolean) {
   // preview_*_url ก็ถูก strip เหมือน file_url — ประตูเดียวที่เสิร์ฟตัวอย่างคือ /:slug/preview-file
   const { file_url, file_name, preview_file_url, preview_cache_url, ...rest } = row;
   return {
@@ -164,16 +160,42 @@ function publicRow(row: any, entitled: boolean, myPurchase?: any) {
     // มีตัวอย่างให้อ่านไหม: ไฟล์ตัวอย่างอัพเอง หรือ ตั้งจำนวนหน้าไว้และมีไฟล์เต็มให้ตัด
     has_preview: !!preview_file_url || (Number(row.preview_pages) > 0 && !!file_url),
     entitled,
-    // คำสั่งซื้อของ viewer เอง (เฉพาะหน้า detail) — ให้ FE โชว์สถานะ รออนุมัติ/ถูกปฏิเสธ
-    my_purchase: myPurchase
-      ? {
-          status: myPurchase.status,
-          paid_amount: myPurchase.paid_amount,
-          refcode: myPurchase.refcode,
-          rejection_reason: myPurchase.rejection_reason,
-        }
-      : null,
+    // server ตัดสินสิทธิ์ดาวน์โหลดของ viewer นี้ — FE แค่สะท้อน (entitled && allow_download && !can_download = ต้องรายปี)
+    can_download: canDownload,
   };
+}
+
+/**
+ * ไฟล์ตัวอย่างที่แอดมินอัพเองต้องมีหน้าน้อยกว่าไฟล์เต็ม (กันเผลอเลือกไฟล์เต็มเป็นตัวอย่าง
+ * แล้วแจกทั้งเล่มผ่าน endpoint สาธารณะ) — คืนข้อความ error หรือ null; นับหน้าไม่ได้ = ไม่บล็อก
+ */
+async function previewOverrideError(previewFileUrl: string | null, fullFileUrl: string | null): Promise<string | null> {
+  const pKey = materialsKey(previewFileUrl);
+  const fKey = materialsKey(fullFileUrl);
+  if (!pKey || !fKey) return null;
+  try {
+    const [pc, fc] = await Promise.all([readS3(pKey).then(countPdfPages), readS3(fKey).then(countPdfPages)]);
+    if (pc == null || fc == null) return null;
+    if (pc >= fc) return `ไฟล์ตัวอย่างมี ${pc} หน้า ต้องน้อยกว่าไฟล์เต็ม (${fc} หน้า)`;
+    return null;
+  } catch (e) {
+    console.error('[ebooks] previewOverrideError check failed:', e);
+    return null;
+  }
+}
+
+/** จำนวนหน้าตัวอย่างต้องน้อยกว่าจำนวนหน้าทั้งเล่ม (เมื่อรู้ทั้งคู่) */
+function previewPagesError(previewPages: number, pages: number | null): string | null {
+  if (previewPages > 0 && pages != null && pages > 0 && previewPages >= pages) {
+    return `จำนวนหน้าตัวอย่าง (${previewPages}) ต้องน้อยกว่าจำนวนหน้าทั้งเล่ม (${pages})`;
+  }
+  return null;
+}
+
+/** แปลง preview_pages จาก body: int > 0 หรือ 0 (ปิด) */
+function sanitizePreviewPages(v: unknown): number {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : 0;
 }
 
 // ============ Admin: list all (incl. inactive) ============
@@ -195,7 +217,7 @@ router.get('/', optionalAuth, async (req: AuthRequest, res: Response) => {
       `SELECT * FROM ebooks WHERE is_active = true ORDER BY display_order ASC, created_at DESC`
     );
     const ctx = await loadEntitleCtx(req);
-    res.json(result.rows.map((row) => publicRow(row, entitledFor(req, row, ctx))));
+    res.json(result.rows.map((row) => publicRow(row, entitledFor(req, row, ctx), canDownloadFor(req, row, ctx))));
   } catch (error) {
     console.error('Error fetching ebooks:', error);
     res.status(500).json({ error: 'โหลด Ebook ไม่สำเร็จ' });
@@ -212,17 +234,8 @@ router.get('/:slug', optionalAuth, async (req: AuthRequest, res: Response) => {
     if (!ebook || (!ebook.is_active && !req.isAdmin)) {
       return res.status(404).json({ error: 'ไม่พบ Ebook' });
     }
-    const entitled = await computeEntitled(req, ebook);
-    // แนบสถานะคำสั่งซื้อของ viewer (ถ้ามี) ให้หน้า detail โชว์ รออนุมัติ/ถูกปฏิเสธ ได้
-    let myPurchase: any = null;
-    if (req.userId) {
-      const p = await pool.query(
-        `SELECT status, paid_amount, refcode, rejection_reason FROM ebook_purchases WHERE user_id = $1 AND ebook_id = $2`,
-        [req.userId, ebook.id]
-      );
-      myPurchase = p.rows[0] || null;
-    }
-    res.json(publicRow(ebook, entitled, myPurchase));
+    const ctx = await loadEntitleCtx(req);
+    res.json(publicRow(ebook, entitledFor(req, ebook, ctx), canDownloadFor(req, ebook, ctx)));
   } catch (error) {
     console.error('Error fetching ebook:', error);
     res.status(500).json({ error: 'โหลด Ebook ไม่สำเร็จ' });
@@ -251,22 +264,29 @@ router.get('/:slug/file', optionalAuthQueryOrHeader, async (req: AuthRequest, re
     if (mode === 'download' && !ebook.allow_download) {
       return res.status(403).json({ error: 'Ebook นี้เปิดให้อ่านอย่างเดียว ดาวน์โหลดไม่ได้' });
     }
-    // ครอบทั้งเล่มสมาชิกและเล่มขายรายเล่ม — เล่มขายที่หลุด gate นี้ = โหลดฟรีได้
+    const yearlyRequired = () =>
+      res.status(403).json({
+        error: 'ดาวน์โหลดได้เฉพาะสมาชิกรายปี — สมาชิกรายเดือนอ่านในเว็บได้อย่างเดียว',
+        code: 'YEARLY_REQUIRED',
+        subscriptionUrl: '/pricing',
+      });
+    // เล่มสมาชิก: ต้องเป็นสมาชิกที่ยังไม่หมดอายุ · ดาวน์โหลด = รายปีเท่านั้น (กติกา 7 ก.ย.)
     if (requiresEntitlement(ebook) && !req.isAdmin) {
       const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
-      const scopedTokenOk = queryToken ? verifyEbookFileToken(queryToken, ebook.slug) : false;
-      if (!scopedTokenOk) {
+      const scoped = queryToken ? verifyEbookFileToken(queryToken, ebook.slug) : null;
+      if (scoped) {
+        if (mode === 'download' && !scoped.dl) return yearlyRequired();
+      } else {
         // Fall back to the normal session (covers an admin/logged-in member
         // browsing the API directly without going through the minted-token flow).
         if (!req.userId) {
           return res.status(401).json({ error: 'กรุณาเข้าสู่ระบบก่อน', code: 'AUTH_REQUIRED' });
         }
-        if (!(await computeEntitled(req, ebook))) {
-          if (ebook.members_only) {
-            return res.status(403).json({ error: 'Ebook นี้สำหรับสมาชิกเท่านั้น', code: 'MEMBERS_ONLY', subscriptionUrl: '/pricing' });
-          }
-          return res.status(403).json({ error: 'ต้องซื้อ Ebook เล่มนี้ก่อนถึงจะเข้าถึงไฟล์ได้', code: 'PURCHASE_REQUIRED' });
+        const ctx = await loadEntitleCtx(req);
+        if (!entitledFor(req, ebook, ctx)) {
+          return res.status(403).json({ error: 'Ebook นี้สำหรับสมาชิกเท่านั้น', code: 'MEMBERS_ONLY', subscriptionUrl: '/pricing' });
         }
+        if (mode === 'download' && !ctx.isYearly) return yearlyRequired();
       }
     }
 
@@ -299,11 +319,15 @@ router.get('/:slug/preview-file', async (req, res: Response) => {
     // เล่มฟรีไม่มีตัวอย่าง — อ่านเต็มได้อยู่แล้ว
     if (!requiresEntitlement(ebook)) return res.status(404).json({ error: 'เล่มนี้อ่านได้เต็มเล่มอยู่แล้ว' });
 
-    const sendPdf = (body: Buffer | NodeJS.ReadableStream) => {
+    // ETag = key ของไฟล์ที่เสิร์ฟ (override/แคช) → แอดมินแก้อะไร key เปลี่ยน เบราว์เซอร์ได้ไฟล์ใหม่ทันที
+    // แคชสั้น + must-revalidate (เดิม 1 ชม. ทำให้ลดจำนวนหน้าตัวอย่างแล้วคนยังโหลดไฟล์เก่าได้)
+    const sendPdf = (body: Buffer | NodeJS.ReadableStream, etagSource: string) => {
+      const etag = `"${etagSource.replace(/[^a-zA-Z0-9._-]/g, '_')}"`;
+      if (req.headers['if-none-match'] === etag) return res.status(304).end();
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'inline');
-      // ตัวอย่างเป็นของสาธารณะโดยนิยาม — แคชได้ (ต่างจากไฟล์เต็มที่ no-store)
-      res.setHeader('Cache-Control', 'public, max-age=3600');
+      res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
+      res.setHeader('ETag', etag);
       if (Buffer.isBuffer(body)) res.end(body);
       else (body as any).pipe(res);
     };
@@ -312,7 +336,7 @@ router.get('/:slug/preview-file', async (req, res: Response) => {
     const overrideKey = materialsKey(ebook.preview_file_url);
     if (overrideKey) {
       const obj = await getFile(overrideKey);
-      return sendPdf(obj.Body as any);
+      return sendPdf(obj.Body as any, overrideKey);
     }
 
     const previewPages = Number(ebook.preview_pages) || 0;
@@ -325,17 +349,14 @@ router.get('/:slug/preview-file', async (req, res: Response) => {
     if (ebook.preview_cache_url) {
       try {
         const cached = await getFile(ebook.preview_cache_url);
-        return sendPdf(cached.Body as any);
+        return sendPdf(cached.Body as any, ebook.preview_cache_url);
       } catch {
         /* แคชหาย → ตัดใหม่ด้านล่าง */
       }
     }
 
     // ③ ตัดสดจากไฟล์เต็ม แล้วแคชลง S3 (ครั้งเดียวต่อการตั้งค่า)
-    const obj = await getFile(fullKey);
-    const chunks: Buffer[] = [];
-    for await (const c of obj.Body as any) chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c));
-    const out = await makePreviewPdf(Buffer.concat(chunks), previewPages);
+    const out = await makePreviewPdf(await readS3(fullKey), previewPages);
     if (!out) {
       // ไฟล์เข้ารหัส/เสีย หรือทั้งเล่มสั้นกว่าจำนวนหน้าตัวอย่างจนตัดแล้วเท่ากับแจกทั้งเล่ม
       return res.status(404).json({ error: 'ทำไฟล์ตัวอย่างไม่ได้ — ลองอัพไฟล์ตัวอย่างเองในหน้าแอดมิน' });
@@ -344,7 +365,7 @@ router.get('/:slug/preview-file', async (req, res: Response) => {
     const cacheKey = `ebook-preview/${ebook.id}-${previewPages}p-${rand}.pdf`;
     await uploadFile(out, cacheKey, 'application/pdf', { contentDisposition: 'inline' });
     await pool.query(`UPDATE ebooks SET preview_cache_url = $1 WHERE id = $2`, [cacheKey, ebook.id]);
-    return sendPdf(out);
+    return sendPdf(out, cacheKey);
   } catch (error) {
     console.error('Error serving ebook preview:', error);
     res.status(500).json({ error: 'โหลดตัวอย่างไม่สำเร็จ' });
@@ -366,14 +387,14 @@ router.get('/:slug/access-token', authenticate, async (req: AuthRequest, res: Re
     if (!requiresEntitlement(ebook)) {
       return res.status(400).json({ error: 'Ebook นี้ไม่ต้องขอสิทธิ์เข้าถึง' });
     }
-    if (!req.isAdmin && !(await computeEntitled(req, ebook))) {
-      if (ebook.members_only) {
-        return res.status(403).json({ error: 'Ebook นี้สำหรับสมาชิกเท่านั้น', code: 'MEMBERS_ONLY', subscriptionUrl: '/pricing' });
-      }
-      return res.status(403).json({ error: 'ต้องซื้อ Ebook เล่มนี้ก่อนถึงจะเข้าถึงไฟล์ได้', code: 'PURCHASE_REQUIRED' });
+    const ctx = await loadEntitleCtx(req);
+    if (!entitledFor(req, ebook, ctx)) {
+      return res.status(403).json({ error: 'Ebook นี้สำหรับสมาชิกเท่านั้น', code: 'MEMBERS_ONLY', subscriptionUrl: '/pricing' });
     }
-    const token = jwt.sign({ purpose: EBOOK_FILE_TOKEN_PURPOSE, slug: ebook.slug }, JWT_SECRET, { expiresIn: '10m' });
-    res.json({ token });
+    // dl = สิทธิ์ดาวน์โหลด ณ ตอน mint (แอดมิน/สมาชิกรายปี) — /:slug/file?mode=download เชื่อค่านี้เมื่อมาด้วยโทเคน
+    const dl = !!req.isAdmin || ctx.isYearly;
+    const token = jwt.sign({ purpose: EBOOK_FILE_TOKEN_PURPOSE, slug: ebook.slug, dl }, JWT_SECRET, { expiresIn: '10m' });
+    res.json({ token, can_download: dl && !!ebook.allow_download });
   } catch (error) {
     console.error('Error minting ebook access token:', error);
     res.status(500).json({ error: 'ขอสิทธิ์เข้าถึงไม่สำเร็จ' });
@@ -387,31 +408,33 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
     if (typeof title !== 'string' || !title.trim()) return res.status(400).json({ error: 'กรุณาใส่ชื่อ Ebook' });
     const slug = sanitizeSlug(req.body.slug) || sanitizeSlug(title);
     if (!slug) return res.status(400).json({ error: 'สร้าง slug จากชื่อไม่ได้ — กรุณากำหนด slug เอง (a-z, 0-9, -)' });
-    const price = req.body.price === undefined || req.body.price === '' ? 0 : sanitizePrice(req.body.price);
-    if (price === null) return res.status(400).json({ error: 'ราคาไม่ถูกต้อง' });
     const membersOnly = typeof members_only === 'boolean' ? members_only : false;
-    // โหมดต่อเล่มต้องชัดทางเดียว: สมาชิกเท่านั้น กับ ขายรายเล่ม ตั้งพร้อมกันไม่ได้
-    if (membersOnly && price > 0) {
-      return res.status(400).json({ error: 'เลือกได้อย่างเดียว: "สมาชิกเท่านั้น" หรือ "ขายรายเล่ม (ตั้งราคา)"' });
-    }
+    const fileUrl = typeof file_url === 'string' && file_url ? file_url : null;
+    const pages = req.body.pages === undefined ? null : sanitizePages(req.body.pages);
+    const previewPages = sanitizePreviewPages(req.body.preview_pages);
+    const previewFileUrl = typeof req.body.preview_file_url === 'string' && req.body.preview_file_url ? req.body.preview_file_url : null;
+    // ตัวอย่างต้องสั้นกว่าเล่มเต็มเสมอ — endpoint ตัวอย่างเป็นสาธารณะ
+    const pagesErr = previewPagesError(previewPages, pages);
+    if (pagesErr) return res.status(400).json({ error: pagesErr });
+    const overrideErr = await previewOverrideError(previewFileUrl, fileUrl);
+    if (overrideErr) return res.status(400).json({ error: overrideErr });
     const result = await pool.query(
       `INSERT INTO ebooks (title, slug, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only,
-                           price, pages, author_name, author_avatar_url, hook, highlights, samples, share_code, cover_orientation,
+                           pages, author_name, author_avatar_url, hook, highlights, samples, share_code, cover_orientation,
                            preview_pages, preview_file_url)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16::jsonb, $17::jsonb, $18, $19, $20, $21) RETURNING *`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16::jsonb, $17, $18, $19, $20) RETURNING *`,
       [
         title.trim(),
         slug,
         typeof description === 'string' && description ? description : null,
         typeof cover_url === 'string' && cover_url ? cover_url : null,
-        typeof file_url === 'string' && file_url ? file_url : null,
+        fileUrl,
         typeof file_name === 'string' && file_name ? file_name : null,
         typeof is_active === 'boolean' ? is_active : true,
         Number.isInteger(display_order) ? display_order : 0,
         typeof allow_download === 'boolean' ? allow_download : true,
         membersOnly,
-        price,
-        req.body.pages === undefined ? null : sanitizePages(req.body.pages),
+        pages,
         typeof author_name === 'string' && author_name.trim() ? author_name.trim().slice(0, 255) : null,
         typeof author_avatar_url === 'string' && author_avatar_url ? author_avatar_url : null,
         typeof hook === 'string' && hook.trim() ? hook.trim().slice(0, 1000) : null,
@@ -419,8 +442,8 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
         JSON.stringify(sanitizeCourseSamples(req.body.samples)),
         await uniqueShareCode(),
         cover_orientation === 'portrait' ? 'portrait' : 'landscape',
-        Number.isInteger(Number(req.body.preview_pages)) && Number(req.body.preview_pages) > 0 ? Number(req.body.preview_pages) : 0,
-        typeof req.body.preview_file_url === 'string' && req.body.preview_file_url ? req.body.preview_file_url : null,
+        previewPages,
+        previewFileUrl,
       ]
     );
     res.json(result.rows[0]);
@@ -439,24 +462,21 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     const { title, description, cover_url, file_url, file_name, is_active, display_order, allow_download, members_only, author_name, author_avatar_url, hook, cover_orientation } = req.body;
     const slug = req.body.slug !== undefined ? sanitizeSlug(req.body.slug) : undefined;
     if (slug === '') return res.status(400).json({ error: 'slug ไม่ถูกต้อง (a-z, 0-9, -)' });
-    // ราคา: '' = ล้างเป็น 0 (เลิกขาย), ค่าเพี้ยน → 400
-    let price: number | null | undefined = undefined;
-    if (req.body.price !== undefined) {
-      price = req.body.price === '' || req.body.price === null ? 0 : sanitizePrice(req.body.price);
-      if (price === null) return res.status(400).json({ error: 'ราคาไม่ถูกต้อง' });
-    }
-    // กันโหมดชนกันแบบ partial update: ต้องรู้ค่าปลายทางจริงทั้งคู่ก่อนตัดสิน
-    if (price !== undefined || typeof members_only === 'boolean') {
-      const cur = await pool.query(`SELECT price, members_only FROM ebooks WHERE id = $1`, [id]);
-      if (cur.rows.length === 0) return res.status(404).json({ error: 'ไม่พบ Ebook' });
-      const nextPrice = price !== undefined ? price : Number(cur.rows[0].price) || 0;
-      const nextMembers = typeof members_only === 'boolean' ? members_only : cur.rows[0].members_only;
-      if (nextMembers && nextPrice > 0) {
-        return res.status(400).json({ error: 'เลือกได้อย่างเดียว: "สมาชิกเท่านั้น" หรือ "ขายรายเล่ม (ตั้งราคา)"' });
-      }
-    }
     // Unspecified fields stay untouched; sending '' explicitly clears a nullable field.
     const nullable = (v: unknown) => (v === undefined ? undefined : typeof v === 'string' && v === '' ? null : v);
+    // ตัวอย่างต้องสั้นกว่าเล่มเต็มเสมอ — ต้องรู้ค่าปลายทางจริง (partial update) ก่อนตัดสิน
+    const cur = (await pool.query(`SELECT * FROM ebooks WHERE id = $1`, [id])).rows[0];
+    if (!cur) return res.status(404).json({ error: 'ไม่พบ Ebook' });
+    const nextPages = req.body.pages !== undefined ? sanitizePages(req.body.pages) : (cur.pages as number | null);
+    const nextPreviewPages = req.body.preview_pages !== undefined ? sanitizePreviewPages(req.body.preview_pages) : Number(cur.preview_pages) || 0;
+    const pagesErr = previewPagesError(nextPreviewPages, nextPages);
+    if (pagesErr) return res.status(400).json({ error: pagesErr });
+    if (req.body.preview_file_url !== undefined || file_url !== undefined) {
+      const nextPreviewFile = (req.body.preview_file_url !== undefined ? nullable(req.body.preview_file_url) : cur.preview_file_url) as string | null;
+      const nextFile = (file_url !== undefined ? nullable(file_url) : cur.file_url) as string | null;
+      const overrideErr = await previewOverrideError(nextPreviewFile, nextFile);
+      if (overrideErr) return res.status(400).json({ error: overrideErr });
+    }
     const sets: string[] = [];
     const params: any[] = [];
     const add = (col: string, value: unknown) => {
@@ -474,7 +494,6 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     add('display_order', Number.isInteger(display_order) ? display_order : undefined);
     add('allow_download', typeof allow_download === 'boolean' ? allow_download : undefined);
     add('members_only', typeof members_only === 'boolean' ? members_only : undefined);
-    add('price', price);
     if (req.body.pages !== undefined) add('pages', sanitizePages(req.body.pages));
     add('author_name', nullable(typeof author_name === 'string' ? author_name.trim().slice(0, 255) : author_name));
     add('author_avatar_url', nullable(author_avatar_url));
@@ -490,10 +509,7 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     if (cover_orientation !== undefined) {
       add('cover_orientation', cover_orientation === 'portrait' ? 'portrait' : 'landscape');
     }
-    if (req.body.preview_pages !== undefined) {
-      const pv = Number(req.body.preview_pages);
-      add('preview_pages', Number.isInteger(pv) && pv > 0 ? pv : 0);
-    }
+    if (req.body.preview_pages !== undefined) add('preview_pages', nextPreviewPages);
     add('preview_file_url', nullable(req.body.preview_file_url));
     // ไฟล์เต็มหรือจำนวนหน้าตัวอย่างเปลี่ยน → แคชที่ตัดไว้ใช้ไม่ได้แล้ว ล้างทิ้งให้ตัดใหม่รอบหน้า
     if (file_url !== undefined || req.body.preview_pages !== undefined) {

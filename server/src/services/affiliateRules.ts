@@ -46,7 +46,7 @@ const CANCEL_SQL = `
    WHERE %WHERE% AND status IN ('pending', 'transferred')
    RETURNING id, referrer_id, status, COALESCE(net_amount, amount)::float AS net_amount`;
 
-/** ยกเลิกค่าคอมทุกแถวของคำสั่งซื้อเดียว (key = stripe_invoice_id เช่น course_12 / ebook_3 / sub_45) */
+/** ยกเลิกค่าคอมทุกแถวของคำสั่งซื้อเดียว (key = stripe_invoice_id เช่น course_12 / sub_45) */
 export async function cancelCommissionsBySource(
   sourceKey: string, reason: string, adminId: number | null, db: Db = pool
 ): Promise<CancelledCommission[]> {

@@ -53,10 +53,9 @@ const emptyForm = {
   file_name: '',
   is_active: true,
   allow_download: true,
-  // โหมดการเข้าถึง (radio ทางเดียว): free = ใครก็ได้ · members = สมาชิกเท่านั้น ·
-  // sale = ขายรายเล่ม (ต้องตั้งราคา) — แปลงเป็น members_only + price ตอนบันทึก
-  access: 'free' as 'free' | 'members' | 'sale',
-  price: '',
+  // โหมดการเข้าถึง (radio ทางเดียว): free = ใครก็ได้ · members = สมาชิกเท่านั้น
+  // (เลิกขายรายเล่มแล้ว 7 ก.ย. 2026) — แปลงเป็น members_only ตอนบันทึก
+  access: 'free' as 'free' | 'members',
   pages: '',
   author_name: '',
   author_avatar_url: '',
@@ -65,7 +64,7 @@ const emptyForm = {
   samples: [] as EbookMediaSample[],
   // แนวภาพปก — detect อัตโนมัติตอนอัปโหลด สลับเองได้ (การ์ดหน้า /ebooks ปรับทรงตามค่านี้)
   cover_orientation: 'landscape' as 'landscape' | 'portrait',
-  // อ่านตัวอย่างจำกัดหน้า (เฉพาะเล่มสมาชิก/เล่มขาย): 0 = ปิด · ไฟล์ตัวอย่างอัพเอง = override
+  // อ่านตัวอย่างจำกัดหน้า (เฉพาะเล่มสมาชิก): 0 = ปิด · ไฟล์ตัวอย่างอัพเอง = override
   preview_pages: '',
   preview_file_url: '',
   preview_file_name: '',
@@ -128,8 +127,7 @@ const AdminEbooks = () => {
       file_name: e.file_name || '',
       is_active: e.is_active,
       allow_download: e.allow_download,
-      access: e.members_only ? 'members' : Number(e.price) > 0 ? 'sale' : 'free',
-      price: Number(e.price) > 0 ? String(Number(e.price)) : '',
+      access: e.members_only ? 'members' : 'free',
       pages: e.pages ? String(e.pages) : '',
       author_name: e.author_name || '',
       author_avatar_url: e.author_avatar_url || '',
@@ -229,9 +227,11 @@ const AdminEbooks = () => {
 
   const handleSave = async () => {
     if (!form.title.trim()) return toast.error('กรุณาใส่ชื่อ Ebook');
-    const priceNum = Number(form.price);
-    if (form.access === 'sale' && (!Number.isFinite(priceNum) || priceNum <= 0)) {
-      return toast.error('โหมดขายรายเล่มต้องตั้งราคามากกว่า 0');
+    // ตัวอย่างต้องสั้นกว่าเล่มเต็ม (server บังคับซ้ำ) — เตือนก่อนยิงให้แก้ได้ทันที
+    const pagesNum = form.pages.trim() === '' ? null : Number(form.pages);
+    const previewNum = Number(form.preview_pages) || 0;
+    if (form.access !== 'free' && previewNum > 0 && pagesNum != null && pagesNum > 0 && previewNum >= pagesNum) {
+      return toast.error(`จำนวนหน้าตัวอย่าง (${previewNum}) ต้องน้อยกว่าจำนวนหน้าทั้งเล่ม (${pagesNum})`);
     }
     try {
       setSaving(true);
@@ -245,8 +245,7 @@ const AdminEbooks = () => {
         is_active: form.is_active,
         allow_download: form.allow_download,
         members_only: form.access === 'members',
-        price: form.access === 'sale' ? priceNum : 0,
-        pages: form.pages.trim() === '' ? null : Number(form.pages),
+        pages: pagesNum,
         author_name: form.author_name,
         author_avatar_url: form.author_avatar_url,
         hook: form.hook,
@@ -311,7 +310,7 @@ const AdminEbooks = () => {
               <BookMarked className="h-6 w-6 text-emerald-400" />
               จัดการ Ebook
             </h1>
-            <p className="text-gray-400">Ebook บนเมนู Ebook — ตั้งได้ต่อเล่ม: ฟรี / สมาชิกเท่านั้น / ขายรายเล่ม</p>
+            <p className="text-gray-400">Ebook บนเมนู Ebook — ตั้งได้ต่อเล่ม: ฟรี / สมาชิกเท่านั้น (สมาชิกรายปีดาวน์โหลดได้ รายเดือนอ่านในเว็บ)</p>
           </div>
           <Button onClick={openCreate} className="bg-emerald-600 hover:bg-emerald-700">
             <Plus className="h-4 w-4 mr-2" />
@@ -350,9 +349,6 @@ const AdminEbooks = () => {
                     </p>
                   </div>
                   {e.members_only && <Badge className="bg-[#FFB300]/15 text-[#FFB300] border border-[#FFB300]/30">สมาชิกเท่านั้น</Badge>}
-                  {!e.members_only && Number(e.price) > 0 && (
-                    <Badge className="bg-[#FFB300] text-black font-bold">฿{Number(e.price).toLocaleString()}</Badge>
-                  )}
                   {!e.allow_download && <Badge variant="secondary">อ่านอย่างเดียว</Badge>}
                   <Badge variant={e.is_active ? 'default' : 'secondary'}>{e.is_active ? 'เผยแพร่' : 'ซ่อนอยู่'}</Badge>
                   <Button size="sm" variant="ghost" title="เปิดดูหน้าเว็บจริง" onClick={() => window.open(`/ebooks/${e.slug}`, '_blank')}>
@@ -468,14 +464,13 @@ const AdminEbooks = () => {
               </div>
             </div>
 
-            {/* โหมดการเข้าถึง — ทางเดียวจาก 3 ทาง (server บังคับซ้ำ: members_only + ราคา ตั้งพร้อมกันไม่ได้) */}
+            {/* โหมดการเข้าถึง — 2 ทาง (เลิกขายรายเล่มแล้ว) · เล่มสมาชิก: รายเดือนอ่านในเว็บ รายปีดาวน์โหลดได้ (server บังคับ) */}
             <div className="space-y-2 rounded-lg border border-gray-800 bg-gray-900/40 p-3">
               <p className="text-sm font-medium text-white">การเข้าถึง</p>
               {(
                 [
                   { value: 'free', label: '🆓 ฟรี — ใครก็ดาวน์โหลด/อ่านได้ ไม่ต้องล็อกอิน' },
-                  { value: 'members', label: '👑 สมาชิกเท่านั้น — ต้องมีแพ็กเกจรายเดือน/รายปี' },
-                  { value: 'sale', label: '💰 ขายรายเล่ม — ตั้งราคา ซื้อด้วยสลิปโอนเหมือนคอร์ส (สมาชิกอ่านได้เลยไม่ต้องซื้อ)' },
+                  { value: 'members', label: '👑 สมาชิกเท่านั้น — รายเดือนอ่านในเว็บได้ · รายปีดาวน์โหลดเก็บไว้ได้' },
                 ] as const
               ).map((opt) => (
                 <label key={opt.value} className="flex items-center gap-2 cursor-pointer text-sm text-gray-200">
@@ -489,19 +484,6 @@ const AdminEbooks = () => {
                   {opt.label}
                 </label>
               ))}
-              {form.access === 'sale' && (
-                <div className="flex items-center gap-2 pl-6 pt-1">
-                  <Label className="whitespace-nowrap">ราคา (บาท) *</Label>
-                  <Input
-                    type="number"
-                    min={1}
-                    value={form.price}
-                    onChange={(e) => set({ price: e.target.value })}
-                    placeholder="เช่น 349"
-                    className="w-32"
-                  />
-                </div>
-              )}
               {/* อ่านตัวอย่างจำกัดหน้า — เฉพาะเล่มที่ล็อกสิทธิ์ (เล่มฟรีอ่านเต็มได้อยู่แล้ว) */}
               {form.access !== 'free' && (
                 <div className="space-y-2 border-t border-gray-800 pt-2 mt-1">
@@ -515,7 +497,7 @@ const AdminEbooks = () => {
                       placeholder="0 = ปิด"
                       className="w-28"
                     />
-                    <span className="text-xs text-gray-500">ระบบตัดจากไฟล์เต็มให้อัตโนมัติ</span>
+                    <span className="text-xs text-gray-500">ระบบตัดจากไฟล์เต็มให้อัตโนมัติ (ต้องน้อยกว่าจำนวนหน้าทั้งเล่ม)</span>
                   </div>
                   <div className="flex flex-wrap items-center gap-2 pl-0">
                     <Button type="button" variant="outline" size="sm" disabled={uploadingPreview} onClick={() => previewFileInputRef.current?.click()}>
@@ -542,7 +524,7 @@ const AdminEbooks = () => {
                   id="ebook-allow-download"
                 />
                 <Label htmlFor="ebook-allow-download" className="cursor-pointer">
-                  อนุญาตให้ดาวน์โหลด (ไม่ติ๊ก = อ่านในเว็บได้อย่างเดียว ดาวน์โหลดไม่ได้)
+                  อนุญาตให้ดาวน์โหลด (ไม่ติ๊ก = อ่านในเว็บได้อย่างเดียว · เล่มสมาชิก: ดาวน์โหลดได้เฉพาะสมาชิกรายปี)
                 </Label>
               </div>
             </div>

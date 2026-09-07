@@ -1,7 +1,7 @@
 /**
  * Commission resolution service.
  *
- * กติกา R2 (docs/AFFILIATE-SYSTEM.md §1): ค่าคอม % คงที่ทุกคน ทุกสินค้า (แพ็กเกจ/คอร์ส/ebook)
+ * กติกา R2 (docs/AFFILIATE-SYSTEM.md §1): ค่าคอม % คงที่ทุกคน ทุกสินค้า (แพ็กเกจ/คอร์ส — ebook เลิกขายรายเล่มแล้ว)
  * อ่านจาก affiliate_settings.commission_percent (migration 062, default 15 — super admin แก้ได้ที่ /admin/affiliate)
  *
  * chain เดิม (matrix → plan → users.commission_percent → affiliate_tiers → tier1_percent → 20)

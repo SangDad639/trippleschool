@@ -6,6 +6,13 @@ import { body, validationResult } from 'express-validator';
 import { OAuth2Client } from 'google-auth-library';
 import pool from '../db.js';
 import { JWT_SECRET } from '../middleware/auth.js';
+import { getMembership } from '../services/membership.js';
+
+/** ฟิลด์สมาชิกที่ FE ใช้แยกสิทธิ์รายเดือน/รายปี (เช่น ดาวน์โหลด Ebook เฉพาะรายปี) */
+async function membershipFields(userId: number) {
+  const m = await getMembership(userId);
+  return { subscriptionPlan: m.planSlug, isYearlyMember: m.isYearly };
+}
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -192,6 +199,7 @@ router.post(
           joinDate: user.join_date,
           isApproved: user.is_approved,
           subscriptionExpiresAt: user.subscription_expires_at,
+          ...(await membershipFields(user.id)),
           refcode: user.refcode,
           createdAt: user.join_date,
         },
@@ -319,6 +327,7 @@ router.post('/google', async (req: Request, res: Response) => {
         joinDate: user.join_date,
         isApproved: true,
         subscriptionExpiresAt: user.subscription_expires_at,
+        ...(await membershipFields(user.id)),
         refcode: user.refcode,
         createdAt: user.join_date,
       },
@@ -366,6 +375,7 @@ router.get('/me', async (req: Request, res: Response) => {
       joinDate: user.join_date,
       isApproved: user.is_approved,
       subscriptionExpiresAt: user.subscription_expires_at,
+      ...(await membershipFields(user.id)),
       hasOpenAIKey: !!user.openai_api_key,
       refcode: user.refcode,
       createdAt: user.join_date,

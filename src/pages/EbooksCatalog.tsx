@@ -6,8 +6,8 @@ import EbookCard from '@/components/ebooks/EbookCard';
 import { api, type EbookDto } from '@/lib/api';
 import { BookOpen, Loader2, BookMarked } from 'lucide-react';
 
-// คลัง E-book — เลย์เอาต์ชุดเดียวกับหน้า /programs มีทั้งเล่มฟรี เล่มสำหรับสมาชิก
-// และเล่มขายรายเล่ม (ป้ายราคาบนการ์ด — ซื้อ/อ่านที่หน้า detail ของแต่ละเล่ม)
+// คลัง E-book — เลย์เอาต์ชุดเดียวกับหน้า /programs มีทั้งเล่มฟรีและเล่มสำหรับสมาชิก
+// (เลิกขายรายเล่มแล้ว — อ่าน/ดาวน์โหลดที่หน้า detail ของแต่ละเล่ม)
 const EbooksCatalog = () => {
   const [ebooks, setEbooks] = useState<EbookDto[]>([]);
   const [loading, setLoading] = useState(true);
