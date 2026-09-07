@@ -191,6 +191,8 @@ interface ReportTransaction {
 type ReportRange = 'today' | 'yesterday' | '7d' | '30d' | '90d' | '1y';
 
 type AdminTab = 'revenue' | 'users' | 'notifications' | 'packages' | 'tiers' | 'tax-invoices';
+// R2 (docs/AFFILIATE-SYSTEM.md): ค่าคอม % คงที่ทุกคน — ซ่อน UI tier/commission รายคน (backend ไม่ใช้ค่าพวกนี้แล้ว)
+const TIERS_UI_ENABLED = false;
 
 // Dynamic plan shape from /api/admin/packages — returns ALL plans
 // (active + inactive + admin_only). The public /subscription/plans endpoint
@@ -989,7 +991,6 @@ const Admin = () => {
               { key: 'revenue' as AdminTab, label: 'รายงานรายได้', icon: <Wallet className="h-4 w-4" /> },
               { key: 'notifications' as AdminTab, label: 'การแจ้งเตือน', icon: <Bell className="h-4 w-4" /> },
               { key: 'packages' as AdminTab, label: language === 'th' ? 'แพ็กเกจ' : 'Packages', icon: <Package className="h-4 w-4" /> },
-              { key: 'tiers' as AdminTab, label: language === 'th' ? 'ระดับ' : 'Tiers', icon: <Crown className="h-4 w-4" /> },
               { key: 'tax-invoices' as AdminTab, label: language === 'th' ? 'ใบกำกับภาษี' : 'Tax Invoices', icon: <FileText className="h-4 w-4" /> },
             ]).map(tab => (
               <button
@@ -1294,7 +1295,7 @@ const Admin = () => {
                               </DropdownMenuItem>
                               {/* Per-(user × plan) commission overrides — super admin only.
                                   The backend PUT/DELETE also enforce super-admin so this is UX. */}
-                              {user?.isSuperAdmin && (
+                              {TIERS_UI_ENABLED && user?.isSuperAdmin && (
                                 <DropdownMenuItem
                                   onClick={() => setCommissionUser(u)}
                                   className="text-yellow-400"
@@ -1355,19 +1356,24 @@ const Admin = () => {
                       <div className="mt-3 pt-3 border-t border-border/50">
                         <div className="flex items-center justify-between flex-wrap gap-2">
                           <div className="flex items-center gap-3 flex-wrap">
-                            <Badge className={u.affiliateTier === 2
-                              ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/50'
-                              : 'bg-gray-500/20 text-gray-400 border-gray-500/50'
-                            }>
-                              {u.affiliateTier === 2 && <Crown className="h-3 w-3 mr-1" />}
-                              Tier {u.affiliateTier}
-                            </Badge>
+                            {TIERS_UI_ENABLED && (
+                              <Badge className={u.affiliateTier === 2
+                                ? 'bg-yellow-500/20 text-yellow-500 border-yellow-500/50'
+                                : 'bg-gray-500/20 text-gray-400 border-gray-500/50'
+                              }>
+                                {u.affiliateTier === 2 && <Crown className="h-3 w-3 mr-1" />}
+                                Tier {u.affiliateTier}
+                              </Badge>
+                            )}
                             <span className="text-sm text-muted-foreground">
                               Refcode: <span className="text-foreground font-mono">{u.refcode}</span>
                             </span>
-                            <span className="text-sm text-muted-foreground">
-                              Commission: <span className="text-foreground">{u.commissionPercent}%</span>
-                            </span>
+                            {/* ค่าคอม % คงที่ทุกคน (R2) — ตั้งค่าที่ /admin/affiliate; users.commission_percent เป็นซาก ไม่แสดง */}
+                            {TIERS_UI_ENABLED && (
+                              <span className="text-sm text-muted-foreground">
+                                Commission: <span className="text-foreground">{u.commissionPercent}%</span>
+                              </span>
+                            )}
                             {u.preferredPayoutMethod === 'thai_bank' && u.bankInfo ? (
                               <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/50">
                                 <Building2 className="h-3 w-3 mr-1" />
@@ -1396,11 +1402,9 @@ const Admin = () => {
                                 <span className="text-yellow-500 text-sm ml-2">+ {fmt(u.pendingAmount)} รอ</span>
                               )}
                             </div>
-                            {/* Tier assignment — super admin only.
-                                N-tier dropdown of every active affiliate_tier
-                                (fetched once on mount). Backend also enforces
-                                requireSuperAdmin so the UI hide is just UX. */}
-                            {user?.isSuperAdmin && (
+                            {/* Tier assignment — ปิดไว้ตาม R2 (ค่าคอมคงที่ ไม่มี tier);
+                                โค้ดคงไว้เผื่อเปิดกลับ backend ยังบังคับ super admin */}
+                            {TIERS_UI_ENABLED && user?.isSuperAdmin && (
                               processingUsers.has(u.id) ? (
                                 <Button variant="outline" size="sm" disabled>
                                   <Loader2 className="h-4 w-4 animate-spin" />

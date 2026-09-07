@@ -1,168 +1,50 @@
 /**
  * Commission resolution service.
  *
- * Owns the precedence chain for "what commission % should this referrer get
- * when user X buys plan Y". The chain is designed so it works against both
- * pre-migration data (only legacy columns populated) and post-migration data
- * (new tables + new columns populated).
+ * กติกา R2 (docs/AFFILIATE-SYSTEM.md §1): ค่าคอม % คงที่ทุกคน ทุกสินค้า (แพ็กเกจ/คอร์ส/ebook)
+ * อ่านจาก affiliate_settings.commission_percent (migration 062, default 15 — super admin แก้ได้ที่ /admin/affiliate)
  *
- *   1. user_package_commissions(referrerId, planId)
- *      → admin set this user a custom rate for this specific plan
- *
- *   2. subscription_plans(planId).commission_percent
- *      → admin set a default for this package (may still be NULL — falls through)
- *
- *   3. users(referrerId).commission_percent  (legacy snapshot)
- *      → preserved so Tier 2 users (currently 25%) don't regress
- *
- *   4. affiliate_tiers(users.affiliate_tier).commission_percent
- *      → new dynamic tier source, if seeded
- *
- *   5. affiliate_settings.tier1_percent or 20
- *      → last resort
- *
- * Every step is wrapped to tolerate missing tables / columns — so the same
- * function works whether or not the migration scripts have run yet.
+ * chain เดิม (matrix → plan → users.commission_percent → affiliate_tiers → tier1_percent → 20)
+ * เลิกใช้แล้ว: user_package_commissions / affiliate_tiers / users.commission_percent เป็นซากจาก fork
+ * ไม่มีผลกับเงินอีก (matrix CRUD ด้านล่างคงไว้ให้ route แอดมินเดิม compile ได้เท่านั้น)
  */
 
 import pool from '../db.js';
 
 export interface CommissionResolution {
   percent: number;          // 0-100
-  source: 'matrix' | 'plan' | 'user_snapshot' | 'tier' | 'settings' | 'default';
+  source: 'settings_flat' | 'default';
   planId: number | null;
   planSlug: string | null;
 }
 
-const DEFAULT_PERCENT = 20;
+export const DEFAULT_COMMISSION_PERCENT = 15;
+
+/** % คอมคงที่จาก affiliate_settings แถว 1 — fallback 15 ถ้าคอลัมน์ยังไม่มี/อ่านไม่ได้ */
+export async function getCommissionPercentSetting(): Promise<Pick<CommissionResolution, 'percent' | 'source'>> {
+  try {
+    const r = await pool.query<{ commission_percent: string | null }>(
+      'SELECT commission_percent FROM affiliate_settings WHERE id = 1'
+    );
+    const v = r.rows[0]?.commission_percent;
+    if (v != null && Number.isFinite(parseFloat(v))) {
+      return { percent: parseFloat(v), source: 'settings_flat' };
+    }
+  } catch { /* ก่อน migration 062 — ใช้ default */ }
+  return { percent: DEFAULT_COMMISSION_PERCENT, source: 'default' };
+}
 
 /**
- * Resolve commission % to apply when `referrerId` earns a commission on a
- * purchase by `refereeUserId` of plan identified by `planSlug` (or planId).
- *
- * Pass at least one of planSlug or planId to enable per-plan resolution.
- * If neither is passed (legacy callers), only steps 3-5 are exercised.
+ * % คอมที่ referrer ได้จากการซื้อครั้งนี้ — คงที่ทุกคนตาม R2
+ * (รับ referrerId/planSlug/planId ไว้เพื่อ signature เดิมของ caller และ echo กลับใน log เท่านั้น)
  */
 export async function resolveCommissionPercent(opts: {
-  /** The affiliate who will be credited the commission. */
   referrerId: number;
-  /** Optional — when known, enables matrix + per-plan lookup. */
   planSlug?: string | null;
   planId?: number | null;
 }): Promise<CommissionResolution> {
-  const { referrerId } = opts;
-  let planId = opts.planId ?? null;
-  let planSlug = opts.planSlug ?? null;
-
-  // Resolve planId from slug if only slug is provided. Wrapped in try because
-  // subscription_plans may not exist yet on un-migrated DBs.
-  if (planId == null && planSlug) {
-    try {
-      const r = await pool.query<{ id: number }>(
-        'SELECT id FROM subscription_plans WHERE slug = $1 LIMIT 1',
-        [planSlug]
-      );
-      if (r.rows.length > 0) planId = r.rows[0].id;
-    } catch { /* table missing — ignore */ }
-  }
-  if (planSlug == null && planId != null) {
-    try {
-      const r = await pool.query<{ slug: string }>(
-        'SELECT slug FROM subscription_plans WHERE id = $1 LIMIT 1',
-        [planId]
-      );
-      if (r.rows.length > 0) planSlug = r.rows[0].slug;
-    } catch { /* ignore */ }
-  }
-
-  // 1) Matrix override (user × plan)
-  if (planId != null) {
-    try {
-      const r = await pool.query<{ commission_percent: string }>(
-        `SELECT commission_percent
-           FROM user_package_commissions
-          WHERE user_id = $1 AND plan_id = $2
-          LIMIT 1`,
-        [referrerId, planId]
-      );
-      if (r.rows[0]?.commission_percent != null) {
-        return {
-          percent: parseFloat(r.rows[0].commission_percent),
-          source: 'matrix', planId, planSlug,
-        };
-      }
-    } catch { /* table missing — pre-migration — ignore */ }
-  }
-
-  // 2) Per-plan default
-  if (planId != null) {
-    try {
-      const r = await pool.query<{ commission_percent: string | null }>(
-        `SELECT commission_percent FROM subscription_plans WHERE id = $1 LIMIT 1`,
-        [planId]
-      );
-      const v = r.rows[0]?.commission_percent;
-      if (v != null) {
-        return {
-          percent: parseFloat(v),
-          source: 'plan', planId, planSlug,
-        };
-      }
-    } catch { /* ignore */ }
-  }
-
-  // 3) Legacy snapshot on users.commission_percent (handles Tier 2 = 25% etc.)
-  try {
-    const r = await pool.query<{ commission_percent: string | null }>(
-      'SELECT commission_percent FROM users WHERE id = $1 LIMIT 1',
-      [referrerId]
-    );
-    const v = r.rows[0]?.commission_percent;
-    if (v != null) {
-      return {
-        percent: parseFloat(v),
-        source: 'user_snapshot', planId, planSlug,
-      };
-    }
-  } catch { /* ignore */ }
-
-  // 4) Tier (new dynamic source)
-  try {
-    const r = await pool.query<{ commission_percent: string | null }>(
-      `SELECT t.commission_percent
-         FROM users u
-         LEFT JOIN affiliate_tiers t ON t.id = u.affiliate_tier
-        WHERE u.id = $1
-        LIMIT 1`,
-      [referrerId]
-    );
-    const v = r.rows[0]?.commission_percent;
-    if (v != null) {
-      return {
-        percent: parseFloat(v),
-        source: 'tier', planId, planSlug,
-      };
-    }
-  } catch { /* ignore */ }
-
-  // 5) Settings fallback
-  try {
-    const r = await pool.query<{ tier1_percent: string | null }>(
-      'SELECT tier1_percent FROM affiliate_settings WHERE id = 1'
-    );
-    const v = r.rows[0]?.tier1_percent;
-    if (v != null) {
-      return {
-        percent: parseFloat(v),
-        source: 'settings', planId, planSlug,
-      };
-    }
-  } catch { /* ignore */ }
-
-  return {
-    percent: DEFAULT_PERCENT,
-    source: 'default', planId, planSlug,
-  };
+  const { percent, source } = await getCommissionPercentSetting();
+  return { percent, source, planId: opts.planId ?? null, planSlug: opts.planSlug ?? null };
 }
 
 /* ------------------------------------------------------------------ */

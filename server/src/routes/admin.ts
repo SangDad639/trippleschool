@@ -12,6 +12,7 @@ import { verifySlipImage, ThunderError } from '../utils/thunderApi.js';
 import { PRICING, VAT_RATE, pricingFromDays, planFromDays } from '../config/pricing.js';
 import * as plansService from '../services/plansService.js';
 import * as tiersService from '../services/tiersService.js';
+import { hasSubscriptionHistory } from '../services/affiliateRules.js';
 import { maybePromoteOnPurchase } from '../services/tierAssignmentService.js';
 import * as commissionService from '../services/commissionService.js';
 import * as taxInvoiceService from '../services/taxInvoiceService.js';
@@ -505,6 +506,8 @@ router.patch('/users/:id/extend', authenticate, requireAdmin, async (req: AuthRe
     // Calculate new expiry: from current expiry (if future) or from now
     const currentExpiry = userResult.rows[0].subscription_expires_at;
     const referrerId = userResult.rows[0].referrer_id;
+    // R7: ค่าคอมเฉพาะบัญชีที่ไม่เคยมี subscription มาก่อนเลย — เช็คก่อน UPDATE/INSERT log ของรอบนี้
+    const isFirstSubscription = !(await hasSubscriptionHistory(parseInt(id)));
     const baseDate = currentExpiry && new Date(currentExpiry) > new Date()
       ? new Date(currentExpiry)
       : new Date();
@@ -547,44 +550,45 @@ router.patch('/users/:id/extend', authenticate, requireAdmin, async (req: AuthRe
     const subtotal = +(totalPaid / (1 + VAT_RATE / 100)).toFixed(2);
     const vatAmount = +(totalPaid - subtotal).toFixed(2);
 
-    await pool.query(
+    const extLog = await pool.query(
       `INSERT INTO subscription_extension_logs
          (user_id, admin_id, days_added, amount, slip_url, approval_method,
           subtotal, vat_amount, vat_rate)
-       VALUES ($1, $2, $3, $4, $5, 'admin', $6, $7, $8)`,
+       VALUES ($1, $2, $3, $4, $5, 'admin', $6, $7, $8)
+       RETURNING id`,
       [id, adminId, numDays, String(totalPaid), slipUrl || null, subtotal, vatAmount, VAT_RATE]
     );
+    const extensionLogId: number = extLog.rows[0].id;
 
     // Create affiliate commission if user has referrer.
     //
-    // 1) Commission base = pre-VAT subtotal (matches user-side autoapprove +
-    //    Stripe webhook). VAT is collected for Revenue Dept, not for the
-    //    affiliate. So for a ฿642 monthly payment the base is ฿600.
-    //    Yearly promo (฿2,996 paid) → base ฿2,800.
-    // 2) Idempotency key uses the new period_end day so an admin who clicks
-    //    +30d twice within the same period only triggers ONE commission row
-    //    (DB unique-constraint on (referee_id, stripe_invoice_id) blocks the
-    //    second insert via ON CONFLICT DO NOTHING in createAffiliateCommission).
-    // 3) Admin extend = real payment (per business decision 2026-05-14):
-    //    pay commission to referrer regardless of slipUrl. The previous
-    //    "skip if no slip" rule blocked admin "Adjust Days" from paying out
-    //    even though the user is effectively on a subscription.
+    // 1) Commission base = pre-VAT subtotal (matches user-side autoapprove).
+    //    VAT is collected for Revenue Dept, not for the affiliate.
+    //    So for a ฿642 monthly payment the base is ฿600.
+    // 2) R6: key = sub_{extension_log_id} — ผูกกับ log การชำระรอบนี้ 1:1
+    // 3) R7: เฉพาะการสมัครครั้งแรก (บัญชีไม่เคยมี subscription มาก่อน) — ต่ออายุไม่เกิดค่าคอม
+    // 4) Admin extend = real payment (per business decision 2026-05-14):
+    //    pay commission to referrer regardless of slipUrl.
     let commissionCreated = false;
-    if (referrerId) {
+    let commissionSkipReason: string | null = null;
+    if (referrerId && !isFirstSubscription) {
+      commissionSkipReason = 'renewal';
+      console.log(`[Affiliate] admin extend user=${id} renewal — no commission (R7)`);
+    } else if (referrerId) {
       try {
         // subtotal = totalPaid / (1 + VAT/100), already computed above.
         const subtotalCents = Math.round(subtotal * 100);
-        const periodKey = newExpiry.toISOString().slice(0, 10); // 2026-06-06
-        await createAffiliateCommission(
+        const cr = await createAffiliateCommission(
           parseInt(id),
-          `admin_extend_${id}_${plan}_${periodKey}`,
+          `sub_${extensionLogId}`,
           subtotalCents,
           'THB',
-          plan  // pass slug so per-plan commission override can apply
+          plan
         );
-        commissionCreated = true;
+        commissionCreated = cr.created; // ตามจริง — เดิมตั้ง true แม้ล้มเหลว
+        if (!cr.created) commissionSkipReason = cr.reason;
       } catch (commissionError) {
-        console.error('Failed to create affiliate commission:', commissionError);
+        console.error(`[Affiliate][ALERT] commission FAILED for admin extend user=${id}:`, commissionError);
       }
     }
 
@@ -612,6 +616,7 @@ router.patch('/users/:id/extend', authenticate, requireAdmin, async (req: AuthRe
       },
       message: `Added ${numDays} days to subscription (${plan})`,
       commissionCreated,
+      commissionSkipReason,
       tierPromotion,
     });
   } catch (error) {
@@ -810,6 +815,12 @@ router.delete('/users/:id', authenticate, requireAdmin, async (req: AuthRequest,
 
     res.json({ success: true, message: `Deleted user ${result.rows[0].email}` });
   } catch (error) {
+    // migration 061: affiliate_commissions FK = RESTRICT — ห้ามลบ user ที่มีประวัติค่าคอม
+    // (ทั้งฝั่งผู้แนะนำและผู้ถูกแนะนำ) เพราะเป็นหลักฐานเงิน/ภาษี ต้องจัดการค่าคอมก่อน
+    // 23001 = restrict_violation (ON DELETE RESTRICT) · 23503 = foreign_key_violation (NO ACTION)
+    if ((error as any)?.code === '23001' || (error as any)?.code === '23503') {
+      return res.status(409).json({ error: 'ลบไม่ได้ — ผู้ใช้นี้มีประวัติค่าคอมมิชชั่น affiliate ผูกอยู่ ต้องจัดการรายการค่าคอมก่อน' });
+    }
     console.error('Delete user error:', error);
     res.status(500).json({ error: 'Failed to delete user' });
   }

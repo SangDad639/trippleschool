@@ -77,6 +77,10 @@ export interface AffiliateStats {
   gross_earned?: number;
   wht_earned?: number;
   net_earned?: number;
+  /** R8 — ยอดสุทธิที่จ่ายไปแล้วแต่คำสั่งซื้อถูกยกเลิก/คืนเงิน (แอดมินตามเรียกคืน) */
+  clawback_net?: number;
+  clawback_count?: number;
+  cancelled_count?: number;
   wise_email: string | null;
   preferred_payout_method: PayoutMethod;
   thai_bank_info: ThaiBankInfo | null;
@@ -87,7 +91,7 @@ export interface Referee {
   email: string;
   registered_at: string;
   has_subscription: boolean;
-  commission_status: 'pending' | 'transferred' | null;
+  commission_status: 'pending' | 'transferred' | 'cancelled' | 'clawback' | null;
   commission_amount: number | null;
 }
 
@@ -95,7 +99,7 @@ export interface AffiliateTransfer {
   id: number;
   referee_email: string;
   amount: number;                     // gross commission (เก่า)
-  status: 'pending' | 'transferred';
+  status: 'pending' | 'transferred' | 'cancelled' | 'clawback';
   payment_reference: string | null;
   admin_notes: string | null;
   created_at: string;
@@ -170,7 +174,7 @@ export interface AdminTransfer {
   referrer_email: string;
   referee_email: string;
   amount: number;                  // gross
-  status: 'pending' | 'transferred';
+  status: 'pending' | 'transferred' | 'cancelled' | 'clawback';
   payment_reference: string | null;
   admin_notes: string | null;
   created_at: string;

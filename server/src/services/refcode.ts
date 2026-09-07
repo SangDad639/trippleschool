@@ -8,7 +8,8 @@ export interface RefcodeCheck {
   valid: boolean;
   discountPercent: number;
   referrerId: number | null;
-  reason?: 'EMPTY' | 'NOT_FOUND' | 'OWN_CODE';
+  // OWNER_INACTIVE = เจ้าของโค้ดไม่ได้เป็นสมาชิกที่ยังไม่หมดอายุ (กติกา R3)
+  reason?: 'EMPTY' | 'NOT_FOUND' | 'OWN_CODE' | 'OWNER_INACTIVE';
 }
 
 /** % ส่วนลดจากการกรอกโค้ด (แถว singleton id=1) — fallback 5 ถ้าอ่านไม่ได้ */
@@ -22,14 +23,18 @@ export async function getRefcodeDiscountPercent(): Promise<number> {
   }
 }
 
-/** ตรวจโค้ด: ต้องมีเจ้าของจริง + ไม่ใช่โค้ดของผู้ซื้อเอง (case-insensitive) */
+/** ตรวจโค้ด: ต้องมีเจ้าของจริง + ไม่ใช่โค้ดของผู้ซื้อเอง (case-insensitive) + เจ้าของต้องเป็นสมาชิก active (R3) */
 export async function checkRefcode(code: string, userId: number): Promise<RefcodeCheck> {
   const clean = String(code || '').trim().toLowerCase();
   if (!clean) return { valid: false, discountPercent: 0, referrerId: null, reason: 'EMPTY' };
-  const r = await pool.query(`SELECT id FROM users WHERE LOWER(refcode) = $1 LIMIT 1`, [clean]);
+  const r = await pool.query(
+    `SELECT id, (subscription_expires_at > NOW()) AS active FROM users WHERE LOWER(refcode) = $1 LIMIT 1`,
+    [clean]
+  );
   if (r.rows.length === 0) return { valid: false, discountPercent: 0, referrerId: null, reason: 'NOT_FOUND' };
   const ownerId = Number(r.rows[0].id);
   if (ownerId === Number(userId)) return { valid: false, discountPercent: 0, referrerId: null, reason: 'OWN_CODE' };
+  if (!r.rows[0].active) return { valid: false, discountPercent: 0, referrerId: null, reason: 'OWNER_INACTIVE' };
   return { valid: true, discountPercent: await getRefcodeDiscountPercent(), referrerId: ownerId };
 }
 

@@ -182,15 +182,17 @@ async function initializeDatabase() {
  * someone remembered to run `npm run migrate` by hand — the guide_clips table
  * shipped without one and every /api/guide request 500'd until it was created.
  *
- * Failure is logged, not fatal: a broken migration must not take the whole API
- * down, and the runner is idempotent so the next boot retries. Set
- * RUN_MIGRATIONS=false to skip (e.g. when a separate job owns the schema).
+ * Failure is FATAL: เดิมปล่อยให้ server ขึ้นต่อทั้งที่ migration พัง → migration ที่เหลือ
+ * ทั้งหมดไม่ถูกรัน แล้ว API ทำงานครึ่งๆ กลางๆ โดยไม่มีใครรู้ (ดู docs/AFFILIATE-SYSTEM.md P0)
+ * ล้มเร็วดีกว่า: deploy ที่ schema พังต้องหยุดให้เห็นทันที runner ยัง idempotent อยู่
+ * Set RUN_MIGRATIONS=false to skip (e.g. when a separate job owns the schema).
  */
 if (process.env.RUN_MIGRATIONS !== 'false') {
   try {
     await runMigrations();
   } catch (err: any) {
-    console.error('⚠️  Migrations failed — starting server anyway:', err?.message || err);
+    console.error('❌ Migrations failed — server will NOT start:', err?.message || err);
+    process.exit(1);
   }
 }
 

@@ -398,7 +398,7 @@ const CourseDetail = () => {
       setRefCheck(state);
       if (!silent) {
         if (r.valid) toast.success(`ใช้โค้ดสำเร็จ 🎉 ลด ${r.discount_percent}%`);
-        else toast.error(r.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : 'ไม่พบโค้ดนี้');
+        else toast.error(r.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : r.reason === 'OWNER_INACTIVE' ? 'โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)' : 'ไม่พบโค้ดนี้');
       }
       return state;
     } catch {
@@ -1303,7 +1303,7 @@ const CourseDetail = () => {
                   )}
                   {refCheck && !refCheck.valid && (
                     <p className="text-red-400 text-xs">
-                      ❌ {refCheck.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : 'ไม่พบโค้ดนี้ ตรวจสอบอีกครั้ง'}
+                      ❌ {refCheck.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : refCheck.reason === 'OWNER_INACTIVE' ? 'โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)' : 'ไม่พบโค้ดนี้ ตรวจสอบอีกครั้ง'}
                     </p>
                   )}
                 </div>

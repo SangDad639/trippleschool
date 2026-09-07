@@ -465,32 +465,16 @@ pool.on('error', (err) => {
 // Auto-migration: Create affiliate_settings table (singleton)
 (async () => {
   try {
+    // คอลัมน์ซากจาก fork (default_commission/default_currency/tier2_commission/tier1_usd/tier2_usd)
+    // เลิกสร้างซ้ำทุก boot — ค่าจริงอยู่ที่ tier1_percent/tier2_percent/refcode_discount_percent
+    // (migration 044/061) DB เก่าที่มีคอลัมน์เหล่านั้นอยู่ปล่อยไว้ รอ P4 ค่อย drop
     await pool.query(`
       CREATE TABLE IF NOT EXISTS affiliate_settings (
         id INTEGER PRIMARY KEY DEFAULT 1,
         announcement TEXT,
-        default_commission NUMERIC(10,2) DEFAULT 5.00,
-        default_currency VARCHAR(3) DEFAULT 'usd',
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
       INSERT INTO affiliate_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
-    `);
-    // Ensure default_commission column exists (may be missing if table was created early)
-    await pool.query(`
-      ALTER TABLE affiliate_settings ADD COLUMN IF NOT EXISTS default_commission NUMERIC(10,2) DEFAULT 5.00;
-    `);
-    // Add currency column if table exists
-    await pool.query(`
-      ALTER TABLE affiliate_settings ADD COLUMN IF NOT EXISTS default_currency VARCHAR(3) DEFAULT 'usd';
-    `);
-    // Add tier2_commission column for 2-tier system
-    await pool.query(`
-      ALTER TABLE affiliate_settings ADD COLUMN IF NOT EXISTS tier2_commission NUMERIC(10,2) DEFAULT 300.00;
-    `);
-    // Add USD columns for multi-currency commission
-    await pool.query(`
-      ALTER TABLE affiliate_settings ADD COLUMN IF NOT EXISTS tier1_usd NUMERIC(10,2) DEFAULT 5.00;
-      ALTER TABLE affiliate_settings ADD COLUMN IF NOT EXISTS tier2_usd NUMERIC(10,2) DEFAULT 8.00;
     `);
     console.log('✅ affiliate_settings table ready');
   } catch (err) {

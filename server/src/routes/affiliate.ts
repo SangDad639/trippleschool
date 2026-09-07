@@ -1,11 +1,12 @@
 import express, { Response } from 'express';
-import { authenticate, requireAdmin, requireSuperAdmin, AuthRequest } from '../middleware/auth.js';
+import { authenticate, authenticateQueryOrHeader, requireAdmin, requireSuperAdmin, AuthRequest } from '../middleware/auth.js';
 import pool from '../db.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { getBucketName, uploadFile, getSignedFileUrl, getFile } from '../utils/s3.js';
-import * as tiersService from '../services/tiersService.js';
+import { getCommissionPercentSetting } from '../services/commissionService.js';
+import { cancelCommissionById } from '../services/affiliateRules.js';
 import { checkRefcode } from '../services/refcode.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 
@@ -76,19 +77,9 @@ router.get('/my-stats', authenticate, async (req: AuthRequest, res: Response) =>
   try {
     const userId = req.userId;
 
-    // Get user's affiliate profile + JOIN affiliate_tiers so the FE can display
-    // the tier *name* (e.g. "VIP", "Diamond") rather than a bare integer.
+    // R2: ค่าคอม % คงที่ทุกคน — ไม่อ่าน users.commission_percent / affiliate_tiers อีก (ซาก)
     const userResult = await pool.query(
-      `SELECT u.refcode, u.commission_percent, u.affiliate_tier,
-              u.wise_email, u.preferred_payout_method,
-              t.name           AS tier_name,
-              t.name_th        AS tier_name_th,
-              t.commission_percent AS tier_commission_percent,
-              t.badge_color    AS tier_badge_color,
-              t.description    AS tier_description
-         FROM users u
-         LEFT JOIN affiliate_tiers t ON t.id = u.affiliate_tier
-        WHERE u.id = $1`,
+      `SELECT refcode, wise_email, preferred_payout_method FROM users WHERE id = $1`,
       [userId]
     );
 
@@ -96,10 +87,8 @@ router.get('/my-stats', authenticate, async (req: AuthRequest, res: Response) =>
       return res.status(404).json({ error: 'User not found' });
     }
 
-    const {
-      refcode, commission_percent, affiliate_tier, wise_email, preferred_payout_method,
-      tier_name, tier_name_th, tier_commission_percent, tier_badge_color, tier_description,
-    } = userResult.rows[0];
+    const { refcode, wise_email, preferred_payout_method } = userResult.rows[0];
+    const flatCommission = await getCommissionPercentSetting();
 
     // Get Thai bank account info + tax info (mig 008 added entity_type;
     // mig 010 added structured address + title_prefix + tax_branch for ภงด.3/53 export).
@@ -134,75 +123,38 @@ router.get('/my-stats', authenticate, async (req: AuthRequest, res: Response) =>
     //   gross = amount (always)
     //   wht   = wht_amount or 0
     //   net   = net_amount or amount (legacy: pretend full amount was net)
+    // R8: cancelled ไม่นับเป็นเงินเลย · clawback = จ่ายไปแล้วแต่คำสั่งซื้อถูกยกเลิก → รายงานเป็นยอดหักคืนแยก
     const transfersResult = await pool.query(`
       SELECT
         COUNT(*) FILTER (WHERE status = 'transferred') as completed_count,
         COUNT(*) FILTER (WHERE status = 'pending')     as pending_count,
+        COUNT(*) FILTER (WHERE status = 'cancelled')   as cancelled_count,
+        COUNT(*) FILTER (WHERE status = 'clawback')    as clawback_count,
         COALESCE(SUM(amount) FILTER (WHERE status = 'transferred'), 0)                              as gross_earned,
         COALESCE(SUM(amount) FILTER (WHERE status = 'pending'), 0)                                  as pending_gross,
         COALESCE(SUM(COALESCE(wht_amount, 0)) FILTER (WHERE status = 'transferred'), 0)             as wht_earned,
         COALESCE(SUM(COALESCE(wht_amount, 0)) FILTER (WHERE status = 'pending'), 0)                 as pending_wht,
         COALESCE(SUM(COALESCE(net_amount, amount)) FILTER (WHERE status = 'transferred'), 0)        as net_earned,
-        COALESCE(SUM(COALESCE(net_amount, amount)) FILTER (WHERE status = 'pending'), 0)            as pending_net
+        COALESCE(SUM(COALESCE(net_amount, amount)) FILTER (WHERE status = 'pending'), 0)            as pending_net,
+        COALESCE(SUM(COALESCE(net_amount, amount)) FILTER (WHERE status = 'clawback'), 0)           as clawback_net
       FROM affiliate_commissions
       WHERE referrer_id = $1
     `, [userId]);
 
     const t = transfersResult.rows[0];
 
-    // Resolve the tier card the FE renders. If the user already has a row
-    // joined from affiliate_tiers, use that. Otherwise (affiliate_tier IS NULL —
-    // typical for newly registered users) fall back to the *default tier* — the
-    // active tier with the lowest display_order — so the Profile card never
-    // shows "Tier 1 — 0%" for a user who is effectively on Tier 1.
-    let tierPayload: {
-      id: number | null;
-      name: string;
-      name_th: string | null;
-      commission_percent: number | null;
-      badge_color: string;
-      description: string | null;
-    } | null = null;
-
-    if (tier_name) {
-      tierPayload = {
-        id: affiliate_tier,
-        name: tier_name,
-        name_th: tier_name_th,
-        commission_percent: tier_commission_percent != null ? parseFloat(tier_commission_percent) : null,
-        badge_color: tier_badge_color || 'gray',
-        description: tier_description,
-      };
-    } else {
-      // No tier assigned in DB — synthesise from the default tier row so the
-      // displayed % matches what BE actually pays out on the next sale.
-      try {
-        const def = await tiersService.getDefaultTier();
-        if (def) {
-          tierPayload = {
-            id: def.id,
-            name: def.name,
-            name_th: def.name_th ?? null,
-            commission_percent: def.commission_percent,
-            badge_color: def.badge_color ?? 'gray',
-            description: def.description ?? null,
-          };
-        }
-      } catch { /* tiers table missing on un-migrated DB — leave tierPayload null */ }
-    }
-
     res.json({
       refcode: refcode || '',
-      commission_percent: commission_percent || 10,
-      // Legacy field — keep returning number so old FE code (Profile Tier card
-      // resolution to Tier 1 vs Tier 2) still works during migration.
-      affiliate_tier: affiliate_tier || tierPayload?.id || 1,
-      // New fields from affiliate_tiers — either the joined row (assigned)
-      // or the resolved default tier (unassigned user).
-      tier: tierPayload,
+      // R2: % เดียวกันทุกคน (affiliate_settings.commission_percent)
+      commission_percent: flatCommission.percent,
+      // Legacy fields — FE เก่าอ่าน; ไม่มี tier แล้ว
+      affiliate_tier: 1,
+      tier: null,
       total_referrals: parseInt(referralsResult.rows[0].total_count) || 0,
       pending_transfers: parseInt(t.pending_count) || 0,
       completed_transfers: parseInt(t.completed_count) || 0,
+      cancelled_count: parseInt(t.cancelled_count) || 0,
+      clawback_count: parseInt(t.clawback_count) || 0,
       // Legacy field names — kept for backward compat (now reflect NET, what user receives).
       total_earnings: parseFloat(t.net_earned) || 0,
       pending_amount: parseFloat(t.pending_net) || 0,
@@ -213,6 +165,7 @@ router.get('/my-stats', authenticate, async (req: AuthRequest, res: Response) =>
       gross_earned: parseFloat(t.gross_earned) || 0,
       wht_earned: parseFloat(t.wht_earned) || 0,
       net_earned: parseFloat(t.net_earned) || 0,
+      clawback_net: parseFloat(t.clawback_net) || 0,
       wise_email: wise_email || null,
       preferred_payout_method: preferred_payout_method || 'wise',
       thai_bank_info: bankInfo ? {
@@ -571,7 +524,8 @@ router.get('/admin/refcode-discount', authenticate, requireAdmin, async (req: Au
  * PUT /api/affiliate/admin/refcode-discount  body: { percent: number 0-100 }
  * มีผลทันทีกับการ validate โค้ด/การซื้อครั้งใหม่ — รายการที่ส่งไปแล้ว snapshot ราคาไว้ ไม่กระทบ
  */
-router.put('/admin/refcode-discount', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+// มีผลกับราคาขายทุกชิ้น → super admin เท่านั้น (เท่ากับ tier/default-commission)
+router.put('/admin/refcode-discount', authenticate, requireAdmin, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const pct = Number(req.body?.percent);
     if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
@@ -582,10 +536,67 @@ router.put('/admin/refcode-discount', authenticate, requireAdmin, async (req: Au
       'UPDATE affiliate_settings SET refcode_discount_percent = $1, updated_at = NOW() WHERE id = 1',
       [rounded]
     );
+    console.log(`[Affiliate][AUDIT] refcode_discount_percent → ${rounded} by admin ${req.userId} (${req.userEmail})`);
     res.json({ refcode_discount_percent: rounded });
   } catch (error) {
     console.error('Update refcode discount error:', error);
     res.status(500).json({ error: 'Failed to update refcode discount' });
+  }
+});
+
+/**
+ * GET /api/affiliate/admin/commission-percent
+ * R2: ค่าคอม % คงที่ทุกคน ทุกสินค้า (affiliate_settings.commission_percent, default 15)
+ */
+router.get('/admin/commission-percent', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const { percent, source } = await getCommissionPercentSetting();
+    res.json({ commission_percent: percent, source });
+  } catch (error) {
+    console.error('Get commission percent error:', error);
+    res.status(500).json({ error: 'Failed to get commission percent' });
+  }
+});
+
+/**
+ * PUT /api/affiliate/admin/commission-percent  body: { percent: number 0-100 }
+ * มีผลกับค่าคอมครั้งใหม่เท่านั้น — แถวเดิม snapshot % ไว้แล้ว · เงินทุกคน → super admin เท่านั้น
+ */
+router.put('/admin/commission-percent', authenticate, requireAdmin, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const pct = Number(req.body?.percent);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      return res.status(400).json({ error: 'ค่าคอมต้องเป็นตัวเลข 0-100 (%)' });
+    }
+    const rounded = Math.round(pct * 100) / 100;
+    await pool.query(
+      'UPDATE affiliate_settings SET commission_percent = $1, updated_at = NOW() WHERE id = 1',
+      [rounded]
+    );
+    console.log(`[Affiliate][AUDIT] commission_percent → ${rounded} by admin ${req.userId} (${req.userEmail})`);
+    res.json({ commission_percent: rounded });
+  } catch (error) {
+    console.error('Update commission percent error:', error);
+    res.status(500).json({ error: 'Failed to update commission percent' });
+  }
+});
+
+/**
+ * PUT /api/affiliate/admin/commissions/:id/cancel  body: { reason?: string }
+ * R8: ยกเลิกค่าคอมรายแถว — pending → cancelled (ตัดทิ้ง) · transferred → clawback (บันทึกยอดหักคืน แอดมินตามเอง)
+ * แตะเงินของ affiliate → super admin เท่านั้น
+ */
+router.put('/admin/commissions/:id/cancel', authenticate, requireAdmin, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!/^\d+$/.test(String(id))) return res.status(400).json({ error: 'id ไม่ถูกต้อง' });
+    const reason = String(req.body?.reason ?? '').trim() || 'ยกเลิกโดยแอดมิน';
+    const row = await cancelCommissionById(Number(id), reason, req.userId ?? null);
+    if (!row) return res.status(404).json({ error: 'ไม่พบรายการ หรือถูกยกเลิกไปแล้ว' });
+    res.json({ commission: row });
+  } catch (error) {
+    console.error('Cancel commission error:', error);
+    res.status(500).json({ error: 'Failed to cancel commission' });
   }
 });
 
@@ -1299,12 +1310,24 @@ router.get('/id-card/:userId', authenticate, async (req: AuthRequest, res: Respo
  * URLs always serve with `attachment` disposition regardless of object
  * metadata or ResponseContentDisposition param — verified empirically).
  *
- * No auth: keys are unguessable timestamps, treated as bearer-of-link tokens.
- * Used by both admin (after upload) and user (Transfer History) sides.
+ * สิทธิ์: แอดมิน หรือ affiliate เจ้าของค่าคอมที่ไฟล์นี้ผูกอยู่ — และล็อก prefix
+ * affiliate-proofs/ เท่านั้น (เดิมเปิดสาธารณะ + รับ key อะไรก็ได้ → ดึงสำเนาบัตร ปชช.
+ * `identity/{userId}/id-card` และสลิปโอนเงินจากบัคเก็ตได้โดยไม่ล็อกอิน)
+ * FE โหลดผ่าน fetch + Authorization header แล้วแปลงเป็น blob (api.getProtectedFileBlobUrl)
  */
-router.get('/proofs/*', async (req, res: Response) => {
+router.get('/proofs/*', authenticateQueryOrHeader, async (req: AuthRequest, res: Response) => {
   try {
-    const key = (req.params as any)[0];
+    const key = (req.params as any)[0] as string;
+    if (typeof key !== 'string' || !key.startsWith('affiliate-proofs/') || key.includes('..')) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (!req.isAdmin) {
+      const own = await pool.query(
+        `SELECT 1 FROM affiliate_commissions WHERE referrer_id = $1 AND (proof_url = $2 OR wht_cert_url = $2) LIMIT 1`,
+        [req.userId, key]
+      );
+      if (own.rows.length === 0) return res.status(403).json({ error: 'Forbidden' });
+    }
     const response = await getFile(key);
 
     if (response.ContentType) {
@@ -1316,7 +1339,8 @@ router.get('/proofs/*', async (req, res: Response) => {
     // Inline so browser renders inline (matches the object's stored
     // disposition; OBS signed URLs ignore that metadata for GETs).
     res.setHeader('Content-Disposition', 'inline');
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    // เอกสารภาษี/สลิปมี PII — ห้ามให้ proxy/CDN ระหว่างทางแคช
+    res.setHeader('Cache-Control', 'private, no-store');
 
     const stream = response.Body as any;
     stream.pipe(res);
@@ -1330,9 +1354,11 @@ router.get('/proofs/*', async (req, res: Response) => {
  * POST /api/affiliate/admin/mark-paid/:referrerId
  * Mark all pending commissions as paid (Wise manual payout)
  */
-router.post('/admin/mark-paid/:referrerId', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+// จ่ายเงินจริง → super admin เท่านั้น
+router.post('/admin/mark-paid/:referrerId', authenticate, requireAdmin, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
   try {
     const { referrerId } = req.params;
+    if (!/^\d+$/.test(String(referrerId))) return res.status(400).json({ error: 'Bad referrer id' });
     const { payment_reference, notes, proof_url, wht_cert_url } = req.body;
 
     // Get all pending commissions for this referrer
@@ -1362,7 +1388,7 @@ router.post('/admin/mark-paid/:referrerId', authenticate, requireAdmin, async (r
       WHERE id = ANY($5)
     `, [payment_reference?.trim() || null, notes || null, proof_url || null, wht_cert_url || null, commissionIds]);
 
-    console.log(`[Admin Mark Paid] Marked ${commissionIds.length} commissions as paid for referrer ${referrerId}, total: $${totalAmount}`);
+    console.log(`[Affiliate][AUDIT] mark-paid: ${commissionIds.length} commissions (ids ${commissionIds.join(',')}) referrer=${referrerId} gross=฿${totalAmount} by admin ${req.userId} (${req.userEmail}) ref=${payment_reference || '-'}`);
 
     res.json({
       success: true,

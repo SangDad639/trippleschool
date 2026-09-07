@@ -317,7 +317,17 @@ const AdminEbookPurchases = () => {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => { setPreviewSlipUrl(api.mediaUrl(p.slip_url!)); setSlipPreviewOpen(true); }}
+                          onClick={() => void (async () => {
+                            // proxy สลิปต้องล็อกอินแล้ว → โหลดเป็น blob ผ่าน fetch + header
+                            try {
+                              const blobUrl = await api.getProtectedFileBlobUrl(p.slip_url!);
+                              if (!blobUrl) { toast.error('ไม่พบไฟล์สลิป'); return; }
+                              setPreviewSlipUrl(blobUrl);
+                              setSlipPreviewOpen(true);
+                            } catch (e: any) {
+                              toast.error(e?.message || 'เปิดสลิปไม่สำเร็จ');
+                            }
+                          })()}
                         >
                           <ImageIcon className="h-4 w-4 mr-1.5" />
                           ดูสลิป

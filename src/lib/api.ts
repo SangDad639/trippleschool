@@ -1327,12 +1327,21 @@ class ApiClient {
    * Returns `null` if no ID card is uploaded for the user (404 → null).
    */
   async getIdCardPreviewBlobUrl(previewPath: string): Promise<string | null> {
-    const r = await fetch(`${this.apiUrl}${previewPath}`, {
+    return this.getProtectedFileBlobUrl(previewPath);
+  }
+
+  /**
+   * ไฟล์ที่ต้องมีสิทธิ์ (สลิปโอน / หลักฐานจ่ายคอม / 50ทวิ / สำเนาบัตร) — โหลดผ่าน fetch
+   * พร้อม Authorization header แล้วคืน blob URL ให้ <img>/<iframe> ใช้ แทนการแปะ token
+   * ลงใน URL (ไม่รั่วลง history) · คืน null เมื่อ 404 · ผู้เรียก revokeObjectURL เมื่อปิด
+   */
+  async getProtectedFileBlobUrl(path: string): Promise<string | null> {
+    const r = await fetch(`${this.apiUrl}${path}`, {
       headers: { Authorization: `Bearer ${this.token}` },
       cache: 'no-store',
     });
     if (r.status === 404) return null;
-    if (!r.ok) throw new Error(`ID card preview failed: ${r.status}`);
+    if (!r.ok) throw new Error(`โหลดไฟล์ไม่สำเร็จ (${r.status})`);
     const blob = await r.blob();
     return URL.createObjectURL(blob);
   }
@@ -1498,6 +1507,24 @@ class ApiClient {
     return this.request('/api/affiliate/admin/refcode-discount', {
       method: 'PUT',
       body: JSON.stringify({ percent }),
+    });
+  }
+
+  // R2 — ค่าคอม % คงที่ทุกคน (super admin แก้ได้)
+  async getAdminCommissionPercent(): Promise<{ commission_percent: number; source: string }> {
+    return this.request('/api/affiliate/admin/commission-percent');
+  }
+  async updateAdminCommissionPercent(percent: number): Promise<{ commission_percent: number }> {
+    return this.request('/api/affiliate/admin/commission-percent', {
+      method: 'PUT',
+      body: JSON.stringify({ percent }),
+    });
+  }
+  // R8 — ยกเลิกค่าคอมรายแถว (pending → cancelled, จ่ายแล้ว → clawback)
+  async cancelAdminCommission(id: number, reason: string): Promise<{ commission: { id: number; status: 'cancelled' | 'clawback'; net_amount: number } }> {
+    return this.request(`/api/affiliate/admin/commissions/${id}/cancel`, {
+      method: 'PUT',
+      body: JSON.stringify({ reason }),
     });
   }
 

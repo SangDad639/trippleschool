@@ -77,7 +77,7 @@ const SubscriptionTransferV2 = () => {
       setRefCheck({ valid: r.valid, pct: r.discount_percent, reason: r.reason, code: code.toLowerCase() });
       if (!silent) {
         if (r.valid) toast.success(l(`ใช้โค้ดสำเร็จ 🎉 ลด ${r.discount_percent}%`, `Code applied 🎉 ${r.discount_percent}% off`));
-        else toast.error(r.reason === 'OWN_CODE' ? l('ใช้โค้ดของตัวเองไม่ได้', 'Cannot use your own code') : l('ไม่พบโค้ดนี้', 'Code not found'));
+        else toast.error(r.reason === 'OWN_CODE' ? l('ใช้โค้ดของตัวเองไม่ได้', 'Cannot use your own code') : r.reason === 'OWNER_INACTIVE' ? l('โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)', 'This code is not active right now (code owner is not a member)') : l('ไม่พบโค้ดนี้', 'Code not found'));
       }
     } catch {
       if (!silent) toast.error(l('ตรวจสอบโค้ดไม่สำเร็จ ลองใหม่อีกครั้ง', 'Could not validate code, please retry'));
@@ -351,7 +351,7 @@ const SubscriptionTransferV2 = () => {
                 <p className="text-green-400 text-xs">✅ {l(`ใช้โค้ดแล้ว ลด ${refCheck.pct}%`, `Code applied — ${refCheck.pct}% off`)}</p>
               )}
               {refCheck && !refCheck.valid && (
-                <p className="text-red-400 text-xs">❌ {refCheck.reason === 'OWN_CODE' ? l('ใช้โค้ดของตัวเองไม่ได้', 'Cannot use your own code') : l('ไม่พบโค้ดนี้ ตรวจสอบอีกครั้ง', 'Code not found')}</p>
+                <p className="text-red-400 text-xs">❌ {refCheck.reason === 'OWN_CODE' ? l('ใช้โค้ดของตัวเองไม่ได้', 'Cannot use your own code') : refCheck.reason === 'OWNER_INACTIVE' ? l('โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)', 'This code is not active right now (code owner is not a member)') : l('ไม่พบโค้ดนี้ ตรวจสอบอีกครั้ง', 'Code not found')}</p>
               )}
             </div>
 

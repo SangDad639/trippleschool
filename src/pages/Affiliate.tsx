@@ -62,10 +62,35 @@ const Affiliate = () => {
   // Generic file preview state — used by both proof of transfer and WHT cert.
   // `url` is a short-lived signed URL; `downloadName` is suggested filename
   // when the user clicks the Download button in the modal.
+  // url = blob URL จาก fetch แบบมี auth (proxy /proofs/* ต้องล็อกอินแล้ว) → ไม่มีนามสกุล
+  // จึงต้องพก isPdf จากชื่อไฟล์ต้นทางมาด้วย
   const [previewFile, setPreviewFile] = useState<
-    | { url: string; title: string; downloadName: string }
+    | { url: string; title: string; downloadName: string; isPdf: boolean }
     | null
   >(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const openProtectedPreview = async (sourceUrl: string, title: string, downloadName: string) => {
+    try {
+      setPreviewLoading(true);
+      const blobUrl = await api.getProtectedFileBlobUrl(sourceUrl);
+      if (!blobUrl) {
+        toast.error(language === 'th' ? 'ไม่พบไฟล์' : 'File not found');
+        return;
+      }
+      const isPdf = sourceUrl.split('?')[0].toLowerCase().endsWith('.pdf');
+      setPreviewFile({ url: blobUrl, title, downloadName: isPdf ? `${downloadName}.pdf` : downloadName, isPdf });
+    } catch (e: any) {
+      toast.error(e?.message || (language === 'th' ? 'เปิดไฟล์ไม่สำเร็จ' : 'Failed to open file'));
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const closePreview = () => {
+    if (previewFile) URL.revokeObjectURL(previewFile.url);
+    setPreviewFile(null);
+  };
 
   // Geo-detection
   const [isThailand, setIsThailand] = useState(false);
@@ -157,12 +182,9 @@ const Affiliate = () => {
     }
   };
 
-  // Tier resolution — prefer joined `stats.tier`; fall back to legacy
-  // `affiliate_tier` integer for users that pre-date the affiliate_tiers table.
-  const tierId = stats?.tier?.id ?? stats?.affiliate_tier ?? 1;
-  const tierName = stats?.tier?.name || `Tier ${tierId}`;
-  const tierBadge = stats?.tier?.badge_color || 'gray';
-  const isVipStyled = tierBadge !== 'gray';
+  // R2: ค่าคอม % คงที่ทุกคน — ไม่มี tier แล้ว (BE ส่ง tier = null)
+  const commissionPct = stats?.commission_percent ?? 0;
+  const clawbackNet = stats?.clawback_net ?? 0;
 
   const handleSaveWiseEmail = async () => {
     if (!wiseEmail || !wiseEmail.includes('@')) {
@@ -248,12 +270,17 @@ const Affiliate = () => {
     }
   };
 
+  // R8: cancelled = ยกเลิกก่อนจ่าย · clawback = จ่ายแล้วแต่คำสั่งซื้อถูกยกเลิก (ยอดหักคืน)
   const getStatusText = (status: string) => {
     switch (status) {
       case 'transferred':
         return t('affiliate.statusTransferred');
       case 'pending':
         return t('affiliate.statusPending');
+      case 'cancelled':
+        return language === 'th' ? 'ยกเลิก' : 'Cancelled';
+      case 'clawback':
+        return language === 'th' ? 'หักคืน' : 'Clawback';
       default:
         return status;
     }
@@ -293,46 +320,32 @@ const Affiliate = () => {
             <div className="flex items-center gap-3">
               <Users className="h-5 w-5 text-[#FFB300]" />
               <h2 className="text-lg font-semibold">
-                {language === 'th' ? 'ระดับผู้แนะนำ' : 'Affiliate Tier'}
+                {language === 'th' ? 'ค่าคอมมิชชั่นของคุณ' : 'Your Commission'}
               </h2>
             </div>
 
             <div className="space-y-4">
-              {/* Tier badge + commission */}
-              <div className={`flex items-center justify-between p-4 rounded-lg ${
-                isVipStyled
-                  ? 'bg-gradient-to-r from-yellow-500/10 to-orange-500/10 border border-yellow-500/30'
-                  : 'bg-muted/30 border border-border'
-              }`}>
+              {/* ค่าคอม % คงที่ทุกคน (R2) */}
+              <div className="flex items-center justify-between p-4 rounded-lg bg-muted/30 border border-border">
                 <div className="flex items-center gap-3">
-                  <div className={`h-10 w-10 rounded-lg flex items-center justify-center ${
-                    isVipStyled
-                      ? 'bg-gradient-to-r from-[#FFD700] to-[#FFA500]'
-                      : 'bg-gray-500/20'
-                  }`}>
-                    {isVipStyled
-                      ? <Crown className="h-5 w-5 text-black" />
-                      : <Users className="h-5 w-5 text-gray-400" />}
+                  <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-[#FFB300]/15">
+                    <Users className="h-5 w-5 text-[#FFB300]" />
                   </div>
                   <div>
                     <div className="font-semibold flex items-center gap-2">
-                      {tierName}
-                      {isVipStyled && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/20 text-yellow-500 font-medium">
-                          VIP
-                        </span>
-                      )}
+                      <span className="text-[#FFB300] text-xl">{commissionPct}%</span>
+                      {language === 'th' ? 'ต่อคำสั่งซื้อ' : 'per order'}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {language === 'th' ? 'ค่าคอม' : 'Commission'}{' '}
-                      <span className="text-foreground font-medium">
-                        {stats?.tier?.commission_percent ?? stats?.commission_percent ?? 0}%
-                      </span>{' '}
-                      {language === 'th' ? 'ต่อยอดขาย (ก่อนภาษีมูลค่าเพิ่ม)' : 'per sale (pre-VAT)'}
+                      {language === 'th'
+                        ? 'จากยอดที่ผู้ซื้อจ่ายจริง (ก่อน VAT) เท่ากันทุกแพ็กเกจ · เฉพาะการสมัครครั้งแรกของผู้ซื้อ'
+                        : 'of the amount actually paid (pre-VAT), same for every package · first subscription only'}
                     </div>
-                    {stats?.tier?.description && (
-                      <div className="text-[11px] text-muted-foreground mt-1 italic">
-                        {stats.tier.description}
+                    {clawbackNet > 0 && (
+                      <div className="text-[11px] text-red-400 mt-1">
+                        {language === 'th'
+                          ? `มียอดหักคืนค้าง ฿${clawbackNet.toLocaleString('th-TH', { minimumFractionDigits: 2 })} (คำสั่งซื้อถูกยกเลิก/คืนเงินหลังจ่ายค่าคอมแล้ว — ทีมงานจะติดต่อ)`
+                          : `Outstanding clawback ฿${clawbackNet.toLocaleString('en-US', { minimumFractionDigits: 2 })} (order cancelled/refunded after payout — we will contact you)`}
                       </div>
                     )}
                   </div>
@@ -655,7 +668,8 @@ const Affiliate = () => {
                   <div className="space-y-2">
                     {transfers.map((transfer) => {
                       const isTransferred = transfer.status === 'transferred';
-                      const statusColor = isTransferred ? 'text-green-500' : 'text-yellow-500';
+                      const isVoided = transfer.status === 'cancelled' || transfer.status === 'clawback';
+                      const statusColor = isVoided ? 'text-red-400 line-through' : isTransferred ? 'text-green-500' : 'text-yellow-500';
                       const netAmount = transfer.net_amount ?? transfer.amount;
                       const hasFiles = transfer.proof_signed_url || transfer.wht_cert_signed_url;
                       return (
@@ -716,12 +730,13 @@ const Affiliate = () => {
                             <div className="flex flex-wrap gap-1.5 pt-1">
                               {transfer.proof_signed_url && (
                                 <button
-                                  onClick={() => setPreviewFile({
-                                    url: transfer.proof_signed_url!,
-                                    title: language === 'th' ? 'หลักฐานการโอน' : 'Transfer Proof',
-                                    downloadName: `transfer-proof-${transfer.id}`,
-                                  })}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-[#FFB300]/30 text-[11px] text-[#FFB300] hover:bg-[#FFB300]/10 transition-colors"
+                                  disabled={previewLoading}
+                                  onClick={() => void openProtectedPreview(
+                                    transfer.proof_signed_url!,
+                                    language === 'th' ? 'หลักฐานการโอน' : 'Transfer Proof',
+                                    `transfer-proof-${transfer.id}`,
+                                  )}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-[#FFB300]/30 text-[11px] text-[#FFB300] hover:bg-[#FFB300]/10 transition-colors disabled:opacity-50"
                                 >
                                   <CheckCircle2 className="h-3 w-3" />
                                   {language === 'th' ? 'หลักฐาน' : 'Proof'}
@@ -729,12 +744,13 @@ const Affiliate = () => {
                               )}
                               {transfer.wht_cert_signed_url && (
                                 <button
-                                  onClick={() => setPreviewFile({
-                                    url: transfer.wht_cert_signed_url!,
-                                    title: language === 'th' ? 'เอกสารหักภาษี ณ ที่จ่าย (50ทวิ)' : 'WHT Certificate (Form 50bis)',
-                                    downloadName: `wht-cert-${transfer.id}`,
-                                  })}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-[#FFB300]/30 text-[11px] text-[#FFB300] hover:bg-[#FFB300]/10 transition-colors"
+                                  disabled={previewLoading}
+                                  onClick={() => void openProtectedPreview(
+                                    transfer.wht_cert_signed_url!,
+                                    language === 'th' ? 'เอกสารหักภาษี ณ ที่จ่าย (50ทวิ)' : 'WHT Certificate (Form 50bis)',
+                                    `wht-cert-${transfer.id}`,
+                                  )}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-[#FFB300]/30 text-[11px] text-[#FFB300] hover:bg-[#FFB300]/10 transition-colors disabled:opacity-50"
                                 >
                                   <FileText className="h-3 w-3" />
                                   50ทวิ
@@ -756,16 +772,14 @@ const Affiliate = () => {
       {/* File Preview Dialog — handles both image (proof of transfer) and PDF
           (WHT certificate 50ทวิ). Detects type by URL extension; falls back to
           <img> which gracefully fails to "broken image" if MIME is unexpected. */}
-      <Dialog open={!!previewFile} onOpenChange={() => setPreviewFile(null)}>
+      <Dialog open={!!previewFile} onOpenChange={(o) => { if (!o) closePreview(); }}>
         <DialogContent className="max-w-2xl p-3">
           <DialogHeader>
             <DialogTitle>{previewFile?.title}</DialogTitle>
           </DialogHeader>
           {previewFile && (() => {
-            // Strip query params from URL when checking extension (signed URLs
-            // append ?X-Amz-... which would break naive endsWith).
-            const cleanUrl = previewFile.url.split('?')[0].toLowerCase();
-            const isPdf = cleanUrl.endsWith('.pdf');
+            // url เป็น blob (ไม่มีนามสกุล) → ใช้ isPdf ที่อ่านจากชื่อไฟล์ต้นทางตอนเปิด
+            const isPdf = previewFile.isPdf;
             return (
               <>
                 {isPdf ? (

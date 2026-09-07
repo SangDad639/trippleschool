@@ -465,10 +465,17 @@ const AdminEnrollments = () => {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => {
-                                setPreviewSlipUrl(api.mediaUrl(enrollment.slip_url));
-                                setSlipPreviewOpen(true);
-                              }}
+                              onClick={() => void (async () => {
+                                // proxy สลิปต้องล็อกอินแล้ว → โหลดเป็น blob ผ่าน fetch + header
+                                try {
+                                  const blobUrl = await api.getProtectedFileBlobUrl(enrollment.slip_url);
+                                  if (!blobUrl) { toast.error('ไม่พบไฟล์สลิป'); return; }
+                                  setPreviewSlipUrl(blobUrl);
+                                  setSlipPreviewOpen(true);
+                                } catch (e: any) {
+                                  toast.error(e?.message || 'เปิดสลิปไม่สำเร็จ');
+                                }
+                              })()}
                               className="text-blue-400 border-blue-400/50 hover:bg-blue-400/10"
                             >
                               <Eye className="h-4 w-4 mr-1" />

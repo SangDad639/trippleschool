@@ -7,10 +7,11 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import pool from '../db.js';
-import { authenticate, AuthRequest } from '../middleware/auth.js';
+import { authenticate, authenticateQueryOrHeader, AuthRequest } from '../middleware/auth.js';
 import { uploadFile, getFile } from '../utils/s3.js';
 import { createAffiliateCommission } from '../services/stripeService.js';
 import { checkRefcode, bindReferrerIfEmpty, applyRefDiscount } from '../services/refcode.js';
+import { cancelCommissionsBySource } from '../services/affiliateRules.js';
 
 const router = Router();
 
@@ -49,7 +50,8 @@ async function createCourseCommission(enrollment: { id: number; user_id: number;
     // Unique-per-enrollment id (idempotent on re-approve). planSlug omitted → referrer tier %.
     await createAffiliateCommission(enrollment.user_id, `course_${enrollment.id}`, Math.round(paid * 100), 'THB');
   } catch (e) {
-    console.error('[Affiliate] course commission failed:', e);
+    // approve สำเร็จไปแล้ว — ค่าคอมที่หายต้องไล่เจอจาก log นี้ (ไม่มี retry อัตโนมัติ)
+    console.error(`[Affiliate][ALERT] course commission FAILED enrollment=${enrollment.id} user=${enrollment.user_id}:`, e);
   }
 }
 
@@ -84,13 +86,25 @@ function uploadSlip(req: Request, res: Response, next: NextFunction) {
   });
 }
 
-// ============ Public slip proxy (no auth so admin <img> loads) ============
-router.get('/slips/*', async (req: Request, res: Response) => {
+// ============ Slip proxy — แอดมิน หรือเจ้าของคำสั่งซื้อเท่านั้น ============
+// เดิมเปิดสาธารณะ + ไม่ตรวจ prefix → ใช้ดึง key อื่นในบัคเก็ตได้ (สำเนาบัตร ปชช. ฯลฯ)
+// FE โหลดผ่าน fetch + Authorization header แล้วแปลงเป็น blob (api.getProtectedFileBlobUrl)
+router.get('/slips/*', authenticateQueryOrHeader, async (req: AuthRequest, res: Response) => {
   try {
-    const key = (req.params as any)[0];
+    const key = (req.params as any)[0] as string;
+    if (typeof key !== 'string' || !key.startsWith('course-slip/') || key.includes('..')) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    if (!req.isAdmin) {
+      const own = await pool.query(
+        `SELECT 1 FROM course_enrollments WHERE user_id = $1 AND slip_url = $2 LIMIT 1`,
+        [req.userId, `/api/enrollments/slips/${key}`]
+      );
+      if (own.rows.length === 0) return res.status(403).json({ error: 'Forbidden' });
+    }
     const obj = await getFile(key);
     if (obj.ContentType) res.setHeader('Content-Type', obj.ContentType);
-    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('Cache-Control', 'private, no-store');
     (obj.Body as any).pipe(res);
   } catch (error) {
     res.status(404).json({ error: 'Not found' });
@@ -338,7 +352,15 @@ router.put('/admin/:id/revoke', authenticate, async (req: AuthRequest, res: Resp
       WHERE id=$2 AND status='approved' RETURNING *
     `, [reason || 'ถูกเพิกถอนสิทธิ์โดยแอดมิน', id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Enrollment not found or not approved' });
-    res.json({ message: 'Enrollment revoked', enrollment: result.rows[0] });
+    // R8: เพิกถอนสิทธิ์ = ยกเลิกค่าคอมของคำสั่งซื้อนี้ (pending → cancelled · จ่ายแล้ว → clawback)
+    let commissionsCancelled: Awaited<ReturnType<typeof cancelCommissionsBySource>> = [];
+    try {
+      commissionsCancelled = await cancelCommissionsBySource(
+        `course_${result.rows[0].id}`, `revoke enrollment: ${reason || 'ถูกเพิกถอนสิทธิ์โดยแอดมิน'}`, req.userId ?? null);
+    } catch (e) {
+      console.error(`[Affiliate][ALERT] cancel commission FAILED for course enrollment #${id}:`, e);
+    }
+    res.json({ message: 'Enrollment revoked', enrollment: result.rows[0], commissions_cancelled: commissionsCancelled });
   } catch (error) {
     console.error('Error revoking enrollment:', error);
     res.status(500).json({ error: 'Failed to revoke enrollment' });

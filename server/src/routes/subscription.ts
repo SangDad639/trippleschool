@@ -12,6 +12,7 @@ import { PRICING, VAT_RATE, pricingFromPlan } from '../config/pricing.js';
 import * as plansService from '../services/plansService.js';
 import { maybePromoteOnPurchase } from '../services/tierAssignmentService.js';
 import { checkRefcode, bindReferrerIfEmpty, applyRefDiscount } from '../services/refcode.js';
+import { hasSubscriptionHistory } from '../services/affiliateRules.js';
 import * as taxInvoiceService from '../services/taxInvoiceService.js';
 import { getBucketName, getFile } from '../utils/s3.js';
 
@@ -497,6 +498,8 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
     }
     const currentExpiry = userResult.rows[0].subscription_expires_at;
     const referrerId = userResult.rows[0].referrer_id;
+    // R7: ค่าคอมเฉพาะบัญชีที่ไม่เคยมี subscription มาก่อนเลย — ต้องเช็คก่อน INSERT log ของรอบนี้
+    const isFirstSubscription = !(await hasSubscriptionHistory(userId, client));
     const baseDate = currentExpiry && new Date(currentExpiry) > new Date()
       ? new Date(currentExpiry)
       : new Date();
@@ -525,11 +528,12 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
     // INSERT extension log with approval_method='autoapprove'
     // amount = vat-inclusive total user paid (legacy semantic preserved)
     // subtotal/vat_amount/vat_rate = breakdown for accounting / tax invoice
-    await client.query(
+    const extLog = await client.query(
       `INSERT INTO subscription_extension_logs
          (user_id, admin_id, days_added, amount, slip_url, approval_method,
           subtotal, vat_amount, vat_rate, refcode)
-       VALUES ($1, NULL, $2, $3, $4, 'autoapprove', $5, $6, $7, $8)`,
+       VALUES ($1, NULL, $2, $3, $4, 'autoapprove', $5, $6, $7, $8)
+       RETURNING id`,
       [
         userId,
         days,
@@ -541,6 +545,7 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
         appliedRef,
       ]
     );
+    const extensionLogId: number = extLog.rows[0].id;
 
     await client.query('COMMIT');
 
@@ -561,20 +566,27 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
       }
     }
     let commissionCreated = false;
-    if (effectiveReferrerId) {
+    let commissionSkipReason: string | null = null;
+    if (effectiveReferrerId && !isFirstSubscription) {
+      // R7: ต่ออายุ (บัญชีเคยมี subscription แล้ว) → ไม่เกิดค่าคอม แม้มีผู้แนะนำ
+      commissionSkipReason = 'renewal';
+      console.log(`[Affiliate] user=${userId} renewal — no commission (R7)`);
+    } else if (effectiveReferrerId) {
       try {
         const subtotalCents = Math.round(effectiveSubtotal * 100);
-        await createAffiliateCommission(
+        const cr = await createAffiliateCommission(
           userId,
-          // slip_id is unique-per-payment so timestamp suffix is fine here
-          `autoapprove_${userId}_${Date.now()}`,
+          // R6: key ผูกกับ log การชำระรอบนี้ 1:1 → 1 คำสั่งซื้อ = 1 ค่าคอม เสมอ
+          `sub_${extensionLogId}`,
           subtotalCents,
           'THB',
-          planRecord.slug  // enables per-plan commission override
+          planRecord.slug
         );
-        commissionCreated = true;
+        commissionCreated = cr.created; // ตามจริง — เดิมตั้ง true แม้ล้มเหลว
+        if (!cr.created) commissionSkipReason = cr.reason;
       } catch (commissionError) {
-        console.error('[autoapprove] Failed to create affiliate commission:', commissionError);
+        // ค่าคอมหาย = เงินของ affiliate หาย — log ให้ดังพอที่จะไล่เจอใน production
+        console.error(`[Affiliate][ALERT] commission FAILED for autoapprove user=${userId}:`, commissionError);
       }
     }
 
@@ -596,6 +608,7 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
       expiresAt: newExpiry.toISOString(),
       plan,
       commissionCreated,
+      commissionSkipReason,
       tierPromotion,
       transRef: thunderData.rawSlip.transRef,
     });

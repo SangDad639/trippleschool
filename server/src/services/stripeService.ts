@@ -1,5 +1,6 @@
 import pool from '../db.js';
 import { resolveCommissionPercent } from './commissionService.js';
+import { isActiveMember } from './affiliateRules.js';
 import { maybePromoteOnPurchase } from './tierAssignmentService.js';
 
 /**
@@ -35,16 +36,25 @@ export async function hasActiveSubscription(userId: number): Promise<boolean> {
  * @param planSlug - Optional. Caller passes this when known so we can apply
  *                   per-plan commission overrides + the per-(user × plan) matrix.
  */
+export type CommissionResult =
+  | { created: true; commissionId: number }
+  | { created: false; reason: 'no_referrer' | 'referrer_inactive' | 'duplicate' };
+
+/**
+ * ⚠️ ไม่กลืน error อีกต่อไป (เดิม catch ทั้งฟังก์ชันแล้ว log เฉยๆ → ค่าคอมหายเงียบ
+ * และ caller รายงาน commissionCreated=true ทั้งที่ล้มเหลว) — DB error จะ throw ให้
+ * caller ตัดสินใจเอง และผลลัพธ์บอกชัดว่าสร้าง/ข้ามเพราะอะไร
+ */
 export async function createAffiliateCommission(
   userId: number,
   stripeInvoiceId: string,
   paymentAmountCents: number,
   currency: string,
   planSlug?: string
-): Promise<void> {
+): Promise<CommissionResult> {
   console.log(`[Affiliate] Creating commission for user ${userId}, invoice ${stripeInvoiceId}, amount ${paymentAmountCents} cents`);
 
-  try {
+  {
     // 1) Has referrer?
     const userResult = await pool.query(
       'SELECT referrer_id FROM users WHERE id = $1',
@@ -55,13 +65,19 @@ export async function createAffiliateCommission(
 
     if (!userResult.rows[0]?.referrer_id) {
       console.log(`[Affiliate] User ${userId} has no referrer, skipping`);
-      return; // No referrer, skip
+      return { created: false, reason: 'no_referrer' };
     }
 
     const referrerId = userResult.rows[0].referrer_id;
 
-    // 2) Determine commission % via the canonical resolution chain.
-    //    Sources, in precedence order: matrix → plan → user_snapshot → tier → settings → default.
+    // R3: เจ้าของโค้ดต้องเป็นสมาชิกที่ยังไม่หมดอายุ ณ เวลาที่ผู้ซื้อจ่าย/ถูกอนุมัติ
+    //     ไม่ active = ไม่เกิดค่าคอม (ผูก referrer ไว้ตามเดิม ไม่ย้อนกลับ)
+    if (!(await isActiveMember(referrerId))) {
+      console.log(`[Affiliate] referrer ${referrerId} is not an active member — skipping commission (R3)`);
+      return { created: false, reason: 'referrer_inactive' };
+    }
+
+    // 2) R2: % คงที่ทุกคนจาก affiliate_settings.commission_percent (default 15)
     const resolved = await resolveCommissionPercent({
       referrerId,
       planSlug: planSlug ?? null,
@@ -77,7 +93,7 @@ export async function createAffiliateCommission(
 
     if (existingCommission.rows.length > 0) {
       console.log(`[Affiliate] Commission already exists for invoice ${stripeInvoiceId}, skipping`);
-      return; // Commission already exists for this invoice
+      return { created: false, reason: 'duplicate' };
     }
 
     // Resolve the WHT rate from settings (fallback to 3% per Thai tax law for
@@ -116,7 +132,7 @@ export async function createAffiliateCommission(
     ]);
 
     if (commissionResult.rows.length === 0) {
-      return; // Commission already existed or insert failed
+      return { created: false, reason: 'duplicate' }; // ชนกับ UNIQUE(referee_id, stripe_invoice_id)
     }
 
     const commissionId = commissionResult.rows[0].id;
@@ -141,7 +157,6 @@ export async function createAffiliateCommission(
         console.error('[TierAssign] failed:', tierErr);
       }
     }
-  } catch (error) {
-    console.error('[Affiliate] Error creating commission:', error);
+    return { created: true, commissionId };
   }
 }

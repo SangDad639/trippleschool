@@ -65,6 +65,9 @@ const AdminAffiliate = () => {
   // % ส่วนลดโค้ดผู้แนะนำตอน checkout — เก็บเป็น string ให้พิมพ์ทศนิยมได้ลื่น validate ตอน save
   const [refDiscount, setRefDiscount] = useState('5');
   const [refDiscountSaving, setRefDiscountSaving] = useState(false);
+  // R2 — ค่าคอม % คงที่ทุกคน (affiliate_settings.commission_percent)
+  const [commissionPct, setCommissionPct] = useState('15');
+  const [commissionPctSaving, setCommissionPctSaving] = useState(false);
 
   // Tier settings (percentage-based)
   const [tier1Percent, setTier1Percent] = useState(10);
@@ -92,6 +95,23 @@ const AdminAffiliate = () => {
   const [proofSignedUrl, setProofSignedUrl] = useState<string | null>(null);
   const [proofUploading, setProofUploading] = useState(false);
   const [previewProofUrl, setPreviewProofUrl] = useState<string | null>(null);
+  // proxy /proofs/* ต้องล็อกอินแล้ว → โหลดเป็น blob (ไม่มีนามสกุล) จึงพก isPdf แยก
+  const [previewProofIsPdf, setPreviewProofIsPdf] = useState(false);
+  const openProofPreview = async (sourceUrl: string | null) => {
+    if (!sourceUrl) return;
+    try {
+      const blobUrl = await api.getProtectedFileBlobUrl(sourceUrl);
+      if (!blobUrl) { toast.error('ไม่พบไฟล์'); return; }
+      setPreviewProofIsPdf(sourceUrl.split('?')[0].toLowerCase().endsWith('.pdf'));
+      setPreviewProofUrl(blobUrl);
+    } catch (e: any) {
+      toast.error(e?.message || 'เปิดไฟล์ไม่สำเร็จ');
+    }
+  };
+  const closeProofPreview = () => {
+    if (previewProofUrl) URL.revokeObjectURL(previewProofUrl);
+    setPreviewProofUrl(null);
+  };
   // ID card preview — blob URL from authed proxy fetch (separate from proof
   // dialog because blob URLs lack a .pdf extension → use <iframe> for both).
   const [idCardPreviewUrl, setIdCardPreviewUrl] = useState<string | null>(null);
@@ -117,17 +137,19 @@ const AdminAffiliate = () => {
 
   const loadData = async () => {
     try {
-      const [announcementRes, tiersRes, transfersRes, pendingRes, transferredRes, refDiscountRes] = await Promise.all([
+      const [announcementRes, tiersRes, transfersRes, pendingRes, transferredRes, refDiscountRes, commissionRes] = await Promise.all([
         api.getAffiliateAnnouncement(),
         api.getAdminTiers(),
         api.getAdminTransfers(),
         api.getAdminPendingPayouts(),
         api.getAdminPendingPayouts('transferred'),
         api.getAdminRefcodeDiscount().catch(() => ({ refcode_discount_percent: 5 })),
+        api.getAdminCommissionPercent().catch(() => ({ commission_percent: 15, source: 'default' })),
       ]);
 
       setAnnouncement(announcementRes.announcement || '');
       setRefDiscount(String(refDiscountRes.refcode_discount_percent ?? 5));
+      setCommissionPct(String(commissionRes.commission_percent ?? 15));
       setTier1Percent(tiersRes.tier1_percent || 10);
       setTier2Percent(tiersRes.tier2_percent || 15);
       setTransfers(transfersRes.transfers || []);
@@ -168,6 +190,24 @@ const AdminAffiliate = () => {
       toast.error(error?.message || 'บันทึกไม่สำเร็จ');
     } finally {
       setRefDiscountSaving(false);
+    }
+  };
+
+  const handleSaveCommissionPct = async () => {
+    const pct = Number(commissionPct);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      toast.error('กรอกตัวเลข 0-100 (%)');
+      return;
+    }
+    setCommissionPctSaving(true);
+    try {
+      const r = await api.updateAdminCommissionPercent(pct);
+      setCommissionPct(String(r.commission_percent));
+      toast.success(`บันทึกแล้ว 💰 ค่าคอม ${r.commission_percent}%`);
+    } catch (error: any) {
+      toast.error(error?.message || 'บันทึกไม่สำเร็จ');
+    } finally {
+      setCommissionPctSaving(false);
     }
   };
 
@@ -690,6 +730,51 @@ const AdminAffiliate = () => {
             </CardContent>
           </Card>
 
+          {/* 💰 ค่าคอม % คงที่ทุกคน (R2) — super admin เท่านั้น */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <span>💰</span>
+                ค่าคอมมิชชั่นผู้แนะนำ
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                % เดียวกันทุกคน ทุกสินค้า (แพ็กเกจ / คอร์ส / Ebook) คิดจากยอดที่ผู้ซื้อจ่ายจริงก่อน VAT
+                • เฉพาะการสมัครครั้งแรกของผู้ซื้อ (ต่ออายุไม่ได้ค่าคอม) • เจ้าของโค้ดต้องเป็นสมาชิกที่ยังไม่หมดอายุ
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={0.5}
+                  value={commissionPct}
+                  onChange={(e) => setCommissionPct(e.target.value)}
+                  className="w-28"
+                  disabled={commissionPctSaving || !user?.isSuperAdmin}
+                />
+                <span className="text-sm text-muted-foreground">%</span>
+                <Button
+                  onClick={handleSaveCommissionPct}
+                  disabled={commissionPctSaving || !user?.isSuperAdmin}
+                  className="bg-[#FFB300] hover:bg-[#FF9D00] text-black"
+                >
+                  {commissionPctSaving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  บันทึก
+                </Button>
+              </div>
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 text-xs text-yellow-200/90">
+                ⚠️ มีผลกับค่าคอมที่เกิดใหม่เท่านั้น — รายการเดิมบันทึก % ไว้แล้ว
+                {!user?.isSuperAdmin && ' • แก้ได้เฉพาะ super admin'}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Commission Tiers — moved to /admin → Tiers tab.
               N-tier CRUD lives there (admin can add Tier 3, 4, 5, …).
               Old 2-tier widget removed to avoid stale state. */}
@@ -755,14 +840,13 @@ const AdminAffiliate = () => {
       {/* File Preview Dialog — handles both image and PDF. Auto-detects type
           from URL extension (strips ?query first since signed URLs append
           ?X-Amz-... params). Includes Download button. */}
-      <Dialog open={!!previewProofUrl} onOpenChange={() => setPreviewProofUrl(null)}>
+      <Dialog open={!!previewProofUrl} onOpenChange={(o) => { if (!o) closeProofPreview(); }}>
         <DialogContent className="max-w-2xl p-3">
           <DialogHeader>
             <DialogTitle>ดูเอกสาร</DialogTitle>
           </DialogHeader>
           {previewProofUrl && (() => {
-            const cleanUrl = previewProofUrl.split('?')[0].toLowerCase();
-            const isPdf = cleanUrl.endsWith('.pdf');
+            const isPdf = previewProofIsPdf; // blob URL ไม่มีนามสกุล
             return (
               <>
                 {isPdf ? (
@@ -910,7 +994,7 @@ const AdminAffiliate = () => {
                     {proofSignedUrl && (
                       <button
                         type="button"
-                        onClick={() => setPreviewProofUrl(proofSignedUrl)}
+                        onClick={() => void openProofPreview(proofSignedUrl)}
                         className="underline hover:text-green-400"
                       >
                         ดูตัวอย่าง
@@ -947,7 +1031,7 @@ const AdminAffiliate = () => {
                     {whtCertSignedUrl && (
                       <button
                         type="button"
-                        onClick={() => setPreviewProofUrl(whtCertSignedUrl)}
+                        onClick={() => void openProofPreview(whtCertSignedUrl)}
                         className="underline hover:text-green-400"
                       >
                         ดูตัวอย่าง
