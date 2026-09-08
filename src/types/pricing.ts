@@ -53,6 +53,46 @@ export interface SubscriptionPlan {
   admin_only: boolean;
   created_at?: string;
   updated_at?: string;
+  /** เวลาที่ราคาปัจจุบันเริ่มมีผล (จากการตั้งเวลา) — null/undefined = ไม่เคยตั้งเวลา · admin endpoint เท่านั้น */
+  price_effective_at?: string | null;
+  /** รายการตั้งเวลาถัดไปที่รอมีผล — admin endpoint เท่านั้น (public ไม่ส่ง = ไม่ประกาศราคาล่วงหน้า) */
+  pending_schedule?: PendingPriceSchedule | null;
+}
+
+/** schedule ถัดไปที่รอมีผล แนบมากับแพ็กเกจในหน้าแอดมิน */
+export interface PendingPriceSchedule {
+  id: number;
+  subtotal: number;
+  vat: number;
+  total: number;
+  effective_at: string;
+  note: string | null;
+}
+
+export type PriceScheduleStatus = 'pending' | 'applied' | 'superseded' | 'cancelled';
+
+/** แถวจาก GET /api/admin/packages/price-schedules */
+export interface PlanPriceSchedule {
+  id: number;
+  plan_id: number;
+  plan_slug: string;
+  plan_name: string;
+  plan_name_th: string | null;
+  subtotal: number;               // ราคาใหม่ก่อน VAT
+  vat: number;
+  total: number;                  // ยอดโอนใหม่รวม VAT
+  effective_at: string;           // ISO (UTC) — แสดงเป็นเวลาไทยด้วย toLocaleString(th-TH, Asia/Bangkok)
+  note: string | null;
+  previous_subtotal: number | null;   // ราคาก่อนหน้า ณ ตอนมีผล (มีเมื่อ applied/superseded)
+  previous_total: number | null;
+  applied_at: string | null;
+  cancelled_at: string | null;
+  cancelled_by: number | null;
+  cancelled_by_email: string | null;
+  created_by: number | null;
+  created_by_email: string | null;
+  created_at: string;
+  status: PriceScheduleStatus;
 }
 
 export interface PackageEditInput {
@@ -69,6 +109,8 @@ export interface PackageEditInput {
   admin_alt_prices?: AdminAltPrice[];
   tier_id?: number | null;
   admin_only?: boolean;
+  /** ราคาที่เห็นตอนเปิดฟอร์ม — server ตอบ 409 PRICE_CHANGED ถ้าไม่ตรงราคาปัจจุบัน (กันเขียนทับราคาที่เพิ่งมีผล) */
+  expected_subtotal?: number;
 }
 
 /** Per-(user × plan) commission override row. */

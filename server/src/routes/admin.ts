@@ -493,6 +493,39 @@ router.patch('/users/:id/extend', authenticate, requireAdmin, async (req: AuthRe
     const plan = resolvedPlan;
     const adminId = req.userId;
 
+    // Look up the matching subscription_plan if any — used for the default
+    // amount, the amount guard below, and so the affiliate commission can apply
+    // per-plan overrides. plansService materializes any due price schedule
+    // (migration 064) before returning, so `total` is the price *right now*.
+    const planRecord = await plansService.getPlanBySlug(plan).catch(() => null);
+    const fallbackPricing = pricingFromDays(numDays); // legacy hardcoded fallback (matches seeded monthly/yearly)
+    const defaultTotal = planRecord?.total ?? fallbackPricing.total;
+    const hasAmount = amount !== undefined && amount !== null && String(amount).trim() !== '';
+    // ยอดจาก client ต้องตรงราคาที่รับได้ตอนนี้ (ราคาปัจจุบัน + ราคาพิเศษแอดมิน ±0.01) —
+    // ราคาเปลี่ยนตามเวลาได้ (ไม่มีช่วงรับราคาเก่า) หน้าแอดมินที่เปิดค้างอาจส่งยอดเก่ามา ซึ่งจะกลายเป็น
+    // ยอดใน log/ใบกำกับ/ฐานค่าคอม · super admin override ได้ (log AUDIT) · ไม่ส่ง = ราคาปัจจุบัน
+    // ต้องตรวจ *ก่อน* เขียน DB — ไม่งั้น 400 ทั้งที่ต่ออายุไปแล้วโดยไม่มี log
+    if (hasAmount) {
+      const amt = Number(amount);
+      if (!Number.isFinite(amt) || amt < 0) {
+        return res.status(400).json({ error: 'amount ไม่ถูกต้อง', errorCode: 'INVALID_AMOUNT' });
+      }
+      const accepted = planRecord
+        ? plansService.getAcceptedPrices(planRecord).map((a) => ({ total: a.total, label: a.label }))
+        : [{ total: fallbackPricing.total, label: 'current' }];
+      const ok = accepted.some((a) => Math.abs(a.total - amt) < 0.01);
+      if (!ok && !req.isSuperAdmin) {
+        return res.status(400).json({
+          error: `ยอด ฿${amt} ไม่ตรงราคาที่รับได้ (${accepted.map((a) => `฿${a.total}`).join(' หรือ ')})`,
+          errorCode: 'AMOUNT_NOT_ALLOWED',
+          accepted,
+        });
+      }
+      if (!ok) {
+        console.log(`[Admin][AUDIT] extend user=${id} amount override ฿${amt} (accepted: ${accepted.map((a) => a.total).join('/')}) by super admin #${adminId}`);
+      }
+    }
+
     // Get current subscription expiry and referrer info
     const userResult = await pool.query(
       'SELECT subscription_expires_at, referrer_id FROM users WHERE id = $1',
@@ -538,14 +571,9 @@ router.patch('/users/:id/extend', authenticate, requireAdmin, async (req: AuthRe
     // Compute the VAT split for the audit log. The amount we log is the
     // *vat-inclusive total* (matches what user paid). When admin sends
     // a custom amount we still split by VAT_RATE so the breakdown is
-    // self-consistent. When admin sends nothing we fall back to the plan total.
-    //
-    // Look up the matching subscription_plan if any — used both for the default
-    // amount and so the affiliate commission can apply per-plan overrides.
-    const planRecord = await plansService.getPlanBySlug(plan).catch(() => null);
-    const fallbackPricing = pricingFromDays(numDays); // legacy hardcoded fallback (matches seeded monthly/yearly)
-    const defaultTotal = planRecord?.total ?? fallbackPricing.total;
-    const totalPaid = amount ? Number(amount) : defaultTotal;
+    // self-consistent. When admin sends nothing we fall back to the plan total
+    // (planRecord/defaultTotal resolved + validated above, before any write).
+    const totalPaid = hasAmount ? Number(amount) : defaultTotal;
     // Split inclusively: subtotal × (1 + vat) = total
     const subtotal = +(totalPaid / (1 + VAT_RATE / 100)).toFixed(2);
     const vatAmount = +(totalPaid - subtotal).toFixed(2);
@@ -1065,10 +1093,11 @@ router.post('/upload-extend-slip', authenticate, requireAdmin, adminSlipRateLimi
     // amount as vat-inclusive). Allowed amounts = plan default + each admin
     // alt_price variant. This is how the admin-only Promo ฿2,800 (yearly) is
     // represented: a row in subscription_plans.admin_alt_prices.
+    // ราคาเปลี่ยนตามเวลาได้ (schedule 064) — planRecord มาจาก plansService ซึ่ง
+    // materialize ราคาที่ถึงเวลาแล้วก่อนเสมอ · ไม่มีช่วงรับราคาเก่า
     let allowedAmounts: number[];
     if (planRecord) {
-      const altTotals = planRecord.admin_alt_prices_computed.map((a) => a.total);
-      allowedAmounts = [planRecord.total, ...altTotals];
+      allowedAmounts = plansService.getAcceptedPrices(planRecord).map((a) => a.total);
     } else {
       // No DB row yet (unmigrated env / unknown slug) — fall back to legacy
       // hardcoded subtotal so old admin flows keep working.
@@ -1139,10 +1168,14 @@ router.post('/upload-extend-slip', authenticate, requireAdmin, adminSlipRateLimi
     }
 
     if (!allowedAmounts.some((a) => Math.abs(a - thunderData.amountInSlip) < 0.01)) {
-      const expectedLabel = allowedAmounts.map((a) => `฿${a}`).join(' or ');
+      const expectedLabel = allowedAmounts.map((a) => `฿${a}`).join(' หรือ ');
       return res.status(400).json({
-        error: `Amount mismatch: expected ${expectedLabel}, got ฿${thunderData.amountInSlip}`,
+        error: `ยอดในสลิป ฿${thunderData.amountInSlip} ไม่ตรง — ยอดที่รับได้ ${expectedLabel}`,
         errorCode: 'INVALID_AMOUNT',
+        accepted: planRecord
+          ? plansService.getAcceptedPrices(planRecord).map((a) => ({ total: a.total, label: a.label }))
+          : allowedAmounts.map((total) => ({ total, label: 'current' })),
+        got: thunderData.amountInSlip,
       });
     }
     // Use actual paid amount (vat-inclusive total) for the log + subscription record
@@ -2300,6 +2333,62 @@ router.get('/packages', authenticate, requireAdmin, async (_req: AuthRequest, re
   }
 });
 
+// -----------------------------------------------------------------------------
+// SCHEDULED PRICE CHANGE (migration 064 · docs/PLAN-SCHEDULED-PRICE-CHANGE.md)
+// ต้องประกาศก่อน `/packages/:id` — ไม่งั้น DELETE /packages/price-schedules/:sid
+// จะถูก `/packages/:id` (id = "price-schedules") จับไปก่อน
+// -----------------------------------------------------------------------------
+
+/** แปลง PlansServiceError → HTTP (status + errorCode + ฟิลด์เสริม) หรือ 500 */
+function sendPlansError(res: Response, error: any, fallback: string) {
+  if (error instanceof plansService.PlansServiceError) {
+    return res.status(error.status).json({ error: error.message, errorCode: error.code, ...error.extra });
+  }
+  console.error(fallback, error);
+  return res.status(500).json({ error: error?.message || fallback, errorCode: 'INTERNAL_ERROR' });
+}
+
+/** GET /api/admin/packages/price-schedules — ทุกรายการ (รอ / มีผลแล้ว / ถูกแทนที่ / ยกเลิก) ล่าสุดก่อน */
+router.get('/packages/price-schedules', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    const schedules = await plansService.listPriceSchedules();
+    res.json({ schedules, min_lead_ms: plansService.PRICE_SCHEDULE_MIN_LEAD_MS });
+  } catch (error: any) {
+    sendPlansError(res, error, 'List price schedules error:');
+  }
+});
+
+/**
+ * POST /api/admin/packages/price-schedules — ตั้งเวลาเปลี่ยนราคาหลายแพ็กเกจในครั้งเดียว (super admin)
+ * body { effective_at: ISO, note?, items: [{ plan_id, subtotal }] }
+ * 400 PAST_EFFECTIVE_AT / NO_CHANGE / INVALID_ITEMS · 404 PLAN_NOT_FOUND · 409 SCHEDULE_EXISTS
+ */
+router.post('/packages/price-schedules', authenticate, requireAdmin, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const schedules = await plansService.createPriceSchedules({
+      effective_at: String(req.body?.effective_at ?? ''),
+      note: req.body?.note ?? null,
+      items: Array.isArray(req.body?.items) ? req.body.items : [],
+      created_by: req.userId ?? null,
+    });
+    res.json({ success: true, schedules });
+  } catch (error: any) {
+    sendPlansError(res, error, 'Create price schedules error:');
+  }
+});
+
+/** DELETE /api/admin/packages/price-schedules/:sid — ยกเลิกเฉพาะที่ยังไม่มีผล (super admin) */
+router.delete('/packages/price-schedules/:sid', authenticate, requireAdmin, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const sid = Number(req.params.sid);
+    if (!Number.isInteger(sid)) return res.status(400).json({ error: 'invalid id' });
+    const schedule = await plansService.cancelPriceSchedule(sid, req.userId ?? null);
+    res.json({ success: true, schedule });
+  } catch (error: any) {
+    sendPlansError(res, error, 'Cancel price schedule error:');
+  }
+});
+
 /** POST /api/admin/packages — create new package */
 router.post('/packages', authenticate, requireAdmin, requireSuperAdmin, async (req: AuthRequest, res: Response) => {
   try {
@@ -2342,6 +2431,16 @@ router.put('/packages/:id', authenticate, requireAdmin, requireSuperAdmin, async
     const err = validatePackageInput(req.body, true);
     if (err) return res.status(400).json({ error: err });
 
+    // expected_subtotal (optional, จาก dialog แก้ไข) = ราคาที่แอดมินเห็นตอนเปิดฟอร์ม —
+    // ถ้า schedule มีผลไประหว่างเปิดค้าง service จะตอบ 409 PRICE_CHANGED แทนการเขียนทับ
+    const expectedSubtotal =
+      req.body.expected_subtotal === undefined || req.body.expected_subtotal === null || req.body.expected_subtotal === ''
+        ? undefined
+        : Number(req.body.expected_subtotal);
+    if (expectedSubtotal !== undefined && !Number.isFinite(expectedSubtotal)) {
+      return res.status(400).json({ error: 'expected_subtotal must be a number' });
+    }
+
     const updated = await plansService.updatePlan(id, {
       name: req.body.name,
       name_th: req.body.name_th,
@@ -2363,12 +2462,14 @@ router.put('/packages/:id', authenticate, requireAdmin, requireSuperAdmin, async
           ? null
           : Number(req.body.tier_id),
       admin_only: typeof req.body.admin_only === 'boolean' ? req.body.admin_only : undefined,
-    });
+    }, { expectedSubtotal });
     if (!updated) return res.status(404).json({ error: 'package not found' });
+    if (req.body.subtotal !== undefined) {
+      console.log(`[Packages][AUDIT] package #${id} (${updated.slug}) subtotal → ${updated.subtotal} by super admin #${req.userId}`);
+    }
     res.json({ success: true, package: updated });
   } catch (error: any) {
-    console.error('Update package error:', error);
-    res.status(500).json({ error: error.message || 'Failed to update package' });
+    sendPlansError(res, error, 'Update package error:');
   }
 });
 

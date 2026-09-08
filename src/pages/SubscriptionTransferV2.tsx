@@ -5,9 +5,12 @@ import { useSubscription } from '@/contexts/SubscriptionContext';
 import { ArrowLeft, Copy, Check, Upload, Loader2, CheckCircle2, AlertCircle, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { PRICING, VAT_RATE, perMonthOfYearly } from '@/lib/pricing';
+
+/** ยอดที่เซิร์ฟเวอร์รับได้ — แนบมากับ INVALID_AMOUNT (ราคาเปลี่ยนตามเวลาได้ ไม่มีช่วงรับราคาเก่า) */
+type AcceptedAmount = { total: number; label: string };
 
 const SubscriptionTransferV2 = () => {
   const navigate = useNavigate();
@@ -36,13 +39,43 @@ const SubscriptionTransferV2 = () => {
 
   // Fetch active plans from DB (subscription_plans table via /api/subscription/plans).
   // Single source of truth: admin updates DB → all pricing flows pick it up.
+  // ราคาเปลี่ยนตามเวลาได้ (แอดมินตั้งเวลา) และไม่มีช่วงรับราคาเก่า → หน้าที่เปิดค้างต้อง
+  // refetch เมื่อกลับมาเห็นแท็บ + ทุก 60 วิ; ถ้ายอดเปลี่ยนให้เตือนชัด (ยิ่งถ้าเลือกสลิปไว้แล้ว)
   type ApiPlan = Awaited<ReturnType<typeof api.getSubscriptionPlans>>['plans'][number];
   const [apiPlans, setApiPlans] = useState<ApiPlan[] | null>(null);
+  const apiPlansRef = useRef<ApiPlan[] | null>(null);
+  const slipSelectedRef = useRef(false);
+  const [priceChangedNotice, setPriceChangedNotice] = useState<string | null>(null);
+  const fetchPlans = useCallback(async (notify: boolean) => {
+    try {
+      const res = await api.getSubscriptionPlans();
+      const prev = apiPlansRef.current;
+      apiPlansRef.current = res.plans;
+      setApiPlans(res.plans);
+      if (!notify || !prev) return;
+      const changed = res.plans.filter((p) => {
+        const o = prev.find((x) => x.slug === p.slug);
+        return o && Math.abs(o.total - p.total) > 0.001;
+      });
+      if (changed.length === 0) return;
+      const list = changed.map((p) => `${language === 'th' ? (p.name_th || p.name) : p.name} ฿${p.total.toLocaleString()}`).join(' · ');
+      const msg = slipSelectedRef.current
+        ? (language === 'th'
+          ? `ราคาปรับแล้ว — ยอดโอนใหม่ ${list}\nสลิปยอดเดิมจะไม่ผ่าน กรุณาโอนยอดใหม่ (ถ้าโอนไปแล้ว กรุณาติดต่อแอดมิน)`
+          : `Price updated — new amount ${list}\nA slip with the old amount will be rejected; please transfer the new amount (contact admin if you already paid)`)
+        : (language === 'th' ? `ราคาปรับแล้ว — ยอดโอนใหม่ ${list}` : `Price updated — new amount ${list}`);
+      setPriceChangedNotice(msg);
+      toast.warning(msg.split('\n')[0], { duration: 10000 });
+    } catch { /* fall back to hardcoded PRICING / keep last known plans */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language]);
   useEffect(() => {
-    api.getSubscriptionPlans()
-      .then((res) => setApiPlans(res.plans))
-      .catch(() => { /* fall back to hardcoded PRICING */ });
-  }, []);
+    void fetchPlans(false);
+    const onVisible = () => { if (document.visibilityState === 'visible') void fetchPlans(true); };
+    document.addEventListener('visibilitychange', onVisible);
+    const timer = setInterval(() => void fetchPlans(true), 60_000);
+    return () => { document.removeEventListener('visibilitychange', onVisible); clearInterval(timer); };
+  }, [fetchPlans]);
 
   // Resolve a plan by slug — prefer live DB, fall back to PRICING constants if
   // API is unreachable so the page still works.
@@ -113,6 +146,7 @@ const SubscriptionTransferV2 = () => {
       return;
     }
     setSlipFile(file);
+    slipSelectedRef.current = true;
     setPreviewUrl(URL.createObjectURL(file));
     setErrorMessage(null);
   };
@@ -216,22 +250,31 @@ const SubscriptionTransferV2 = () => {
     }
     setVerifying(true);
     setErrorMessage(null);
+    // INVALID_AMOUNT: ใช้ยอดที่เซิร์ฟเวอร์บอกว่ารับได้ (ราคา ณ ตอนนี้) ไม่ใช่ตัวเลขที่ค้างอยู่ในหน้า
+    const showError = (rawCode: string, accepted?: AcceptedAmount[]) => {
+      if (rawCode === 'INVALID_REFCODE') setRefCheck(null); // เคลียร์ ✅ ค้าง ไม่ให้ยอดลดโชว์ผิด
+      if (rawCode === 'INVALID_AMOUNT' && accepted?.length) {
+        const amounts = accepted.map((a) => `฿${Number(a.total).toLocaleString()}`).join(l(' หรือ ', ' or '));
+        setErrorMessage(l(
+          `จำนวนเงินในสลิปไม่ตรง — ยอดที่รับได้ตอนนี้คือ ${amounts}\nกรุณาโอนยอดดังกล่าวแล้วอัปโหลดสลิปใหม่ (ถ้าโอนไปแล้วก่อนราคาเปลี่ยน กรุณาติดต่อแอดมิน)`,
+          `The amount on the slip does not match — the accepted amount right now is ${amounts}\nPlease transfer that amount and upload the new slip (contact admin if you paid before the price changed)`,
+        ));
+        void fetchPlans(true); // ให้ยอดบนหน้าตรงกับเซิร์ฟเวอร์ทันที
+        return;
+      }
+      const msg = errorMessages[rawCode] || errorMessages[rawCode.toLowerCase()] || errorMessages['INTERNAL_ERROR'];
+      setErrorMessage(l(msg.th, msg.en));
+    };
     try {
       const result = await api.verifyAndApproveSlip(slipFile, selectedPlan, refValid ? refCheck!.code : undefined);
       if (result.success) {
         await refreshUser();
-        navigate(`/subscription/checkout-complete?plan=${selectedPlan}&amount=${price}`);
+        navigate(`/subscription/checkout-complete?plan=${selectedPlan}&amount=${result.amountPaid ?? price}`);
       } else {
-        const rawCode = result.errorCode || '';
-        if (rawCode === 'INVALID_REFCODE') setRefCheck(null); // เคลียร์ ✅ ค้าง ไม่ให้ยอดลดโชว์ผิด
-        const msg = errorMessages[rawCode] || errorMessages[rawCode.toLowerCase()] || errorMessages['INTERNAL_ERROR'];
-        setErrorMessage(l(msg.th, msg.en));
+        showError(result.errorCode || '', result.accepted);
       }
     } catch (err: any) {
-      const rawCode = err?.errorCode || '';
-      if (rawCode === 'INVALID_REFCODE') setRefCheck(null);
-      const msg = errorMessages[rawCode] || errorMessages[rawCode.toLowerCase()] || errorMessages['INTERNAL_ERROR'];
-      setErrorMessage(l(msg.th, msg.en));
+      showError(err?.errorCode || '', err?.data?.accepted);
     } finally {
       setVerifying(false);
     }
@@ -372,6 +415,11 @@ const SubscriptionTransferV2 = () => {
                   <span>{l(`ภาษีมูลค่าเพิ่ม ${VAT_RATE}%`, `VAT ${VAT_RATE}%`)}</span>
                   <span>{vatDisplay}</span>
                 </div>
+                {priceChangedNotice && (
+                  <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-2 text-xs text-yellow-200 whitespace-pre-line">
+                    ⚠️ {priceChangedNotice}
+                  </div>
+                )}
                 <div className="flex items-center justify-between pt-1.5 border-t border-green-500/20">
                   <span className="font-semibold text-gray-200">{l('ยอดรวม', 'Total')}</span>
                   <div className="flex items-center gap-2">
@@ -451,6 +499,7 @@ const SubscriptionTransferV2 = () => {
                   size="sm"
                   onClick={() => {
                     setSlipFile(null);
+                    slipSelectedRef.current = false;
                     setPreviewUrl(null);
                     setErrorMessage(null);
                   }}

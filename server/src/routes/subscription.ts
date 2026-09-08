@@ -76,8 +76,11 @@ router.get('/pricing', (_req: Request, res: Response) => {
 router.get('/plans', async (_req: Request, res: Response) => {
   try {
     // Public endpoint — strip admin-only plans (e.g. "secret deal" Premium
-    // ฿18,900 that only admin can grant via upload-extend-slip).
+    // ฿18,900 that only admin can grant via upload-extend-slip) and admin-only
+    // fields (alt prices, pending price schedule — ไม่ประกาศราคาล่วงหน้า).
+    // no-store: ราคาเปลี่ยนตามเวลา (migration 064) — proxy/CDN ห้ามแคชราคาเก่า
     const plans = await plansService.getPublicActivePlans();
+    res.set('Cache-Control', 'no-store');
     res.json({ vatRate: VAT_RATE, plans });
   } catch (error: any) {
     console.error('Get plans error:', error);
@@ -447,10 +450,14 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
     }
 
     // 3d. Amount check (tolerance ฿0.01 — avoid float-equality fragility)
+    // ราคาอาจเปลี่ยนตามเวลา (schedule 064) และไม่มีช่วงรับราคาเก่า → ส่ง `accepted`
+    // (ยอดที่รับได้ ณ ตอนนี้จากเซิร์ฟเวอร์) ให้ FE โชว์ แทนตัวเลขที่ค้างอยู่ในหน้าเว็บ
     if (Math.abs(thunderData.amountInSlip - expectedAmount) > 0.01) {
       return res.status(400).json({
-        error: `Amount mismatch: expected ฿${expectedAmount}, got ฿${thunderData.amountInSlip}`,
+        error: `ยอดในสลิป ฿${thunderData.amountInSlip} ไม่ตรงกับยอดที่ต้องโอน ฿${expectedAmount}`,
         errorCode: 'INVALID_AMOUNT',
+        accepted: [{ total: expectedAmount, label: 'current' }],
+        got: thunderData.amountInSlip,
       });
     }
 
@@ -607,6 +614,7 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
       success: true,
       expiresAt: newExpiry.toISOString(),
       plan,
+      amountPaid: expectedAmount,
       commissionCreated,
       commissionSkipReason,
       tierPromotion,

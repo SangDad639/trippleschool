@@ -1,5 +1,7 @@
 // Triple School API Client - Scheduler focused
 
+import type { PlanPriceSchedule } from '@/types/pricing';
+
 class ApiClient {
   private token: string | null = null;
   private _cachedApiUrl: string | null = null;
@@ -178,6 +180,9 @@ class ApiClient {
 
           const err = new Error(errorData.error || `HTTP ${response.status}`);
           (err as any).errorCode = errorData.errorCode;
+          // แนบ body ทั้งก้อนไว้ด้วย — บาง error มีข้อมูลประกอบที่หน้าเว็บต้องใช้ เช่น
+          // INVALID_AMOUNT/AMOUNT_NOT_ALLOWED ส่ง `accepted` (ยอดที่รับได้ ณ ตอนนี้จากเซิร์ฟเวอร์)
+          (err as any).data = errorData;
           throw withStatus(err);
         }
 
@@ -751,10 +756,14 @@ class ApiClient {
     success: boolean;
     expiresAt?: string;
     plan?: string;
+    /** ยอดรวม VAT ที่ระบบรับ (ราคา ณ ตอนตรวจ — ราคาเปลี่ยนตามเวลาได้) */
+    amountPaid?: number;
     commissionCreated?: boolean;
     transRef?: string;
     error?: string;
     errorCode?: string;
+    /** เมื่อ INVALID_AMOUNT — ยอดที่รับได้ตอนนี้ (thrown error ก็มีที่ err.data.accepted) */
+    accepted?: { total: number; label: string }[];
   }> {
     const formData = new FormData();
     formData.append('slip', file);
@@ -788,9 +797,8 @@ class ApiClient {
    * Public — list every active subscription plan (admin-managed via /admin/packages).
    * Order: display_order ASC, id ASC.
    *
-   * Note: admin_alt_prices and tier_id are returned to all clients but the
-   * Landing/Subscription pages only render the default subtotal+total. Admin
-   * UI is the only consumer that surfaces the alt-price list.
+   * ราคาเปลี่ยนตามเวลาได้ (ตั้งเวลาในหน้าแอดมิน) — server ส่ง Cache-Control: no-store
+   * และ *ไม่* ส่งราคาล่วงหน้า/ราคาพิเศษของแอดมินออกมา (มีเฉพาะใน getAdminPackages)
    */
   async getSubscriptionPlans(): Promise<{
     vatRate: number;
@@ -809,8 +817,6 @@ class ApiClient {
       display_order: number;
       description: string | null;
       features: string[];
-      admin_alt_prices: Array<{ label: string; label_th?: string; subtotal: number }>;
-      admin_alt_prices_computed: Array<{ label: string; label_th?: string; subtotal: number; vat: number; total: number }>;
       tier_id: number | null;
       admin_only: boolean;
     }>;
@@ -843,6 +849,10 @@ class ApiClient {
       admin_alt_prices_computed: Array<{ label: string; label_th?: string; subtotal: number; vat: number; total: number }>;
       tier_id: number | null;
       admin_only: boolean;
+      /** เวลาที่ราคาปัจจุบันเริ่มมีผล (จากการตั้งเวลา) — null = ไม่เคยตั้งเวลา */
+      price_effective_at: string | null;
+      /** รายการตั้งเวลาถัดไปที่รอมีผล — null = ไม่มี */
+      pending_schedule: { id: number; subtotal: number; vat: number; total: number; effective_at: string; note: string | null } | null;
     }>;
   }> {
     return this.request('/api/admin/packages');
@@ -850,11 +860,27 @@ class ApiClient {
   async createPackage(data: any) {
     return this.request('/api/admin/packages', { method: 'POST', body: JSON.stringify(data) });
   }
+  /** `data.expected_subtotal` (optional) = ราคาที่เห็นตอนเปิดฟอร์ม → server ตอบ 409 PRICE_CHANGED ถ้าราคาเปลี่ยนไปแล้ว */
   async updatePackage(id: number, data: any) {
     return this.request(`/api/admin/packages/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   }
   async deactivatePackage(id: number) {
     return this.request(`/api/admin/packages/${id}`, { method: 'DELETE' });
+  }
+
+  // ========== Admin: Scheduled price change (ตั้งเวลาเปลี่ยนราคา) ==========
+  /** Admin — ทุกรายการ (รอ / มีผลแล้ว / ถูกแทนที่ / ยกเลิก) ล่าสุดก่อน */
+  async getPriceSchedules(): Promise<{ schedules: PlanPriceSchedule[]; min_lead_ms: number }> {
+    return this.request('/api/admin/packages/price-schedules');
+  }
+  /** Super admin — ตั้งเวลาหลายแพ็กเกจในครั้งเดียว (ล้มข้อใดข้อหนึ่ง = ไม่สร้างเลย) */
+  async createPriceSchedules(body: { effective_at: string; note?: string | null; items: { plan_id: number; subtotal: number }[] }):
+    Promise<{ success: true; schedules: PlanPriceSchedule[] }> {
+    return this.request('/api/admin/packages/price-schedules', { method: 'POST', body: JSON.stringify(body) });
+  }
+  /** Super admin — ยกเลิกรายการที่ยังไม่มีผล */
+  async cancelPriceSchedule(sid: number): Promise<{ success: true; schedule: PlanPriceSchedule }> {
+    return this.request(`/api/admin/packages/price-schedules/${sid}`, { method: 'DELETE' });
   }
 
   // ========== Admin: Per-(user × plan) commission overrides ==========
@@ -1138,8 +1164,9 @@ class ApiClient {
       const error = await response.json().catch(() => ({}));
       // Preserve Thunder/server error code so callers can show specific
       // localized messages (DUPLICATE_SLIP, INVALID_AMOUNT, EXPIRED_SLIP, ...)
-      const err = new Error(error.error || 'Upload failed') as Error & { errorCode?: string };
+      const err = new Error(error.error || 'Upload failed') as Error & { errorCode?: string; data?: any };
       err.errorCode = error.errorCode;
+      err.data = error; // มี `accepted` (ยอดที่รับได้) เมื่อ INVALID_AMOUNT
       throw err;
     }
 

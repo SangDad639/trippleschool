@@ -7,7 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { api } from '@/lib/api';
 import { formatCurrency } from '@/lib/currency';
-import { PRICING, VAT_RATE } from '@/lib/pricing';
+import { PRICING } from '@/lib/pricing';
 import {
   Users, CheckCircle, Clock, AlertCircle,
   Calendar, Loader2, ArrowLeft, Shield,
@@ -430,6 +430,17 @@ const Admin = () => {
       .catch((err) => console.warn('[Admin] failed to load packages:', err));
   }, [user]);
 
+  // ยอดโอน (รวม VAT) ของแพ็กเกจ monthly/yearly *ตอนนี้* จากแผน live — ราคาเปลี่ยนตามเวลาได้
+  // (แอดมินตั้งเวลา) จึงห้ามใช้ PRICING hardcode ในทางเดินเงิน (log/ใบกำกับ/ฐานค่าคอม);
+  // PRICING เป็น fallback เฉพาะตอนโหลดแผนไม่ได้
+  const livePlanForDays = (days: number): AdminPlan | undefined =>
+    adminPlans.find((p) => p.slug === (days >= 365 ? 'yearly' : 'monthly')) ?? adminPlans.find((p) => p.days === days);
+  const liveTotalForDays = (days: number): number =>
+    livePlanForDays(days)?.total ?? (days >= 365 ? PRICING.yearly.total : PRICING.monthly.total);
+  /** ยอดที่รับได้ทั้งหมด (ราคาปัจจุบัน + ราคาพิเศษแอดมิน) สำหรับข้อความในหน้า */
+  const acceptedTotalsFor = (plan: AdminPlan | undefined, days: number): number[] =>
+    plan ? [plan.total, ...(plan.admin_alt_prices_computed?.map((a) => a.total) ?? [])] : [liveTotalForDays(days)];
+
   const handleOpenNotificationDialog = (notification?: AdminNotification) => {
     if (notification) {
       setEditingNotification(notification);
@@ -508,8 +519,8 @@ const Admin = () => {
       let newExpiry: string | null = null;
       if (target?.paymentSlipUrl) {
         const days = target.paymentSlipPlan === 'yearly' ? 365 : 30;
-        // VAT-inclusive total (matches what user transferred)
-        const amount = days === 365 ? String(PRICING.yearly.total) : String(PRICING.monthly.total);
+        // VAT-inclusive total ณ ตอนนี้ (BE ตรวจซ้ำ — ยอดเก่าหลังราคาเปลี่ยนจะโดน AMOUNT_NOT_ALLOWED)
+        const amount = String(liveTotalForDays(days));
         const ext: any = await api.extendUserSubscription(
           userId,
           days,
@@ -557,9 +568,11 @@ const Admin = () => {
   const handleExtend = (user: AdminUser, planOrDays: AdminPlan | 30 | 365) => {
     if (typeof planOrDays === 'number') {
       const days = planOrDays;
-      const defaultAmount = days === 365 ? String(PRICING.yearly.total) : String(PRICING.monthly.total);
+      // ถ้ามีแผน live ให้แนบไปเลย (dialog จะโชว์ยอดที่รับได้จากแผนจริง ไม่ใช่ค่า hardcode)
+      const live = livePlanForDays(days);
+      const defaultAmount = String(live?.total ?? liveTotalForDays(days));
       setExtendForm({ amount: defaultAmount, bypassCode: '', slipFile: null, slipPreview: '' });
-      setExtendDialog({ user, days });
+      setExtendDialog({ user, days, plan: live });
       return;
     }
     const plan = planOrDays;
@@ -598,10 +611,8 @@ const Admin = () => {
 
       // Default amount for the slip-upload step. Prefer the dynamic plan
       // total (so Premium ฿18,900 / future packages work); fall back to the
-      // hardcoded monthly/yearly PRICING for back-compat.
-      const defaultAmount = plan
-        ? String(plan.total)
-        : days === 365 ? String(PRICING.yearly.total) : String(PRICING.monthly.total);
+      // live monthly/yearly plan, then hardcoded PRICING only if plans failed to load.
+      const defaultAmount = plan ? String(plan.total) : String(liveTotalForDays(days));
 
       // Path 1 — slip provided: upload + Thunder-verify (bank, account, amount, age, no dup).
       if (slipFile) {
@@ -645,13 +656,17 @@ const Admin = () => {
     } catch (error: any) {
       console.error('[Admin Extend] Error:', error);
       const code = error?.errorCode as string | undefined;
-      // Yearly accepts ฿4,269.30 (full) or ฿2,996 (admin promo: 2,800 + VAT). Monthly fixed at ฿642.
-      const yearlyPromoTotal = +(2800 * (1 + VAT_RATE / 100)).toFixed(2);
-      const expectedAmt =
-        days >= 365
-          ? `฿${PRICING.yearly.total.toLocaleString()} / ฿${yearlyPromoTotal.toLocaleString()}`
-          : `฿${PRICING.monthly.total.toLocaleString()}`;
+      // ยอดที่รับได้: เอาจาก body ของ error ก่อน (server รู้ราคา ณ ตอนนี้ — ราคาเปลี่ยนตามเวลาได้)
+      // แล้วค่อย fallback แผน live ที่โหลดไว้
+      const serverAccepted = (error?.data?.accepted as { total: number }[] | undefined)?.map((a) => Number(a.total));
+      const expectedAmt = (serverAccepted?.length ? serverAccepted : acceptedTotalsFor(plan ?? livePlanForDays(days), days))
+        .map((t) => `฿${t.toLocaleString()}`)
+        .join(' / ');
       const codeMessages: Record<string, { th: string; en: string }> = {
+        AMOUNT_NOT_ALLOWED: {
+          th: `ยอดที่ส่งไม่ตรงราคาที่รับได้ตอนนี้ (${expectedAmt}) — ราคาอาจเพิ่งเปลี่ยน กรุณาโหลดหน้าใหม่แล้วลองอีกครั้ง`,
+          en: `The amount does not match the currently accepted price (${expectedAmt}) — the price may have just changed; reload and try again.`,
+        },
         DUPLICATE_SLIP: {
           th: 'สลิปนี้เคยถูกใช้ยืนยันแล้ว ไม่สามารถใช้ซ้ำได้',
           en: 'This slip has already been used for verification.',
@@ -1109,8 +1124,8 @@ const Admin = () => {
                         <div className="flex-1">
                           <p className="text-sm font-medium text-blue-400">
                             {u.paymentSlipPlan === 'yearly'
-                              ? `฿${PRICING.yearly.total.toLocaleString()} (Yearly)`
-                              : `฿${PRICING.monthly.total.toLocaleString()} (Monthly)`}
+                              ? `฿${liveTotalForDays(365).toLocaleString()} (Yearly)`
+                              : `฿${liveTotalForDays(30).toLocaleString()} (Monthly)`}
                           </p>
                           {u.paymentSlipUploadedAt && (
                             <p className="text-xs text-muted-foreground">
@@ -2091,7 +2106,6 @@ const Admin = () => {
                   // Fall back to the legacy monthly/yearly labels when called
                   // from the approval auto-extend path which doesn't pass a plan.
                   const plan = extendDialog.plan;
-                  const yearlyPromoTotal = +(2800 * (1 + VAT_RATE / 100)).toFixed(2);
                   if (plan) {
                     const planLabel = language === 'th' ? (plan.name_th || plan.name) : plan.name;
                     // Build a "accepted prices" hint from the plan's admin_alt_prices
@@ -2113,19 +2127,19 @@ const Admin = () => {
                       </>
                     );
                   }
-                  // Legacy fallback (no plan) — keep the original monthly/yearly UI.
-                  const yearlyLabel = `฿${PRICING.yearly.total.toLocaleString()} หรือ ฿${yearlyPromoTotal.toLocaleString()}`;
-                  const monthlyLabel = `฿${PRICING.monthly.total.toLocaleString()}`;
+                  // Legacy fallback (no plan loaded) — ยอดจากแผน live ถ้ามี ไม่งั้น PRICING
+                  const legacyTotals = acceptedTotalsFor(livePlanForDays(extendDialog.days), extendDialog.days)
+                    .map((t) => `฿${t.toLocaleString()}`);
                   return (
                     <>
                       <p className="text-sm text-[#FFB300] mt-1">
-                        +{extendDialog.days} วัน ({extendDialog.days === 365 ? 'Yearly' : 'Monthly'}) — {extendDialog.days === 365 ? yearlyLabel : monthlyLabel}
+                        +{extendDialog.days} วัน ({extendDialog.days === 365 ? 'Yearly' : 'Monthly'}) — {legacyTotals.join(language === 'th' ? ' หรือ ' : ' or ')}
                       </p>
-                      {extendDialog.days === 365 && (
+                      {legacyTotals.length > 1 && (
                         <p className="text-xs text-gray-500 mt-1">
                           {language === 'en'
-                            ? `Yearly accepts ฿${PRICING.yearly.total.toLocaleString()} (full) or ฿${yearlyPromoTotal.toLocaleString()} (admin promo) — VAT-inclusive`
-                            : `แพ็กเกจรายปีรับชำระ ฿${PRICING.yearly.total.toLocaleString()} หรือ ฿${yearlyPromoTotal.toLocaleString()} (โปรโมชั่น) — รวมภาษีมูลค่าเพิ่มแล้ว`}
+                            ? `Accepts ${legacyTotals.join(' or ')} — VAT-inclusive`
+                            : `รับชำระ ${legacyTotals.join(' หรือ ')} — รวมภาษีมูลค่าเพิ่มแล้ว`}
                         </p>
                       )}
                     </>

@@ -5,15 +5,34 @@ import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { Package, Plus, Pencil, Trash2, Loader2, Eye, EyeOff, X } from 'lucide-react';
+import { Package, Plus, Pencil, Trash2, Loader2, Eye, EyeOff, X, CalendarClock, History } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
-import type { SubscriptionPlan, PackageEditInput, AdminAltPrice } from '@/types/pricing';
+import type { SubscriptionPlan, PackageEditInput, AdminAltPrice, PlanPriceSchedule } from '@/types/pricing';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface TierRow { id: number; name: string; name_th?: string; commission_percent: number; is_active: boolean; }
 interface AltRow { label: string; label_th: string; subtotal: string; } // FE form shape (strings so empty != 0)
+
+/* ---------- ตั้งเวลาเปลี่ยนราคา: helpers เวลาไทย (ไทยไม่มี DST → offset +07:00 ตายตัว) ---------- */
+const BKK_OFFSET_MS = 7 * 60 * 60 * 1000;
+/** Date → ค่าของ <input type="datetime-local"> ในเวลาไทย (YYYY-MM-DDTHH:mm) */
+const toBangkokLocal = (d: Date) => new Date(d.getTime() + BKK_OFFSET_MS).toISOString().slice(0, 16);
+/** ค่าจาก datetime-local (เวลาไทย) → ISO UTC สำหรับส่ง server */
+const bangkokLocalToIso = (local: string) => new Date(`${local}:00+07:00`).toISOString();
+/** ค่าเริ่มต้นของฟอร์ม = เที่ยงคืนถัดไป (เวลาไทย) */
+const nextMidnightBangkok = () => {
+  const t = new Date(Date.now() + BKK_OFFSET_MS + 24 * 60 * 60 * 1000);
+  return `${t.toISOString().slice(0, 10)}T00:00`;
+};
+const fmtBkk = (iso: string, withYear = true) =>
+  new Date(iso).toLocaleString('th-TH', {
+    timeZone: 'Asia/Bangkok',
+    day: 'numeric', month: 'short', ...(withYear ? { year: 'numeric' } : {}),
+    hour: '2-digit', minute: '2-digit',
+  });
+const fmtMoney = (n: number) => n.toLocaleString('th-TH', { maximumFractionDigits: 2 });
 
 /**
  * Admin tab for managing subscription packages (subscription_plans table).
@@ -69,6 +88,23 @@ export default function AdminPackagesPanel() {
   const [saving, setSaving] = useState(false);
   const [commissionError, setCommissionError] = useState('');
 
+  // ---- ตั้งเวลาเปลี่ยนราคา (docs/PLAN-SCHEDULED-PRICE-CHANGE.md) ----
+  const [schedules, setSchedules] = useState<PlanPriceSchedule[]>([]);
+  const [schedSaving, setSchedSaving] = useState(false);
+  const [schedEff, setSchedEff] = useState<string>(nextMidnightBangkok);
+  const [schedNote, setSchedNote] = useState('');
+  /** plan_id → ราคาใหม่ (string ในฟอร์ม) — prefill ด้วยราคาปัจจุบัน ส่งเฉพาะแถวที่เปลี่ยน */
+  const [schedPrices, setSchedPrices] = useState<Record<number, string>>({});
+
+  const loadSchedules = async () => {
+    try {
+      const res = await api.getPriceSchedules();
+      setSchedules(res.schedules || []);
+    } catch (err) {
+      console.error('Load price schedules:', err);
+    }
+  };
+
   const load = async () => {
     setLoading(true);
     try {
@@ -76,9 +112,13 @@ export default function AdminPackagesPanel() {
       const [pkgsRes, tiersRes] = await Promise.all([
         api.getAdminPackages() as Promise<any>,
         api.getAdminTiersV2().catch(() => ({ tiers: [] })) as Promise<any>,
+        loadSchedules(),
       ]);
-      setPackages(pkgsRes.packages || []);
+      const pkgs: SubscriptionPlan[] = pkgsRes.packages || [];
+      setPackages(pkgs);
       setTiers(tiersRes.tiers || []);
+      // ฟอร์มตั้งเวลา prefill ราคาปัจจุบัน (ทับค่าเดิมทุกครั้งที่โหลด — ราคาอาจเพิ่งมีผล)
+      setSchedPrices(Object.fromEntries(pkgs.map((p) => [p.id, String(p.subtotal)])));
     } catch (err) {
       console.error('Load packages:', err);
       toast.error(l('โหลด packages ไม่สำเร็จ', 'Failed to load packages'));
@@ -87,6 +127,63 @@ export default function AdminPackagesPanel() {
     }
   };
   useEffect(() => { load(); }, []);
+
+  /** แพ็กเกจที่ตั้งเวลาได้ = สาธารณะ + เปิดใช้ (ราคาพิเศษ/admin-only ไม่เกี่ยวกับราคาหน้าเว็บ) */
+  const schedulablePlans = packages.filter((p) => p.is_active && !p.admin_only);
+  const schedChanges = schedulablePlans
+    .map((p) => ({ plan: p, subtotal: Number(schedPrices[p.id] ?? p.subtotal) }))
+    .filter((it) => Number.isFinite(it.subtotal) && it.subtotal >= 0 && Math.abs(it.subtotal - it.plan.subtotal) > 0.001);
+  const schedEffIso = schedEff ? bangkokLocalToIso(schedEff) : '';
+  const schedEffValid = !!schedEff && !Number.isNaN(new Date(schedEffIso).getTime());
+
+  const handleCreateSchedules = async () => {
+    if (!schedEffValid) return toast.error(l('กรุณาเลือกวัน-เวลาที่มีผล', 'Pick the effective date/time'));
+    if (new Date(schedEffIso).getTime() < Date.now() + 2 * 60 * 1000) {
+      return toast.error(l('เวลาที่มีผลต้องเป็นอนาคตอย่างน้อย 2 นาที', 'Effective time must be at least 2 minutes in the future'));
+    }
+    if (schedChanges.length === 0) {
+      return toast.warning(l('ยังไม่ได้เปลี่ยนราคาแพ็กเกจไหนเลย — แก้ตัวเลขในช่อง "ราคาใหม่" ก่อน', 'No package price changed — edit a "New price" first'));
+    }
+    setSchedSaving(true);
+    try {
+      await api.createPriceSchedules({
+        effective_at: schedEffIso,
+        note: schedNote.trim() || null,
+        items: schedChanges.map((it) => ({ plan_id: it.plan.id, subtotal: it.subtotal })),
+      });
+      const summary = schedChanges
+        .map((it) => `${isTh ? (it.plan.name_th || it.plan.name) : it.plan.name} ${fmtMoney(it.plan.subtotal)}→${fmtMoney(it.subtotal)}`)
+        .join(' · ');
+      toast.success(`⏰ ${fmtBkk(schedEffIso)} · ${summary}`, { duration: 8000 });
+      setSchedNote('');
+      await load();
+    } catch (err: any) {
+      const code = err?.errorCode as string | undefined;
+      const msg: Record<string, string> = {
+        PAST_EFFECTIVE_AT: l('เวลาที่มีผลต้องเป็นอนาคต (อย่างน้อย ~1 นาที)', 'Effective time must be in the future'),
+        NO_CHANGE: l('มีแพ็กเกจที่ราคาใหม่เท่ากับราคาปัจจุบัน', 'A package has the same price as now'),
+        SCHEDULE_EXISTS: l('มีรายการตั้งเวลา ณ เวลานี้อยู่แล้ว — ยกเลิกรายการเดิมก่อน', 'A schedule already exists at this time — cancel it first'),
+      };
+      toast.error(code && msg[code] ? `${msg[code]}${err?.message ? ` (${err.message})` : ''}` : (err?.message || l('ตั้งเวลาไม่สำเร็จ', 'Failed to schedule')));
+    } finally {
+      setSchedSaving(false);
+    }
+  };
+
+  const handleCancelSchedule = async (s: PlanPriceSchedule) => {
+    const planLabel = isTh ? (s.plan_name_th || s.plan_name) : s.plan_name;
+    if (!confirm(l(
+      `ยกเลิกการตั้งเวลา ${planLabel} → ฿${fmtMoney(s.subtotal)} (${fmtBkk(s.effective_at)}) ?`,
+      `Cancel schedule ${planLabel} → ฿${fmtMoney(s.subtotal)} (${fmtBkk(s.effective_at)})?`,
+    ))) return;
+    try {
+      await api.cancelPriceSchedule(s.id);
+      toast.success(l(`ยกเลิกแล้ว — ${planLabel} คงราคาเดิม`, `Cancelled — ${planLabel} keeps its current price`));
+      await load();
+    } catch (err: any) {
+      toast.error(err?.message || l('ยกเลิกไม่สำเร็จ', 'Cancel failed'));
+    }
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -173,6 +270,8 @@ export default function AdminPackagesPanel() {
       admin_only: form.admin_only,
     };
     if (creating) (payload as any).slug = form.slug.trim().toLowerCase();
+    // optimistic check: ราคาที่เห็นตอนเปิดฟอร์ม — ถ้าตั้งเวลามีผลไประหว่างเปิด dialog ค้าง server ตอบ 409
+    if (!creating && editing) payload.expected_subtotal = editing.subtotal;
 
     setSaving(true);
     try {
@@ -186,6 +285,15 @@ export default function AdminPackagesPanel() {
       closeDialog();
       load();
     } catch (err: any) {
+      if (err?.errorCode === 'PRICE_CHANGED') {
+        toast.error(l(
+          `ราคาของแพ็กเกจนี้เปลี่ยนไปแล้วระหว่างที่เปิดฟอร์ม (ตอนนี้ ฿${fmtMoney(Number(err?.data?.current_subtotal ?? 0))}) — โหลดข้อมูลใหม่ให้แล้ว กรุณาแก้อีกครั้ง`,
+          `This package's price changed while the form was open (now ฿${fmtMoney(Number(err?.data?.current_subtotal ?? 0))}) — reloaded, please edit again`,
+        ), { duration: 8000 });
+        closeDialog();
+        load();
+        return;
+      }
       toast.error(err?.message || l('บันทึกไม่สำเร็จ', 'Save failed'));
     } finally {
       setSaving(false);
@@ -225,6 +333,203 @@ export default function AdminPackagesPanel() {
         )}
       </div>
 
+      {/* ===== ตั้งเวลาเปลี่ยนราคา (super admin เขียน / admin อ่านอย่างเดียว) ===== */}
+      {!loading && schedulablePlans.length > 0 && (
+        <div className="rounded-xl border border-[#FFB300]/40 bg-[#FFB300]/5 p-4 space-y-3">
+          <div>
+            <h3 className="text-base font-semibold flex items-center gap-2">
+              <CalendarClock className="h-4 w-4 text-[#FFB300]" />
+              {l('⏰ ตั้งเวลาเปลี่ยนราคา', '⏰ Schedule a price change')}
+            </h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {l(
+                'ถึงเวลาที่ตั้ง ราคาบนเว็บจะเปลี่ยนเองเงียบๆ (ไม่มีแถบประกาศ) · ไม่มีช่วงรับราคาเก่า — หลังเวลานี้รับเฉพาะยอดใหม่ · ป้าย -50% และราคาขีดฆ่า ×2 คงเดิม',
+                'At the scheduled time the site price switches silently (no banner) · no grace period — only the new amount is accepted afterwards · the -50% badge stays as is',
+              )}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs text-muted-foreground">{l('วัน-เวลาที่มีผล (เวลาไทย)', 'Effective date/time (Thai time)')}</label>
+              <Input
+                type="datetime-local"
+                step={60}
+                min={toBangkokLocal(new Date(Date.now() + 2 * 60 * 1000))}
+                value={schedEff}
+                onChange={(e) => setSchedEff(e.target.value)}
+                disabled={!isSuperAdmin || schedSaving}
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">{l('ต้องเป็นอนาคตอย่างน้อย 2 นาที', 'Must be at least 2 minutes in the future')}</p>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">{l('หมายเหตุ (เห็นเฉพาะแอดมิน)', 'Note (admins only)')}</label>
+              <Input
+                value={schedNote}
+                onChange={(e) => setSchedNote(e.target.value)}
+                placeholder={l('เช่น ขึ้นราคารอบ ก.ย.', 'e.g. September price increase')}
+                disabled={!isSuperAdmin || schedSaving}
+              />
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/50">
+                <tr>
+                  <th className="p-2 text-left">{l('แพ็กเกจ (สาธารณะ)', 'Package (public)')}</th>
+                  <th className="p-2 text-right">{l('ราคาปัจจุบัน', 'Current')}<div className="text-[10px] font-normal text-muted-foreground">{l('ก่อน VAT', 'before VAT')}</div></th>
+                  <th className="p-2 text-right">{l('ราคาใหม่', 'New price')}<div className="text-[10px] font-normal text-muted-foreground">{l('ก่อน VAT · ตัวเลขเต็ม', 'before VAT · full number')}</div></th>
+                  <th className="p-2 text-right">{l('ยอดโอนใหม่', 'New total')}<div className="text-[10px] font-normal text-muted-foreground">{l('รวม VAT 7%', 'incl. VAT 7%')}</div></th>
+                  <th className="p-2 text-right">{l('เปลี่ยนแปลง', 'Change')}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedulablePlans.map((p) => {
+                  const np = Number(schedPrices[p.id] ?? p.subtotal);
+                  const valid = Number.isFinite(np) && np >= 0;
+                  const diff = valid ? +(np - p.subtotal).toFixed(2) : 0;
+                  const newTotal = valid ? +(np + +(np * VAT_RATE / 100).toFixed(2)).toFixed(2) : 0;
+                  return (
+                    <tr key={p.id} className="border-b last:border-0">
+                      <td className="p-2">
+                        <div className="font-medium">{p.name}</div>
+                        <div className="text-xs text-muted-foreground">{p.name_th ? `${p.name_th} · ` : ''}{p.days} {l('วัน', 'days')}</div>
+                      </td>
+                      <td className="p-2 text-right">
+                        ฿{fmtMoney(p.subtotal)}
+                        <div className="text-[10px] text-muted-foreground">{l('ยอดโอน', 'total')} ฿{fmtMoney(p.total)}</div>
+                      </td>
+                      <td className="p-2 text-right">
+                        <Input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={schedPrices[p.id] ?? String(p.subtotal)}
+                          onChange={(e) => setSchedPrices({ ...schedPrices, [p.id]: e.target.value })}
+                          disabled={!isSuperAdmin || schedSaving}
+                          className="w-28 ml-auto text-right font-semibold"
+                        />
+                      </td>
+                      <td className="p-2 text-right">
+                        <span className="line-through text-muted-foreground text-xs mr-1">฿{fmtMoney(p.total)}</span>
+                        <span className="font-semibold text-[#FFB300]">฿{fmtMoney(newTotal)}</span>
+                      </td>
+                      <td className={`p-2 text-right font-semibold ${diff > 0 ? 'text-green-400' : diff < 0 ? 'text-red-400' : 'text-muted-foreground font-normal'}`}>
+                        {!valid ? '—' : diff === 0 ? l('ไม่เปลี่ยน', 'unchanged') : `${diff > 0 ? '+' : '−'}${fmtMoney(Math.abs(diff))}`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {schedChanges.length > 0 && schedEffValid ? (
+            <div className="text-xs rounded-lg border border-[#FFB300]/30 bg-[#FFB300]/10 p-2">
+              📅 <strong className="text-[#FFB300]">{fmtBkk(schedEffIso)}</strong>
+              {' · '}
+              {schedChanges.map((it) => `${isTh ? (it.plan.name_th || it.plan.name) : it.plan.name} ฿${fmtMoney(it.plan.subtotal)} → ฿${fmtMoney(it.subtotal)}`).join(' · ')}
+              <div className="text-muted-foreground mt-1">
+                {l(`ก่อน ${fmtBkk(schedEffIso, false)} รับยอดเดิม · ตั้งแต่เวลานั้นรับเฉพาะยอดใหม่ (สลิปยอดเดิมจะไม่ผ่าน)`,
+                   `Before ${fmtBkk(schedEffIso, false)} the old amount is accepted · from then on only the new amount (old-amount slips are rejected)`)}
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground rounded-lg border border-border bg-muted/30 p-2">
+              {l('ยังไม่ได้เปลี่ยนราคาแพ็กเกจไหน — แก้ตัวเลขในช่อง "ราคาใหม่"', 'No package changed yet — edit a "New price"')}
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              onClick={handleCreateSchedules}
+              disabled={!isSuperAdmin || schedSaving || schedChanges.length === 0 || !schedEffValid}
+              className="bg-[#FFB300] hover:bg-[#FF9D00] text-black"
+            >
+              {schedSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <CalendarClock className="h-4 w-4 mr-1" />}
+              {l('ตั้งเวลา', 'Schedule')}
+            </Button>
+            {!isSuperAdmin && (
+              <span className="text-xs text-pink-400">{l('super admin เท่านั้นที่ตั้งเวลาได้ — คุณดูได้อย่างเดียว', 'Super admin only — read-only for you')}</span>
+            )}
+          </div>
+
+          {/* รายการที่ตั้งไว้ */}
+          <div className="pt-2 border-t border-[#FFB300]/20">
+            <h4 className="text-sm font-medium flex items-center gap-2 mb-1">
+              <History className="h-4 w-4 text-muted-foreground" />
+              {l('รายการที่ตั้งไว้', 'Scheduled changes')}
+              <span className="text-[10px] text-muted-foreground font-normal">
+                {l('รอมีผล = ยกเลิกได้ · มีผลแล้ว = ประวัติ (ตั้งรอบใหม่แทน)', 'pending = cancellable · applied = history (schedule a new one instead)')}
+              </span>
+            </h4>
+            {schedules.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic py-2">{l('ยังไม่มีรายการตั้งเวลา', 'No schedules yet')}</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="border-b bg-muted/50">
+                    <tr>
+                      <th className="p-2 text-left">{l('สถานะ', 'Status')}</th>
+                      <th className="p-2 text-left">{l('แพ็กเกจ', 'Package')}</th>
+                      <th className="p-2 text-right">{l('ราคา (ก่อน VAT)', 'Price (before VAT)')}</th>
+                      <th className="p-2 text-right">{l('ยอดโอน', 'Total')}</th>
+                      <th className="p-2 text-left">{l('มีผล (เวลาไทย)', 'Effective (Thai time)')}</th>
+                      <th className="p-2 text-left">{l('หมายเหตุ', 'Note')}</th>
+                      <th className="p-2 text-left">{l('ผู้ตั้ง', 'By')}</th>
+                      {isSuperAdmin && <th className="p-2 text-right"></th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {schedules.map((s) => {
+                      const pill = {
+                        pending: { cls: 'bg-yellow-500/15 text-yellow-400', txt: l('⏳ รอมีผล', '⏳ Pending') },
+                        applied: { cls: 'bg-green-500/15 text-green-400', txt: l('✅ มีผลแล้ว', '✅ Applied') },
+                        superseded: { cls: 'bg-purple-500/15 text-purple-400', txt: l('ถูกแทนที่', 'Superseded') },
+                        cancelled: { cls: 'bg-muted text-muted-foreground line-through', txt: l('ยกเลิก', 'Cancelled') },
+                      }[s.status];
+                      return (
+                        <tr key={s.id} className={`border-b last:border-0 ${s.status === 'cancelled' ? 'opacity-50' : ''}`}>
+                          <td className="p-2"><span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${pill.cls}`}>{pill.txt}</span></td>
+                          <td className="p-2">
+                            <div className="font-medium">{s.plan_name}</div>
+                            {s.plan_name_th && isTh && <div className="text-[10px] text-muted-foreground">{s.plan_name_th}</div>}
+                          </td>
+                          <td className="p-2 text-right">
+                            {s.previous_subtotal != null && <span className="line-through text-muted-foreground mr-1">฿{fmtMoney(s.previous_subtotal)}</span>}
+                            ฿{fmtMoney(s.subtotal)}
+                          </td>
+                          <td className="p-2 text-right font-semibold text-[#FFB300]">฿{fmtMoney(s.total)}</td>
+                          <td className="p-2 whitespace-nowrap">{fmtBkk(s.effective_at)}</td>
+                          <td className="p-2 text-muted-foreground">{s.note || '—'}</td>
+                          <td className="p-2 text-muted-foreground">
+                            {s.created_by_email || '—'}
+                            <div className="text-[10px]">{fmtBkk(s.created_at, false)}</div>
+                            {s.status === 'cancelled' && s.cancelled_by_email && (
+                              <div className="text-[10px]">{l('ยกเลิกโดย', 'cancelled by')} {s.cancelled_by_email}</div>
+                            )}
+                          </td>
+                          {isSuperAdmin && (
+                            <td className="p-2 text-right">
+                              {s.status === 'pending' && (
+                                <Button variant="ghost" size="sm" onClick={() => handleCancelSchedule(s)} className="h-7 text-xs text-red-400 hover:text-red-500">
+                                  <X className="h-3 w-3 mr-1" /> {l('ยกเลิก', 'Cancel')}
+                                </Button>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-[#FFB300]" /></div>
       ) : packages.length === 0 ? (
@@ -254,7 +559,14 @@ export default function AdminPackagesPanel() {
                     <div className="font-medium">{p.name}</div>
                     {p.name_th && isTh && <div className="text-xs text-muted-foreground">{p.name_th}</div>}
                   </td>
-                  <td className="p-2 text-right">฿{p.subtotal.toLocaleString()}</td>
+                  <td className="p-2 text-right">
+                    ฿{p.subtotal.toLocaleString()}
+                    {p.pending_schedule && (
+                      <div className="text-[11px] text-yellow-400 whitespace-nowrap" title={l('ตั้งเวลาเปลี่ยนราคาไว้', 'Scheduled price change')}>
+                        ⏰ ฿{fmtMoney(p.pending_schedule.subtotal)} · {fmtBkk(p.pending_schedule.effective_at, false)}
+                      </div>
+                    )}
+                  </td>
                   <td className="p-2 text-right text-muted-foreground">฿{p.vat.toLocaleString()}</td>
                   <td className="p-2 text-right font-semibold">฿{p.total.toLocaleString()}</td>
                   <td className="p-2 text-right">{p.days}</td>
