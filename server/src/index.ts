@@ -194,8 +194,11 @@ if (process.env.RUN_MIGRATIONS !== 'false') {
   }
 }
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  // อัปโหลดไฟล์ Ebook ได้ถึง 1 GB — ค่าเริ่มต้นของ Node (5 นาที) ตัดคำขอที่ยังส่ง body อยู่บนเน็ตช้า
+  // ปิดเฉพาะ requestTimeout; headersTimeout ยังกัน slowloris เหมือนเดิม
+  server.requestTimeout = 0;
 
   // Initialize database
   initializeDatabase();

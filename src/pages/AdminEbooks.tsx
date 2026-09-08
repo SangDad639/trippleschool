@@ -193,17 +193,26 @@ const AdminEbooks = () => {
     }
   };
 
+  const fmtMb = (bytes: number) => `${(bytes / 1048576).toFixed(bytes >= 100 * 1048576 ? 0 : 1)} MB`;
+
+  // ไฟล์ Ebook ใช้ endpoint ของตัวเอง (รับถึง 1 GB) — ไม่ผ่านตัวอัพเอกสารคอร์ส (50 MB)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    if (file.size > 1024 * 1048576) return toast.error('ไฟล์ต้องไม่เกิน 1 GB');
+    const toastId = toast.loading(`กำลังอัปโหลด ${file.name} (${fmtMb(file.size)})… ไฟล์ใหญ่อาจใช้เวลาหลายนาที`);
     try {
       setUploadingFile(true);
-      const { url, name } = await api.uploadCourseMaterial(file);
-      set({ file_url: url, file_name: name });
-      toast.success(`แนบไฟล์ ${name} แล้ว`);
+      const r = await api.uploadEbookFile(file);
+      // เติมจำนวนหน้าจากไฟล์จริง (แอดมินพิมพ์ผิดคือต้นตอ "ตัดตัวอย่างไม่ได้" ที่เจอมา)
+      set({ file_url: r.url, file_name: r.name, ...(r.pages ? { pages: String(r.pages) } : {}) });
+      toast.success(`แนบไฟล์ ${r.name} แล้ว (${fmtMb(r.size)}${r.pages ? ` · ${r.pages} หน้า` : ''})`, { id: toastId });
+      if (!r.autocut_ok) {
+        toast.warning(`ไฟล์ใหญ่กว่า ${r.autocut_max_mb} MB — ระบบจะไม่ตัดตัวอย่างอัตโนมัติ ต้องอัพ "ไฟล์ตัวอย่างอัพเอง" ถ้าอยากให้อ่านตัวอย่างฟรี`, { duration: 10000 });
+      }
     } catch (err: any) {
-      toast.error(err?.message || 'อัปโหลดไม่สำเร็จ');
+      toast.error(err?.message || 'อัปโหลดไม่สำเร็จ', { id: toastId });
     } finally {
       setUploadingFile(false);
     }
@@ -213,13 +222,15 @@ const AdminEbooks = () => {
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+    if (file.size > 1024 * 1048576) return toast.error('ไฟล์ต้องไม่เกิน 1 GB');
+    const toastId = toast.loading(`กำลังอัปโหลดไฟล์ตัวอย่าง ${file.name} (${fmtMb(file.size)})…`);
     try {
       setUploadingPreview(true);
-      const { url, name } = await api.uploadCourseMaterial(file);
-      set({ preview_file_url: url, preview_file_name: name });
-      toast.success(`แนบไฟล์ตัวอย่าง ${name} แล้ว`);
+      const r = await api.uploadEbookFile(file);
+      set({ preview_file_url: r.url, preview_file_name: r.name });
+      toast.success(`แนบไฟล์ตัวอย่าง ${r.name} แล้ว (${fmtMb(r.size)}${r.pages ? ` · ${r.pages} หน้า` : ''})`, { id: toastId });
     } catch (err: any) {
-      toast.error(err?.message || 'อัปโหลดไม่สำเร็จ');
+      toast.error(err?.message || 'อัปโหลดไม่สำเร็จ', { id: toastId });
     } finally {
       setUploadingPreview(false);
     }
@@ -450,8 +461,11 @@ const AdminEbooks = () => {
               <div className="mt-1.5 space-y-2">
                 <Button type="button" variant="outline" size="sm" disabled={uploadingFile} onClick={() => fileInputRef.current?.click()}>
                   {uploadingFile ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Upload className="h-4 w-4 mr-1.5" />}
-                  อัปโหลดไฟล์ PDF
+                  {uploadingFile ? 'กำลังอัปโหลด…' : 'อัปโหลดไฟล์ PDF'}
                 </Button>
+                <p className="text-xs text-gray-500">
+                  PDF ไม่เกิน 1 GB · ไฟล์ใหญ่กว่า 300 MB ระบบจะไม่ตัดตัวอย่างอัตโนมัติ (ต้องอัพไฟล์ตัวอย่างเอง) · แนะนำบีบอัดรูปในเล่มก่อนอัพ ผู้อ่านจะได้โหลดไว
+                </p>
                 {form.file_url && (
                   <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">
                     <CheckCircle2 className="h-4 w-4 flex-shrink-0" />

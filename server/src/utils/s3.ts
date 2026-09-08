@@ -1,5 +1,6 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { createReadStream } from 'fs';
 
 // Lazy initialize S3 client to ensure env vars are loaded
 let s3Client: S3Client | null = null;
@@ -56,6 +57,37 @@ export async function uploadFile(
     // (preview <iframe>/<img>) rather than download.
     ...(opts.contentDisposition ? { ContentDisposition: opts.contentDisposition } : {}),
   }));
+}
+
+/**
+ * อัปโหลดจากไฟล์บนดิสก์แบบสตรีม (ไฟล์ใหญ่ระดับ GB — ไม่โหลดทั้งก้อนเข้า RAM)
+ * ต้องส่ง size เพราะ PutObject ต้องรู้ ContentLength ล่วงหน้า (S3/Tigris รับ PUT เดี่ยวได้ถึง 5 GB)
+ */
+export async function uploadFileFromPath(
+  filePath: string,
+  size: number,
+  key: string,
+  contentType: string,
+  opts: { contentDisposition?: 'inline' | 'attachment' } = {},
+): Promise<void> {
+  await getS3Client().send(new PutObjectCommand({
+    Bucket: getBucketName(),
+    Key: key,
+    Body: createReadStream(filePath),
+    ContentLength: size,
+    ContentType: contentType,
+    ...(opts.contentDisposition ? { ContentDisposition: opts.contentDisposition } : {}),
+  }));
+}
+
+/** ขนาด object (bytes) โดยไม่ต้องโหลดตัวไฟล์ — null ถ้าไม่มี */
+export async function getFileSize(key: string): Promise<number | null> {
+  try {
+    const head = await getS3Client().send(new HeadObjectCommand({ Bucket: getBucketName(), Key: key }));
+    return typeof head.ContentLength === 'number' ? head.ContentLength : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

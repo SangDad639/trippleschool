@@ -3125,6 +3125,15 @@ class ApiClient {
     formData.append('file', file);
     return this.request('/api/courses/upload-material', { method: 'POST', body: formData });
   }
+  /**
+   * ไฟล์ PDF ของ Ebook (เล่มเต็ม/ไฟล์ตัวอย่าง) — endpoint แยกจากเอกสารคอร์ส: รับถึง 1 GB, สตรีมขึ้น S3
+   * ไม่ retry (ไฟล์ใหญ่ซ้ำ = แย่กว่า) และให้เวลาถึง 60 นาที · `pages` = จำนวนหน้าจริงที่ server นับได้ (null ถ้าไฟล์ใหญ่เกินเพดาน)
+   */
+  async uploadEbookFile(file: File): Promise<{ url: string; name: string; size: number; pages: number | null; autocut_ok: boolean; autocut_max_mb: number }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request('/api/ebooks/upload-file', { method: 'POST', body: formData }, 0, 60 * 60 * 1000);
+  }
   async uploadCourseHtml(file: File): Promise<{ url: string; name: string }> {
     const formData = new FormData();
     formData.append('file', file);

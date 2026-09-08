@@ -13,12 +13,15 @@
  * this router only stores the returned pointer and re-serves it itself.
  * ตัวอย่างอ่านฟรี (N หน้าแรก) เสิร์ฟสาธารณะที่ /:slug/preview-file — ไฟล์ถูกตัดจริงด้วย pdf-lib
  */
-import { Router, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import multer from 'multer';
+import os from 'os';
+import fs from 'fs';
 import pool from '../db.js';
 import { authenticate, optionalAuth, optionalAuthQueryOrHeader, requireAdmin, JWT_SECRET, AuthRequest } from '../middleware/auth.js';
 import { getMembership } from '../services/membership.js';
-import { getFile, uploadFile } from '../utils/s3.js';
+import { getFile, uploadFile, uploadFileFromPath, getFileSize } from '../utils/s3.js';
 import { makePreviewPdf, countPdfPages } from '../utils/pdfPreview.js';
 import { sanitizeCourseSamples } from './courses.js';
 
@@ -165,15 +168,31 @@ function publicRow(row: any, entitled: boolean, canDownload: boolean) {
   };
 }
 
+// ตัดตัวอย่างอัตโนมัติ/นับหน้า ต้องโหลดไฟล์เต็มเข้า RAM (pdf-lib) — ใหญ่กว่าเพดานนี้ไม่ทำ
+// ให้แอดมินอัพไฟล์ตัวอย่างเองแทน (ไฟล์ Ebook อัพได้ถึง 1 GB แต่ Railway มี RAM จำกัด)
+const EBOOK_PREVIEW_AUTOCUT_MAX_BYTES = (Number(process.env.EBOOK_PREVIEW_AUTOCUT_MAX_MB) || 300) * 1024 * 1024;
+const MB = 1024 * 1024;
+
+/** ขนาดไฟล์ใน S3 เกินเพดานตัดอัตโนมัติไหม (ไม่รู้ขนาด = ถือว่าไม่เกิน) */
+async function tooBigToAutocut(key: string): Promise<{ tooBig: boolean; size: number | null }> {
+  const size = await getFileSize(key);
+  return { tooBig: size != null && size > EBOOK_PREVIEW_AUTOCUT_MAX_BYTES, size };
+}
+
 /**
  * ไฟล์ตัวอย่างที่แอดมินอัพเองต้องมีหน้าน้อยกว่าไฟล์เต็ม (กันเผลอเลือกไฟล์เต็มเป็นตัวอย่าง
- * แล้วแจกทั้งเล่มผ่าน endpoint สาธารณะ) — คืนข้อความ error หรือ null; นับหน้าไม่ได้ = ไม่บล็อก
+ * แล้วแจกทั้งเล่มผ่าน endpoint สาธารณะ) — คืนข้อความ error หรือ null; นับหน้าไม่ได้/ไฟล์ใหญ่เกินเพดาน = ไม่บล็อก
  */
 async function previewOverrideError(previewFileUrl: string | null, fullFileUrl: string | null): Promise<string | null> {
   const pKey = materialsKey(previewFileUrl);
   const fKey = materialsKey(fullFileUrl);
   if (!pKey || !fKey) return null;
   try {
+    const [p, f] = await Promise.all([tooBigToAutocut(pKey), tooBigToAutocut(fKey)]);
+    if (p.tooBig || f.tooBig) {
+      console.warn(`[ebooks] skip override page check — file too big to load (preview ${p.size}, full ${f.size})`);
+      return null;
+    }
     const [pc, fc] = await Promise.all([readS3(pKey).then(countPdfPages), readS3(fKey).then(countPdfPages)]);
     if (pc == null || fc == null) return null;
     if (pc >= fc) return `ไฟล์ตัวอย่างมี ${pc} หน้า ต้องน้อยกว่าไฟล์เต็ม (${fc} หน้า)`;
@@ -183,6 +202,86 @@ async function previewOverrideError(previewFileUrl: string | null, fullFileUrl: 
     return null;
   }
 }
+
+/**
+ * จำนวนหน้าตัวอย่างต้องน้อยกว่าหน้าจริงในไฟล์ (ต้นตอเคส 8 ก.ย.: แอดมินพิมพ์ 40 หน้า แต่ไฟล์ที่อัพมีหน้าเดียว
+ * → ตัดตัวอย่างไม่ได้เงียบๆ) — เช็คเฉพาะไฟล์ที่ไม่เกินเพดานโหลด; คืนข้อความ error หรือ null
+ */
+async function realPagesError(fileUrl: string | null, previewPages: number): Promise<string | null> {
+  const key = materialsKey(fileUrl);
+  if (!key || previewPages <= 0) return null;
+  try {
+    const { tooBig } = await tooBigToAutocut(key);
+    if (tooBig) return null;
+    const real = await countPdfPages(await readS3(key));
+    if (real == null) return null;
+    if (previewPages >= real) {
+      return real <= 1
+        ? `ไฟล์ Ebook ที่อัพไว้มีแค่ ${real} หน้า — ตัดตัวอย่าง ${previewPages} หน้าไม่ได้ (อัพไฟล์เล่มเต็มก่อน หรืออัพไฟล์ตัวอย่างเอง)`
+        : `ไฟล์ Ebook ที่อัพไว้มี ${real} หน้า — จำนวนหน้าตัวอย่าง (${previewPages}) ต้องน้อยกว่านั้น`;
+    }
+    return null;
+  } catch (e) {
+    console.error('[ebooks] realPagesError check failed:', e);
+    return null;
+  }
+}
+
+// ============ Admin: อัปโหลดไฟล์ Ebook (PDF) — เพดาน 1 GB, ไม่ค้าง RAM ============
+// แยกจาก /api/courses/upload-material (50 MB, memoryStorage) ตามที่ user เคาะ 8 ก.ย.: แก้เฉพาะฝั่ง Ebook
+// ไฟล์ลง tmp ก่อนแล้วสตรีมขึ้น S3 · key อยู่ใต้ course-materials/ebooks/ ให้ proxy /api/courses/materials/* เดิมเสิร์ฟได้
+const EBOOK_FILE_MAX_MB = 1024;
+const ebookFileUpload = multer({
+  storage: multer.diskStorage({ destination: os.tmpdir() }),
+  limits: { fileSize: EBOOK_FILE_MAX_MB * MB },
+  fileFilter: (_req, file, cb) => {
+    if (/\.pdf$/i.test(file.originalname) || file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('รองรับเฉพาะไฟล์ PDF'));
+  },
+});
+// ห่อ .single() ให้ error ของ multer (ใหญ่เกิน/ชนิดผิด) ตอบเป็น JSON — client โชว์เหตุผลจริงได้
+function uploadEbookSingle(field: string) {
+  return (req: Request, res: Response, next: NextFunction) =>
+    ebookFileUpload.single(field)(req, res, (err: any) => {
+      if (err) {
+        const msg = err?.code === 'LIMIT_FILE_SIZE' ? `ไฟล์ใหญ่เกิน ${EBOOK_FILE_MAX_MB / 1024} GB` : (err?.message || 'อัปโหลดไม่สำเร็จ');
+        return res.status(400).json({ error: msg });
+      }
+      next();
+    });
+}
+/** multer ให้ชื่อไฟล์เป็น latin1 — แปลงกลับเป็น UTF-8 (ชื่อไทย) */
+function decodeUploadName(name: string): string {
+  const utf8 = Buffer.from(name, 'latin1').toString('utf8');
+  return utf8.includes('�') ? name : utf8;
+}
+
+// NOTE: named routes must be registered before /:slug.
+router.post('/upload-file', authenticate, requireAdmin, uploadEbookSingle('file'), async (req: AuthRequest, res: Response) => {
+  const tmpPath = req.file?.path;
+  try {
+    if (!req.file || !tmpPath) return res.status(400).json({ error: 'No file uploaded' });
+    const rand = Math.random().toString(36).slice(2, 10);
+    const key = `course-materials/ebooks/${Date.now()}-${rand}.pdf`;
+    await uploadFileFromPath(tmpPath, req.file.size, key, 'application/pdf', { contentDisposition: 'attachment' });
+    const autocutOk = req.file.size <= EBOOK_PREVIEW_AUTOCUT_MAX_BYTES;
+    // นับหน้าจริงให้แอดมินเห็นทันที (เติมช่อง "จำนวนหน้า" + กันตั้งตัวอย่างเกินหน้าจริง)
+    const pages = autocutOk ? await countPdfPages(await fs.promises.readFile(tmpPath)) : null;
+    res.json({
+      url: `/api/courses/materials/${key}`,
+      name: decodeUploadName(req.file.originalname),
+      size: req.file.size,
+      pages,
+      autocut_ok: autocutOk,
+      autocut_max_mb: EBOOK_PREVIEW_AUTOCUT_MAX_BYTES / MB,
+    });
+  } catch (error) {
+    console.error('Error uploading ebook file:', error);
+    res.status(500).json({ error: 'อัปโหลดไฟล์ไม่สำเร็จ' });
+  } finally {
+    if (tmpPath) fs.promises.unlink(tmpPath).catch(() => { /* ไม่มีแล้ว */ });
+  }
+});
 
 /** จำนวนหน้าตัวอย่างต้องน้อยกว่าจำนวนหน้าทั้งเล่ม (เมื่อรู้ทั้งคู่) */
 function previewPagesError(previewPages: number, pages: number | null): string | null {
@@ -355,7 +454,13 @@ router.get('/:slug/preview-file', async (req, res: Response) => {
       }
     }
 
-    // ③ ตัดสดจากไฟล์เต็ม แล้วแคชลง S3 (ครั้งเดียวต่อการตั้งค่า)
+    // ③ ตัดสดจากไฟล์เต็ม แล้วแคชลง S3 (ครั้งเดียวต่อการตั้งค่า) — ไฟล์ใหญ่เกินเพดานไม่โหลดเข้า RAM
+    const { tooBig, size } = await tooBigToAutocut(fullKey);
+    if (tooBig) {
+      return res.status(404).json({
+        error: `ไฟล์เต็มใหญ่เกินกว่าจะตัดตัวอย่างอัตโนมัติ (${Math.round((size || 0) / MB)} MB > ${EBOOK_PREVIEW_AUTOCUT_MAX_BYTES / MB} MB) — อัพไฟล์ตัวอย่างเองในหน้าแอดมิน`,
+      });
+    }
     const out = await makePreviewPdf(await readS3(fullKey), previewPages);
     if (!out) {
       // ไฟล์เข้ารหัส/เสีย หรือทั้งเล่มสั้นกว่าจำนวนหน้าตัวอย่างจนตัดแล้วเท่ากับแจกทั้งเล่ม
@@ -414,7 +519,7 @@ router.post('/', authenticate, requireAdmin, async (req: AuthRequest, res: Respo
     const previewPages = sanitizePreviewPages(req.body.preview_pages);
     const previewFileUrl = typeof req.body.preview_file_url === 'string' && req.body.preview_file_url ? req.body.preview_file_url : null;
     // ตัวอย่างต้องสั้นกว่าเล่มเต็มเสมอ — endpoint ตัวอย่างเป็นสาธารณะ
-    const pagesErr = previewPagesError(previewPages, pages);
+    const pagesErr = previewPagesError(previewPages, pages) || (previewFileUrl ? null : await realPagesError(fileUrl, previewPages));
     if (pagesErr) return res.status(400).json({ error: pagesErr });
     const overrideErr = await previewOverrideError(previewFileUrl, fileUrl);
     if (overrideErr) return res.status(400).json({ error: overrideErr });
@@ -471,11 +576,16 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     const nextPreviewPages = req.body.preview_pages !== undefined ? sanitizePreviewPages(req.body.preview_pages) : Number(cur.preview_pages) || 0;
     const pagesErr = previewPagesError(nextPreviewPages, nextPages);
     if (pagesErr) return res.status(400).json({ error: pagesErr });
+    const nextPreviewFile = (req.body.preview_file_url !== undefined ? nullable(req.body.preview_file_url) : cur.preview_file_url) as string | null;
+    const nextFile = (file_url !== undefined ? nullable(file_url) : cur.file_url) as string | null;
     if (req.body.preview_file_url !== undefined || file_url !== undefined) {
-      const nextPreviewFile = (req.body.preview_file_url !== undefined ? nullable(req.body.preview_file_url) : cur.preview_file_url) as string | null;
-      const nextFile = (file_url !== undefined ? nullable(file_url) : cur.file_url) as string | null;
       const overrideErr = await previewOverrideError(nextPreviewFile, nextFile);
       if (overrideErr) return res.status(400).json({ error: overrideErr });
+    }
+    // ตัวอย่างตัดอัตโนมัติ (ไม่มีไฟล์ตัวอย่างเอง) ต้องสั้นกว่าหน้าจริงในไฟล์ — เช็คเมื่อไฟล์หรือจำนวนหน้าตัวอย่างเปลี่ยน
+    if (!nextPreviewFile && (req.body.preview_pages !== undefined || file_url !== undefined)) {
+      const realErr = await realPagesError(nextFile, nextPreviewPages);
+      if (realErr) return res.status(400).json({ error: realErr });
     }
     const sets: string[] = [];
     const params: any[] = [];
