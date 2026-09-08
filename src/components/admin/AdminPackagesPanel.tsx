@@ -3,9 +3,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
-import { Package, Plus, Pencil, Trash2, Loader2, Eye, EyeOff, X, CalendarClock, History } from 'lucide-react';
+import { Package, Plus, Pencil, Trash2, Loader2, Eye, EyeOff, X, CalendarClock, History, AlertTriangle, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import type { SubscriptionPlan, PackageEditInput, AdminAltPrice, PlanPriceSchedule } from '@/types/pricing';
@@ -170,20 +170,32 @@ export default function AdminPackagesPanel() {
     }
   };
 
-  const handleCancelSchedule = async (s: PlanPriceSchedule) => {
+  // ยกเลิกรายการตั้งเวลา — เปิด dialog ยืนยันของเราเอง (ไม่ใช้ window.confirm) โชว์รายละเอียดครบก่อนกด
+  const [cancelTarget, setCancelTarget] = useState<PlanPriceSchedule | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const handleCancelSchedule = (s: PlanPriceSchedule) => setCancelTarget(s);
+  const confirmCancelSchedule = async () => {
+    if (!cancelTarget) return;
+    const s = cancelTarget;
     const planLabel = isTh ? (s.plan_name_th || s.plan_name) : s.plan_name;
-    if (!confirm(l(
-      `ยกเลิกการตั้งเวลา ${planLabel} → ฿${fmtMoney(s.subtotal)} (${fmtBkk(s.effective_at)}) ?`,
-      `Cancel schedule ${planLabel} → ฿${fmtMoney(s.subtotal)} (${fmtBkk(s.effective_at)})?`,
-    ))) return;
+    setCancelling(true);
     try {
       await api.cancelPriceSchedule(s.id);
       toast.success(l(`ยกเลิกแล้ว — ${planLabel} คงราคาเดิม`, `Cancelled — ${planLabel} keeps its current price`));
+      setCancelTarget(null);
       await load();
     } catch (err: any) {
       toast.error(err?.message || l('ยกเลิกไม่สำเร็จ', 'Cancel failed'));
+      // ALREADY_APPLIED / ALREADY_CANCELLED = สถานะเปลี่ยนไปแล้วระหว่างเปิด dialog → ปิดแล้วโหลดใหม่
+      if (err?.errorCode === 'ALREADY_APPLIED' || err?.errorCode === 'ALREADY_CANCELLED') {
+        setCancelTarget(null);
+        await load();
+      }
+    } finally {
+      setCancelling(false);
     }
   };
+  const cancelTargetPlan = cancelTarget ? packages.find((p) => p.id === cancelTarget.plan_id) : undefined;
 
   const openCreate = () => {
     setEditing(null);
@@ -491,7 +503,7 @@ export default function AdminPackagesPanel() {
                       }[s.status];
                       return (
                         <tr key={s.id} className={`border-b last:border-0 ${s.status === 'cancelled' ? 'opacity-50' : ''}`}>
-                          <td className="p-2"><span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${pill.cls}`}>{pill.txt}</span></td>
+                          <td className="p-2"><span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold whitespace-nowrap ${pill.cls}`}>{pill.txt}</span></td>
                           <td className="p-2">
                             <div className="font-medium">{s.plan_name}</div>
                             {s.plan_name_th && isTh && <div className="text-[10px] text-muted-foreground">{s.plan_name_th}</div>}
@@ -951,6 +963,95 @@ export default function AdminPackagesPanel() {
               {l('บันทึก', 'Save')}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ===== ยืนยันยกเลิกรายการตั้งเวลา ===== */}
+      <Dialog open={!!cancelTarget} onOpenChange={(o) => { if (!o && !cancelling) setCancelTarget(null); }}>
+        <DialogContent className="max-w-md p-0 gap-0 overflow-hidden">
+          {cancelTarget && (() => {
+            const s = cancelTarget;
+            const planLabel = isTh ? (s.plan_name_th || s.plan_name) : s.plan_name;
+            const currentSub = cancelTargetPlan?.subtotal ?? s.previous_subtotal ?? null;
+            const currentTotal = cancelTargetPlan?.total ?? (currentSub != null ? +(currentSub + +(currentSub * VAT_RATE / 100).toFixed(2)).toFixed(2) : null);
+            return (
+              <>
+                <DialogHeader className="px-6 pt-6 pb-4 border-b border-border">
+                  <DialogTitle className="flex items-center gap-2 text-red-400">
+                    <AlertTriangle className="h-5 w-5" />
+                    {l('ยกเลิกการตั้งเวลาเปลี่ยนราคา?', 'Cancel this scheduled price change?')}
+                  </DialogTitle>
+                  <DialogDescription className="text-xs">
+                    {l(
+                      'รายการนี้จะไม่มีผล ราคาบนเว็บคงเดิมจนกว่าจะตั้งใหม่ · ประวัติยังเก็บไว้ (สถานะ "ยกเลิก")',
+                      'This schedule will not take effect; the site price stays as is until you schedule again · kept in history as "Cancelled"',
+                    )}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="px-6 py-4 space-y-3">
+                  <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">{l('แพ็กเกจ', 'Package')}</span>
+                      <span className="font-semibold">{planLabel} <span className="text-xs text-muted-foreground font-normal">({s.plan_slug})</span></span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">{l('ราคา (ก่อน VAT)', 'Price (before VAT)')}</span>
+                      <span className="flex items-center gap-2 font-semibold">
+                        {currentSub != null && <span className="text-muted-foreground">฿{fmtMoney(currentSub)}</span>}
+                        {currentSub != null && <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                        <span className="line-through text-red-400/80">฿{fmtMoney(s.subtotal)}</span>
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">{l('ยอดโอน (รวม VAT)', 'Total (incl. VAT)')}</span>
+                      <span className="flex items-center gap-2">
+                        {currentTotal != null && <span className="text-muted-foreground">฿{fmtMoney(currentTotal)}</span>}
+                        {currentTotal != null && <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />}
+                        <span className="line-through text-red-400/80">฿{fmtMoney(s.total)}</span>
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-muted-foreground">{l('เวลามีผล (เวลาไทย)', 'Effective (Thai time)')}</span>
+                      <span className="font-medium">{fmtBkk(s.effective_at)}</span>
+                    </div>
+                    {s.note && (
+                      <div className="flex items-start justify-between gap-4">
+                        <span className="text-xs text-muted-foreground shrink-0">{l('หมายเหตุ', 'Note')}</span>
+                        <span className="text-sm text-right">{s.note}</span>
+                      </div>
+                    )}
+                    <div className="flex items-start justify-between gap-4">
+                      <span className="text-xs text-muted-foreground shrink-0">{l('ตั้งโดย', 'Set by')}</span>
+                      <span className="text-xs text-right break-all">
+                        {s.created_by_email || '—'}
+                        <span className="block text-muted-foreground">{fmtBkk(s.created_at, false)}</span>
+                      </span>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3 text-xs text-yellow-200">
+                    {currentSub != null
+                      ? l(
+                          `หลังยกเลิก ${planLabel} จะยังขาย ฿${fmtMoney(currentSub)} (ยอดโอน ฿${fmtMoney(currentTotal!)}) ต่อไป — อยากเปลี่ยนเวลา/ราคา ให้ยกเลิกแล้วตั้งใหม่`,
+                          `After cancelling, ${planLabel} keeps selling at ฿${fmtMoney(currentSub)} (total ฿${fmtMoney(currentTotal!)}) — to change the time/price, cancel and schedule again`,
+                        )
+                      : l('หลังยกเลิก ราคาปัจจุบันของแพ็กเกจจะคงเดิม', 'After cancelling, the current package price stays as is')}
+                  </div>
+                </div>
+
+                <DialogFooter className="px-6 py-4 border-t border-border gap-2">
+                  <Button variant="outline" onClick={() => setCancelTarget(null)} disabled={cancelling}>
+                    {l('เก็บรายการไว้', 'Keep it')}
+                  </Button>
+                  {/* variant=destructive — variant default เป็น gradient ทอง (background-image) ทับ bg-red-* */}
+                  <Button variant="destructive" onClick={confirmCancelSchedule} disabled={cancelling} className="bg-red-600 hover:bg-red-700 text-white font-bold">
+                    {cancelling ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <X className="h-4 w-4 mr-1" />}
+                    {l('ยืนยันยกเลิก', 'Yes, cancel it')}
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>
