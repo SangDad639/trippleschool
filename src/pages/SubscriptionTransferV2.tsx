@@ -377,6 +377,8 @@ const SubscriptionTransferV2 = () => {
                   value={refCode}
                   onChange={(e) => { setRefCode(e.target.value); setRefCheck(null); }}
                   placeholder={l('กรอกโค้ดเพื่อรับส่วนลด', 'Enter code for a discount')}
+                  maxLength={20}
+                  autoCapitalize="none"
                   disabled={verifying}
                   className="flex-1 h-11 md:h-9 rounded-lg bg-gray-900/60 border border-gray-700 px-3 text-base md:text-sm font-mono text-white placeholder:text-gray-600 focus:outline-none focus:border-green-500/50"
                 />

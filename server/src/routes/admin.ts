@@ -777,7 +777,7 @@ router.patch('/users/:id/set-referrer', authenticate, requireAdmin, async (req: 
 
     // Look up referrer by refcode
     const referrerResult = await pool.query(
-      'SELECT id, email FROM users WHERE refcode = $1',
+      'SELECT id, email FROM users WHERE LOWER(refcode) = $1',
       [refcode.toLowerCase()]
     );
 

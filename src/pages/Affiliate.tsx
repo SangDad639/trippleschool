@@ -26,10 +26,22 @@ import {
   Crown,
   FileText,
   Download,
+  Pencil,
 } from 'lucide-react';
 import type { AffiliateStats, Referee, AffiliateTransfer, PayoutMethod, ThaiBankInfo } from '@/types/affiliate';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/contexts/AuthContext';
 import TaxInfoSection from '@/components/profile/TaxInfoSection';
+
+// โค้ดกำหนดเอง — mirror กติกาฝั่ง server (services/refcode.ts) ไว้แค่ hint ระหว่างพิมพ์; server เป็นผู้ตัดสิน (รูปแบบ/คำสงวน/ซ้ำ)
+const CODE_RE = /^[a-z0-9](?:[a-z0-9_-]{2,18})[a-z0-9]$/;
+const cleanCodeInput = (raw: string) => raw.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 20);
+function codeHint(code: string, th: boolean): { ok: boolean; text: string } {
+  if (code.length < 4) return { ok: false, text: th ? '❌ สั้นเกินไป (อย่างน้อย 4 ตัว)' : '❌ Too short (min 4 characters)' };
+  if (!/[a-z]/.test(code)) return { ok: false, text: th ? '❌ ต้องมีตัวอักษร a-z อย่างน้อย 1 ตัว' : '❌ Needs at least one letter a-z' };
+  if (!CODE_RE.test(code)) return { ok: false, text: th ? '❌ ขึ้นต้นและลงท้ายต้องเป็นตัวอักษรหรือตัวเลข' : '❌ Must start and end with a letter or digit' };
+  return { ok: true, text: th ? '✅ รูปแบบถูกต้อง — กดบันทึกเพื่อตรวจว่าโค้ดว่างอยู่' : '✅ Looks good — save to check availability' };
+}
 
 // Thai bank list
 const THAI_BANKS = [
@@ -50,6 +62,7 @@ const THAI_BANKS = [
 const Affiliate = () => {
   const navigate = useNavigate();
   const { t, language } = useLanguage();
+  const { refreshUser } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<AffiliateStats | null>(null);
@@ -58,6 +71,10 @@ const Affiliate = () => {
   const [referees, setReferees] = useState<Referee[]>([]);
 
   const [copied, setCopied] = useState(false);
+  // ตั้งโค้ดแนะนำเอง (custom code)
+  const [editCodeOpen, setEditCodeOpen] = useState(false);
+  const [newCode, setNewCode] = useState('');
+  const [codeSaving, setCodeSaving] = useState(false);
   const [refereeSearch, setRefereeSearch] = useState('');
   // Generic file preview state — used by both proof of transfer and WHT cert.
   // `url` is a short-lived signed URL; `downloadName` is suggested filename
@@ -185,6 +202,35 @@ const Affiliate = () => {
   // R2: ค่าคอม % คงที่ทุกคน — ไม่มี tier แล้ว (BE ส่ง tier = null)
   const commissionPct = stats?.commission_percent ?? 0;
   const clawbackNet = stats?.clawback_net ?? 0;
+
+  const openEditCode = () => {
+    setNewCode(stats?.refcode || '');
+    setEditCodeOpen(true);
+  };
+
+  // บันทึกโค้ดใหม่ — server ตรวจรูปแบบ/คำสงวน/ซ้ำ แล้วส่งข้อความไทยกลับมาใน err.message
+  const handleSaveCode = async () => {
+    const hint = codeHint(newCode, language === 'th');
+    if (!hint.ok) {
+      toast.error(hint.text);
+      return;
+    }
+    setCodeSaving(true);
+    try {
+      const res = await api.updateMyRefcode(newCode);
+      toast.success(language === 'th'
+        ? `เปลี่ยนโค้ดแล้ว 🎉 โค้ดใหม่ของคุณคือ ${res.refcode}`
+        : `Code updated 🎉 Your new code is ${res.refcode}`);
+      if (stats) setStats({ ...stats, refcode: res.refcode });
+      // sync user.refcode ใน AuthContext (/me) ให้หน้าอื่นเห็นโค้ดใหม่ทันที
+      refreshUser().catch(() => {});
+      setEditCodeOpen(false);
+    } catch (error: any) {
+      toast.error(error?.message || t('affiliate.saveFailed'));
+    } finally {
+      setCodeSaving(false);
+    }
+  };
 
   const handleSaveWiseEmail = async () => {
     if (!wiseEmail || !wiseEmail.includes('@')) {
@@ -372,7 +418,11 @@ const Affiliate = () => {
                     disabled={!stats?.refcode}
                     title={language === 'th' ? 'คัดลอกโค้ด' : 'Copy code'}
                   >
-                    <span className="text-xl xs:text-2xl font-bold font-mono text-[#FFB300] tracking-wide xs:tracking-wider truncate">
+                    {/* โค้ดกำหนดเองยาวได้ถึง 20 ตัว → break-all + ย่อฟอนต์ แทน truncate (จอแคบเคยตัดโค้ด) */}
+                    <span
+                      className={`${(stats?.refcode?.length ?? 0) > 10 ? 'text-base xs:text-lg' : 'text-xl xs:text-2xl'} font-bold font-mono text-[#FFB300] tracking-wide break-all`}
+                      data-testid="my-refcode"
+                    >
                       {stats?.refcode || '—'}
                     </span>
                     {stats?.refcode && (
@@ -381,14 +431,25 @@ const Affiliate = () => {
                         : <Copy className="h-4 w-4 text-muted-foreground group-hover:text-foreground flex-shrink-0" />
                     )}
                   </button>
+                  {stats?.refcode && (
+                    <button
+                      type="button"
+                      onClick={openEditCode}
+                      className="mt-1 text-[11px] text-muted-foreground hover:text-[#FFB300] inline-flex items-center gap-1 transition-colors"
+                      data-testid="edit-refcode"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      {language === 'th' ? 'แก้ไขโค้ด' : 'Edit code'}
+                    </button>
+                  )}
                 </div>
               </div>
 
               {stats?.refcode && (
                 <p className="text-[11px] text-muted-foreground">
                   {language === 'th'
-                    ? '💡 บอกเพื่อนกรอกโค้ดนี้ตอนชำระเงิน (ซื้อคอร์สหรือสมัครสมาชิก) — เพื่อนได้ส่วนลดทันที และคุณได้ค่าคอมมิชชั่นเมื่อการชำระได้รับอนุมัติ'
-                    : '💡 Have friends enter this code at checkout (course purchase or subscription) — they get an instant discount and you earn commission once the payment is approved.'}
+                    ? '💡 บอกเพื่อนกรอกโค้ดนี้ตอนชำระเงิน (ซื้อคอร์สหรือสมัครสมาชิก) — เพื่อนได้ส่วนลดทันที และคุณได้ค่าคอมมิชชั่นเมื่อการชำระได้รับอนุมัติ · ตั้งโค้ดเองได้ที่ "แก้ไขโค้ด"'
+                    : '💡 Have friends enter this code at checkout (course purchase or subscription) — they get an instant discount and you earn commission once the payment is approved. · Set your own code via "Edit code"'}
                 </p>
               )}
             </div>
@@ -768,6 +829,76 @@ const Affiliate = () => {
           </Tabs>
         </div>
       </div>
+
+      {/* ตั้งโค้ดแนะนำเอง (custom code) — เปลี่ยนได้ไม่จำกัด โค้ดเก่าใช้ไม่ได้ทันที */}
+      <Dialog open={editCodeOpen} onOpenChange={(o) => { if (!codeSaving) setEditCodeOpen(o); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{language === 'th' ? '✏️ ตั้งโค้ดแนะนำของคุณเอง' : '✏️ Set your own referral code'}</DialogTitle>
+          </DialogHeader>
+          {(() => {
+            const th = language === 'th';
+            const hint = newCode ? codeHint(newCode, th) : null;
+            const isSame = !!stats?.refcode && newCode === stats.refcode;
+            return (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  {th
+                    ? 'ตั้งโค้ดที่จำง่าย เช่น ชื่อร้านหรือชื่อเล่น — เพื่อนกรอกโค้ดนี้ตอนชำระเงินได้เลย'
+                    : 'Pick something easy to remember, like your shop name — friends enter it at checkout.'}
+                </p>
+                <div>
+                  <label className="text-sm text-muted-foreground mb-1 block">{th ? 'โค้ดใหม่' : 'New code'}</label>
+                  <Input
+                    value={newCode}
+                    onChange={(e) => setNewCode(cleanCodeInput(e.target.value))}
+                    maxLength={20}
+                    placeholder={th ? 'เช่น somchai-shop' : 'e.g. somchai-shop'}
+                    className="h-11 font-mono tracking-wider"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    disabled={codeSaving}
+                    data-testid="refcode-input"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-1">
+                    {th
+                      ? 'ใช้ได้ a-z, 0-9 และ - หรือ _ คั่นกลาง · ยาว 4-20 ตัว · ต้องมีตัวอักษรอย่างน้อย 1 ตัว · ระบบแปลงเป็นตัวพิมพ์เล็กให้'
+                      : 'a-z, 0-9 and - or _ in the middle · 4-20 characters · at least one letter · stored in lowercase'}
+                  </p>
+                  {hint && !isSame && (
+                    <p className={`text-xs mt-1 ${hint.ok ? 'text-green-500' : 'text-red-400'}`} data-testid="refcode-hint">{hint.text}</p>
+                  )}
+                  {isSame && (
+                    <p className="text-xs mt-1 text-muted-foreground">{th ? 'ยังเป็นโค้ดเดิม' : 'Same as your current code'}</p>
+                  )}
+                </div>
+                {stats?.refcode && newCode && !isSame && (
+                  <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-3 text-xs text-yellow-500 leading-relaxed">
+                    {th
+                      ? <>⚠️ โค้ดเดิม <span className="font-mono font-semibold">{stats.refcode}</span> จะใช้ไม่ได้ทันที — เพื่อนที่มีโค้ด/ลิงก์เก่าต้องใช้โค้ดใหม่ · คำสั่งซื้อที่ส่งไว้แล้วด้วยโค้ดเดิมยังนับเป็นของคุณ · เปลี่ยนได้อีกเมื่อไหร่ก็ได้</>
+                      : <>⚠️ Your current code <span className="font-mono font-semibold">{stats.refcode}</span> stops working immediately — friends with the old code/link must use the new one · orders already submitted with the old code still count for you · you can change it again anytime</>}
+                  </div>
+                )}
+                <div className="flex gap-2 justify-end pt-1">
+                  <Button variant="outline" onClick={() => setEditCodeOpen(false)} disabled={codeSaving}>
+                    {th ? 'ยกเลิก' : 'Cancel'}
+                  </Button>
+                  <Button
+                    onClick={handleSaveCode}
+                    disabled={codeSaving || !hint?.ok || isSame}
+                    className="bg-[#FFB300] hover:bg-[#FF9D00] text-black"
+                    data-testid="refcode-save"
+                  >
+                    {codeSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                    {th ? '💾 บันทึกโค้ด' : '💾 Save code'}
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* File Preview Dialog — handles both image (proof of transfer) and PDF
           (WHT certificate 50ทวิ). Detects type by URL extension; falls back to

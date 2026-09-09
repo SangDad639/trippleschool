@@ -9,18 +9,18 @@ export const ACCOUNT_DOCS: GuideDoc[] = [
     icon: Users,
     minutes: 4,
     access: 'login',
-    keywords: ['affiliate', 'พันธมิตร', 'ค่าคอม', 'คอมมิชชั่น', 'แนะนำเพื่อน', 'refcode', 'ถอนเงิน'],
+    keywords: ['affiliate', 'พันธมิตร', 'ค่าคอม', 'คอมมิชชั่น', 'แนะนำเพื่อน', 'refcode', 'โค้ดแนะนำ', 'ตั้งโค้ดเอง', 'ถอนเงิน'],
     title: { th: 'แนะนำเพื่อน รับค่าคอมมิชชั่น', en: 'Refer friends and earn commission' },
     summary: {
-      th: 'คัดลอกลิงก์แนะนำ ติดตามยอด และกรอกข้อมูลให้ครบเพื่อให้ทีมงานโอนเงินได้',
-      en: 'Copy your referral link, watch the numbers, and complete your payout details',
+      th: 'ตั้งโค้ดแนะนำของคุณเอง ส่งให้เพื่อนกรอกตอนชำระเงิน ติดตามยอด และกรอกข้อมูลให้ครบเพื่อให้ทีมงานโอนเงินได้',
+      en: 'Set your own referral code, share it for checkout, watch the numbers, and complete your payout details',
     },
     blocks: [
       {
         kind: 'para',
         body: {
-          th: 'ทุกบัญชีมีลิงก์แนะนำของตัวเองอยู่แล้ว ไม่ต้องสมัครอะไรเพิ่ม เมื่อมีคนเปิดเว็บจากลิงก์ของคุณแล้วสมัครและชำระเงิน ค่าคอมมิชชั่นจะถูกบันทึกเข้าบัญชีของคุณตามอัตราของระดับที่คุณอยู่',
-          en: 'Every account already has a referral link — nothing extra to sign up for. When someone opens the site through your link and pays, commission is recorded at your tier rate.',
+          th: 'ทุกบัญชีมีโค้ดแนะนำของตัวเองอยู่แล้ว ไม่ต้องสมัครอะไรเพิ่ม เมื่อเพื่อนกรอกโค้ดของคุณตอนชำระเงิน (ซื้อคอร์สหรือสมัครสมาชิก) เพื่อนได้ส่วนลดทันที และค่าคอมมิชชั่นจะถูกบันทึกเข้าบัญชีของคุณเมื่อการชำระได้รับอนุมัติ',
+          en: 'Every account already has a referral code — nothing extra to sign up for. When a friend enters your code at checkout (course purchase or subscription) they get an instant discount, and commission is recorded for you once the payment is approved.',
         },
       },
       {
@@ -34,10 +34,17 @@ export const ACCOUNT_DOCS: GuideDoc[] = [
             },
           },
           {
-            title: { th: 'คัดลอกลิงก์แนะนำ', en: 'Copy your referral link' },
+            title: { th: 'ตั้งโค้ดแนะนำของคุณเอง', en: 'Set your own referral code' },
             body: {
-              th: 'ลิงก์อยู่ในกล่องด้านบน กดปุ่มคัดลอกแล้วนำไปแชร์ได้เลย ใครเปิดจากลิงก์นี้จะถูกผูกกับคุณอัตโนมัติ',
-              en: 'The link sits in the top card. Copy and share it — anyone who opens it is attached to you automatically.',
+              th: 'ในการ์ด "🎟️ โค้ดแนะนำของฉัน" กด "✏️ แก้ไขโค้ด" แล้วตั้งโค้ดที่จำง่าย เช่น ชื่อร้านหรือชื่อเล่น (a-z 0-9 ยาว 4-20 ตัว) เปลี่ยนได้เมื่อไหร่ก็ได้ แต่โค้ดเดิมจะใช้ไม่ได้ทันที เพื่อนที่มีโค้ดเก่าต้องใช้โค้ดใหม่',
+              en: 'In the "🎟️ My Code" card, press "✏️ Edit code" and pick something memorable like your shop name (a-z 0-9, 4-20 characters). You can change it anytime, but the old code stops working immediately — friends holding the old code must use the new one.',
+            },
+          },
+          {
+            title: { th: 'คัดลอกโค้ดไปแชร์', en: 'Copy and share your code' },
+            body: {
+              th: 'กดที่โค้ดในการ์ดเพื่อคัดลอก แล้วบอกเพื่อนกรอกโค้ดนี้ในช่อง "โค้ดผู้แนะนำ" ตอนชำระเงิน คำสั่งซื้อที่ใช้โค้ดของคุณจะถูกผูกกับคุณอัตโนมัติ',
+              en: 'Tap the code in the card to copy it, then have friends enter it in the "Referral code" field at checkout. Orders using your code are attached to you automatically.',
             },
           },
           {
@@ -61,7 +68,7 @@ export const ACCOUNT_DOCS: GuideDoc[] = [
         kind: 'list',
         tone: 'dot',
         items: [
-          { th: 'รายการผู้แนะนำ — ใครสมัครผ่านลิงก์ของคุณแล้วบ้าง', en: 'Referees — everyone who signed up through your link' },
+          { th: 'รายการผู้แนะนำ — ใครใช้โค้ดของคุณแล้วบ้าง', en: 'Referees — everyone who used your code' },
           { th: 'ประวัติการโอนเงิน — รอบที่โอนแล้ว พร้อมหลักฐานการโอนและเอกสาร 50 ทวิ ให้ดาวน์โหลด', en: 'Transfer history — completed payouts with transfer proof and the withholding-tax certificate' },
           { th: 'วิธีรับเงินค่าคอมมิชชั่น — บัญชีธนาคารและข้อมูลผู้รับเงิน', en: 'Payout method — your bank account and recipient details' },
           { th: 'ข้อมูลภาษี — ข้อมูลสำหรับออกเอกสารทางภาษี', en: 'Tax info — the details used on tax paperwork' },

@@ -1285,6 +1285,8 @@ const CourseDetail = () => {
                       onChange={(e) => { setRefCode(e.target.value); setRefCheck(null); }}
                       placeholder="กรอกโค้ดเพื่อรับส่วนลด"
                       className="h-11 md:h-9 font-mono"
+                      maxLength={20}
+                      autoCapitalize="none"
                       disabled={submitting}
                     />
                     <Button

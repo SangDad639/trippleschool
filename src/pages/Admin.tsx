@@ -235,6 +235,10 @@ const Admin = () => {
   const [changePlanUser, setChangePlanUser] = useState<AdminUser | null>(null);
   // Per-(user × plan) commission override dialog (super admin only)
   const [commissionUser, setCommissionUser] = useState<AdminUser | null>(null);
+  // แก้โค้ดแนะนำ (custom refcode) ให้ผู้ใช้ — ข้ามคำสงวนได้ ห้ามซ้ำกับคนอื่น
+  const [refcodeUser, setRefcodeUser] = useState<AdminUser | null>(null);
+  const [refcodeDraft, setRefcodeDraft] = useState('');
+  const [refcodeSaving, setRefcodeSaving] = useState(false);
   const [viewSlipUrl, setViewSlipUrl] = useState<string | null>(null);
   // Build a slip image URL. The payment-slip proxy (/api/subscription/slips/*) is
   // now admin-protected and reads the JWT from a `?token=` query param (an <img>
@@ -830,6 +834,26 @@ const Admin = () => {
     }
   };
 
+  const handleSaveRefcode = async () => {
+    if (!refcodeUser) return;
+    const code = refcodeDraft.trim().toLowerCase();
+    if (!code) return;
+    setRefcodeSaving(true);
+    try {
+      const res = await api.adminSetUserRefcode(refcodeUser.id, code);
+      toast.success(res.changed
+        ? `เปลี่ยนโค้ดของ ${refcodeUser.email} เป็น ${res.refcode} แล้ว`
+        : `โค้ดของ ${refcodeUser.email} เป็น ${res.refcode} อยู่แล้ว`);
+      setUsers(prev => prev.map(u => (u.id === refcodeUser.id ? { ...u, refcode: res.refcode } : u)));
+      setRefcodeUser(null);
+    } catch (error: any) {
+      // 400 รูปแบบ / 409 ซ้ำ — ข้อความไทยจาก server
+      toast.error(error?.message || 'บันทึกไม่สำเร็จ');
+    } finally {
+      setRefcodeSaving(false);
+    }
+  };
+
   const handleUpdateTier = async (userId: number, newTierId: number, tierName?: string) => {
     setProcessingUsers(prev => new Set(prev).add(userId));
     try {
@@ -1380,8 +1404,17 @@ const Admin = () => {
                                 Tier {u.affiliateTier}
                               </Badge>
                             )}
-                            <span className="text-sm text-muted-foreground">
-                              Refcode: <span className="text-foreground font-mono">{u.refcode}</span>
+                            <span className="text-sm text-muted-foreground inline-flex items-center gap-1.5">
+                              Refcode: <span className="text-foreground font-mono break-all">{u.refcode}</span>
+                              <button
+                                type="button"
+                                title="แก้ไขโค้ดแนะนำ"
+                                onClick={() => { setRefcodeUser(u); setRefcodeDraft(u.refcode || ''); }}
+                                className="text-muted-foreground hover:text-foreground transition-colors"
+                                data-testid={`edit-refcode-${u.id}`}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
                             </span>
                             {/* ค่าคอม % คงที่ทุกคน (R2) — ตั้งค่าที่ /admin/affiliate; users.commission_percent เป็นซาก ไม่แสดง */}
                             {TIERS_UI_ENABLED && (
@@ -2018,6 +2051,49 @@ const Admin = () => {
               className={adjustDaysMode === 'add' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}
             >
               {adjustDaysMode === 'add' ? `+ เพิ่ม ${adjustDaysValue} วัน` : `- ลด ${adjustDaysValue} วัน`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* แก้โค้ดแนะนำ (custom refcode) ให้ผู้ใช้ */}
+      <Dialog open={!!refcodeUser} onOpenChange={(open) => { if (!open && !refcodeSaving) setRefcodeUser(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>✏️ แก้ไขโค้ดแนะนำของ {refcodeUser?.email}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 pt-1">
+            <p className="text-sm text-muted-foreground">
+              โค้ดปัจจุบัน: <span className="text-foreground font-mono">{refcodeUser?.refcode || '—'}</span>
+            </p>
+            <div>
+              <Label>โค้ดใหม่</Label>
+              <Input
+                value={refcodeDraft}
+                onChange={(e) => setRefcodeDraft(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 20))}
+                maxLength={20}
+                placeholder="เช่น somchai-shop"
+                className="mt-1 font-mono tracking-wider"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                disabled={refcodeSaving}
+                data-testid="admin-refcode-input"
+              />
+              <p className="text-[11px] text-muted-foreground mt-1">
+                a-z 0-9 - _ ยาว 4-20 ตัว มีตัวอักษรอย่างน้อย 1 ตัว · โค้ดเดิมจะใช้ไม่ได้ทันที · แอดมินตั้งคำสงวนได้ (เช่น official) แต่ห้ามซ้ำกับคนอื่น
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRefcodeUser(null)} disabled={refcodeSaving}>ยกเลิก</Button>
+            <Button
+              onClick={handleSaveRefcode}
+              disabled={refcodeSaving || refcodeDraft.trim().length < 4 || refcodeDraft.trim() === (refcodeUser?.refcode || '')}
+              data-testid="admin-refcode-save"
+            >
+              {refcodeSaving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Pencil className="h-4 w-4 mr-2" />}
+              บันทึก
             </Button>
           </DialogFooter>
         </DialogContent>

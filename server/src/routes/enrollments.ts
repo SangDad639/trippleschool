@@ -19,13 +19,18 @@ const router = Router();
  * ผูก referrer จากโค้ดที่บันทึกไว้บน enrollment — เรียกตอน admin อนุมัติเท่านั้น
  * (จ่ายเงินจริงแล้ว) mirror pattern ฝั่ง subscription ที่ bind หลัง verify สลิปผ่าน
  */
-async function bindReferrerFromEnrollment(enrollment: { user_id: number; refcode?: string | null }): Promise<void> {
-  if (!enrollment.refcode) return;
+async function bindReferrerFromEnrollment(enrollment: { user_id: number; refcode?: string | null; referrer_user_id?: number | null }): Promise<void> {
+  if (!enrollment.refcode && enrollment.referrer_user_id == null) return;
   try {
-    const r = await pool.query(`SELECT id FROM users WHERE LOWER(refcode) = $1 LIMIT 1`, [enrollment.refcode]);
-    const ownerId = r.rows[0]?.id;
-    if (ownerId && Number(ownerId) !== Number(enrollment.user_id)) {
-      await bindReferrerIfEmpty(enrollment.user_id, Number(ownerId));
+    // 067: ใช้ id ที่ snapshot ไว้ตอน submit ก่อน — เจ้าของเปลี่ยนโค้ดระหว่างรออนุมัติ / คนอื่นมาจับจองโค้ดเก่า ไม่กระทบว่าเงินไปหาใคร
+    let ownerId: number | null = enrollment.referrer_user_id != null ? Number(enrollment.referrer_user_id) : null;
+    if (!ownerId && enrollment.refcode) {
+      // แถวเก่าก่อน 067 ไม่มี id → resolve จากสตริงโค้ดแบบเดิม
+      const r = await pool.query(`SELECT id FROM users WHERE LOWER(refcode) = $1 LIMIT 1`, [String(enrollment.refcode).toLowerCase()]);
+      ownerId = r.rows[0]?.id ? Number(r.rows[0].id) : null;
+    }
+    if (ownerId && ownerId !== Number(enrollment.user_id)) {
+      await bindReferrerIfEmpty(enrollment.user_id, ownerId);
     }
   } catch (e) {
     console.error('[Affiliate] bind referrer on approve failed:', e);
@@ -133,6 +138,8 @@ router.post('/:courseId/enroll', authenticate, uploadSlip, async (req: AuthReque
     const rawRef = String(req.body?.refcode || '').trim();
     let paidAmount = baseAmount;
     let appliedRef: string | null = null;
+    // 067: snapshot "เจ้าของโค้ด" เป็น id ลงออเดอร์ด้วย — โค้ดเป็นแค่สตริงที่เจ้าของเปลี่ยนได้ทีหลัง
+    let appliedReferrerId: number | null = null;
     if (rawRef && baseAmount > 0) {
       const chk = await checkRefcode(rawRef, userId);
       if (!chk.valid) {
@@ -141,6 +148,7 @@ router.post('/:courseId/enroll', authenticate, uploadSlip, async (req: AuthReque
       }
       paidAmount = applyRefDiscount(baseAmount, chk.discountPercent);
       appliedRef = rawRef.toLowerCase();
+      appliedReferrerId = chk.referrerId;
     }
 
     let slipUrl: string | null = null;
@@ -159,24 +167,32 @@ router.post('/:courseId/enroll', authenticate, uploadSlip, async (req: AuthReque
       // โค้ดแรกชนะ: คำสั่งซื้อที่เคยใช้โค้ด A แล้ว ห้ามสลับเป็นโค้ด B ตอน resubmit
       // (กันบันทึก 🎟️ ใน admin ชี้คนละคนกับ referrer ที่จะได้ค่าคอมจริง)
       if (appliedRef && row.refcode && row.refcode !== appliedRef) {
-        return res.status(400).json({
-          error: `คำสั่งซื้อนี้ใช้โค้ด ${row.refcode} ไปแล้ว เปลี่ยนโค้ดไม่ได้ — ลบโค้ดใหม่ออกแล้วส่งอีกครั้ง`,
-          errorCode: 'REFCODE_LOCKED',
-        });
+        // 067: เทียบ "เจ้าของ" ไม่ใช่สตริง — ผู้แนะนำเปลี่ยนโค้ดไปแล้ว ผู้ซื้อกรอกโค้ดใหม่ของคนเดิมแทนได้
+        // (แถวเก่าก่อน 067 ไม่มี referrer_user_id → ตกลงมาเทียบสตริงแบบเดิม = ล็อก)
+        const sameOwner = row.referrer_user_id != null && appliedReferrerId != null
+          && Number(row.referrer_user_id) === Number(appliedReferrerId);
+        if (!sameOwner) {
+          return res.status(400).json({
+            error: `คำสั่งซื้อนี้ใช้โค้ด ${row.refcode} ไปแล้ว เปลี่ยนโค้ดไม่ได้ — ลบโค้ดใหม่ออกแล้วส่งอีกครั้ง`,
+            errorCode: 'REFCODE_LOCKED',
+          });
+        }
       }
       // pending or rejected → (re)submit slip, back to pending
       // ราคา/โค้ด: อัปเดตเฉพาะเมื่อรอบนี้กรอกโค้ด (ไม่กรอก = คงของเดิม เผื่อโอนตามยอดลดไปแล้ว)
       await pool.query(
         `UPDATE course_enrollments SET status='pending', rejection_reason=NULL, slip_url=COALESCE($2, slip_url),
-           paid_amount=COALESCE($3, paid_amount, $5), refcode=COALESCE($4, refcode), updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
-        [row.id, slipUrl, appliedRef ? paidAmount : null, appliedRef, baseAmount]
+           paid_amount=COALESCE($3, paid_amount, $5), refcode=COALESCE($4, refcode),
+           referrer_user_id=COALESCE($6, referrer_user_id), updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
+        [row.id, slipUrl, appliedRef ? paidAmount : null, appliedRef, baseAmount, appliedReferrerId]
       );
       return res.json({ message: 'ส่งคำขอแล้ว รอการอนุมัติ', status: 'pending', paid_amount: appliedRef ? paidAmount : (row.paid_amount ?? baseAmount) });
     }
 
     const result = await pool.query(
-      `INSERT INTO course_enrollments (user_id, course_id, status, slip_url, paid_amount, refcode) VALUES ($1, $2, 'pending', $3, $4, $5) RETURNING *`,
-      [userId, courseId, slipUrl, paidAmount, appliedRef]
+      `INSERT INTO course_enrollments (user_id, course_id, status, slip_url, paid_amount, refcode, referrer_user_id)
+       VALUES ($1, $2, 'pending', $3, $4, $5, $6) RETURNING *`,
+      [userId, courseId, slipUrl, paidAmount, appliedRef, appliedReferrerId]
     );
     res.json({ message: 'ส่งคำขอแล้ว รอการอนุมัติ', enrollment: result.rows[0] });
   } catch (error) {
@@ -274,11 +290,14 @@ router.get('/admin/all', authenticate, async (req: AuthRequest, res: Response) =
     const countResult = await pool.query(`SELECT COUNT(*)::int AS total FROM course_enrollments e JOIN users u ON e.user_id = u.id${where}`, params);
     const result = await pool.query(`
       SELECT e.*, u.email as user_email, c.name as course_name, c.slug as course_slug, c.price, c.discount_price,
-             approver.email as approved_by_email
+             approver.email as approved_by_email,
+             -- 067: เจ้าของโค้ดที่ใช้ (id snapshot) — แสดงได้แม้เจ้าของเปลี่ยนโค้ดไปแล้ว
+             ru.email as referrer_email
       FROM course_enrollments e
       JOIN users u ON e.user_id = u.id
       JOIN courses c ON e.course_id = c.id
       LEFT JOIN users approver ON e.approved_by = approver.id
+      LEFT JOIN users ru ON e.referrer_user_id = ru.id
       ${where}
       ORDER BY e.updated_at DESC LIMIT $${i} OFFSET $${i + 1}
     `, [...params, limit, offset]);
@@ -376,7 +395,7 @@ router.post('/admin/bulk-approve', authenticate, async (req: AuthRequest, res: R
     }
     const result = await pool.query(`
       UPDATE course_enrollments SET status='approved', approved_by=$1, approved_at=CURRENT_TIMESTAMP, rejection_reason=NULL, updated_at=CURRENT_TIMESTAMP
-      WHERE id = ANY($2) AND status='pending' RETURNING id, user_id, course_id, paid_amount, refcode
+      WHERE id = ANY($2) AND status='pending' RETURNING id, user_id, course_id, paid_amount, refcode, referrer_user_id
     `, [req.userId, enrollment_ids]);
     for (const row of result.rows) {
       await bindReferrerFromEnrollment(row);

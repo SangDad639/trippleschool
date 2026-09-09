@@ -1306,6 +1306,15 @@ class ApiClient {
     });
   }
 
+  // โค้ดแนะนำกำหนดเอง (custom refcode) — เปลี่ยนได้ไม่จำกัด โค้ดเก่าใช้ไม่ได้ทันที
+  // error: 400 REFCODE_INVALID_FORMAT / REFCODE_RESERVED · 409 REFCODE_TAKEN · 429 RATE_LIMITED (ข้อความไทยใน err.message)
+  async updateMyRefcode(code: string): Promise<{ refcode: string; changed: boolean }> {
+    return this.request('/api/affiliate/my-refcode', {
+      method: 'PUT',
+      body: JSON.stringify({ code }),
+    });
+  }
+
   // Thai Bank Account
   async saveThaiBankAccount(bankInfo: {
     bank_name: string;
@@ -1535,6 +1544,14 @@ class ApiClient {
     return this.request('/api/affiliate/admin/refcode-discount', {
       method: 'PUT',
       body: JSON.stringify({ percent }),
+    });
+  }
+
+  // แอดมินตั้งโค้ดแนะนำให้ผู้ใช้ (ข้ามคำสงวนได้ แต่ห้ามซ้ำกับคนอื่น)
+  async adminSetUserRefcode(userId: number, code: string): Promise<{ refcode: string; changed: boolean }> {
+    return this.request(`/api/affiliate/admin/users/${userId}/refcode`, {
+      method: 'PUT',
+      body: JSON.stringify({ code }),
     });
   }
 

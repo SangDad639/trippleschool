@@ -61,6 +61,8 @@ interface Enrollment {
   discount_price: number | null;
   paid_amount: number | string | null;
   refcode: string | null;
+  /** อีเมลเจ้าของโค้ด (จาก referrer_user_id snapshot) — ยังรู้ว่าเป็นใครแม้เจ้าของเปลี่ยนโค้ดไปแล้ว */
+  referrer_email?: string | null;
   progress_percent: number;
   enrolled_at: string;
   approved_at: string;
@@ -457,7 +459,9 @@ const AdminEnrollments = () => {
                         <TableCell className="text-muted-foreground">
                           {formatPrice(enrollment)}
                           {enrollment.refcode && (
-                            <span className="block text-[10px] text-green-500">🎟️ {enrollment.refcode}</span>
+                            <span className="block text-[10px] text-green-500" title={enrollment.referrer_email ? `เจ้าของโค้ด: ${enrollment.referrer_email}` : undefined}>
+                              🎟️ {enrollment.refcode}{enrollment.referrer_email ? ` · ${enrollment.referrer_email}` : ''}
+                            </span>
                           )}
                         </TableCell>
                         <TableCell>

@@ -49,7 +49,7 @@ router.post(
       let referrerId = null;
       if (refcode) {
         const referrerResult = await pool.query(
-          'SELECT id FROM users WHERE refcode = $1',
+          'SELECT id FROM users WHERE LOWER(refcode) = $1',
           [refcode.toLowerCase()]
         );
         if (referrerResult.rows.length > 0) {
@@ -289,7 +289,7 @@ router.post('/google', async (req: Request, res: Response) => {
       let referrerId = null;
       if (refcode) {
         const referrerResult = await pool.query(
-          'SELECT id FROM users WHERE refcode = $1',
+          'SELECT id FROM users WHERE LOWER(refcode) = $1',
           [refcode.toLowerCase()]
         );
         if (referrerResult.rows.length > 0) {

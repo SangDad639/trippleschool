@@ -7,7 +7,7 @@ import fs from 'fs';
 import { getBucketName, uploadFile, getSignedFileUrl, getFile } from '../utils/s3.js';
 import { getCommissionPercentSetting } from '../services/commissionService.js';
 import { cancelCommissionById } from '../services/affiliateRules.js';
-import { checkRefcode } from '../services/refcode.js';
+import { checkRefcode, setUserRefcode, RefcodeError } from '../services/refcode.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 
 // กันไล่เดาโค้ดคนอื่น (oracle): 30 ครั้ง/นาที ต่อ user ก็เหลือเฟือสำหรับใช้งานจริง
@@ -17,6 +17,24 @@ const validateCodeRateLimit = rateLimit({
   keyBy: (req) => (req.userId != null ? `refvalidate:${req.userId}` : undefined),
   message: 'ตรวจสอบโค้ดถี่เกินไป กรุณารอสักครู่แล้วลองใหม่',
 });
+
+// ตั้งโค้ดเอง (custom refcode): เปลี่ยนได้ไม่จำกัด แต่กันสแปม/ไล่เดาว่าโค้ดไหนว่าง (409 เป็น oracle เดียว) — 20 ครั้ง/ชั่วโมง ต่อ user
+// (นับทุก call รวมที่รูปแบบผิด — FE กรองรูปแบบให้ก่อนแล้ว จึงเหลือเฟือสำหรับคนใช้จริง)
+const refcodeClaimRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  keyBy: (req) => (req.userId != null ? `refclaim:${req.userId}` : undefined),
+  message: 'เปลี่ยนโค้ดถี่เกินไป กรุณารอสักครู่แล้วลองใหม่',
+});
+
+/** แปลง RefcodeError → HTTP (shape เดียวกับ INVALID_REFCODE ใน enrollments/subscription) */
+function sendRefcodeError(res: Response, e: unknown, logLabel: string) {
+  if (e instanceof RefcodeError) {
+    return res.status(e.status).json({ error: e.message, errorCode: e.errorCode });
+  }
+  console.error(`${logLabel}:`, e);
+  return res.status(500).json({ error: 'บันทึกโค้ดไม่สำเร็จ' });
+}
 
 // Configure multer for payment proof upload (images + PDF)
 const proofUpload = multer({
@@ -333,6 +351,21 @@ router.put('/wise-email', authenticate, async (req: AuthRequest, res: Response) 
 });
 
 /**
+ * PUT /api/affiliate/my-refcode  body: { code }
+ * ตั้งโค้ดแนะนำของตัวเอง (custom code) — เปลี่ยนได้ไม่จำกัด · โค้ดเก่าใช้ไม่ได้ทันที
+ * กติกา: 4-20 ตัว a-z 0-9 (- _ คั่นกลาง) มีตัวอักษรอย่างน้อย 1 ตัว · ไม่ซ้ำ (ไม่สนตัวพิมพ์) · ไม่ใช่คำสงวน
+ * ตอบ 400 REFCODE_INVALID_FORMAT / REFCODE_RESERVED · 409 REFCODE_TAKEN · 429 RATE_LIMITED
+ */
+router.put('/my-refcode', authenticate, refcodeClaimRateLimit, async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await setUserRefcode(req.userId!, req.body?.code, { changedBy: req.userId!, bypassReserved: false });
+    res.json(result);
+  } catch (e) {
+    sendRefcodeError(res, e, 'Set my refcode error');
+  }
+});
+
+/**
  * PUT /api/affiliate/bank-account
  * Save/update user's Thai bank account for receiving payouts
  */
@@ -541,6 +574,24 @@ router.put('/admin/refcode-discount', authenticate, requireAdmin, requireSuperAd
   } catch (error) {
     console.error('Update refcode discount error:', error);
     res.status(500).json({ error: 'Failed to update refcode discount' });
+  }
+});
+
+/**
+ * PUT /api/affiliate/admin/users/:id/refcode  body: { code }
+ * แอดมินตั้งโค้ดแนะนำให้ผู้ใช้คนใดก็ได้ (ระดับสิทธิ์เดียวกับ set-referrer) — ข้ามคำสงวนได้ (ตั้ง "official" ให้ทีมงาน)
+ * แต่ห้ามซ้ำกับคนอื่น (409) · โค้ดเดิมของผู้ใช้ใช้ไม่ได้ทันที · บันทึก refcode_changes.changed_by = แอดมิน
+ */
+router.put('/admin/users/:id/refcode', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'รหัสผู้ใช้ไม่ถูกต้อง' });
+  }
+  try {
+    const result = await setUserRefcode(id, req.body?.code, { changedBy: req.userId!, bypassReserved: true });
+    res.json(result);
+  } catch (e) {
+    sendRefcodeError(res, e, 'Admin set refcode error');
   }
 });
 

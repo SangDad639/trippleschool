@@ -538,8 +538,8 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
     const extLog = await client.query(
       `INSERT INTO subscription_extension_logs
          (user_id, admin_id, days_added, amount, slip_url, approval_method,
-          subtotal, vat_amount, vat_rate, refcode)
-       VALUES ($1, NULL, $2, $3, $4, 'autoapprove', $5, $6, $7, $8)
+          subtotal, vat_amount, vat_rate, refcode, referrer_user_id)
+       VALUES ($1, NULL, $2, $3, $4, 'autoapprove', $5, $6, $7, $8, $9)
        RETURNING id`,
       [
         userId,
@@ -550,6 +550,8 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
         effectiveVat,
         VAT_RATE,
         appliedRef,
+        // 067: เจ้าของโค้ดเป็น id — โค้ดเป็นสตริงที่เจ้าของเปลี่ยนได้ทีหลัง log ต้องยังรู้ว่ามาจากใคร
+        refReferrerId,
       ]
     );
     const extensionLogId: number = extLog.rows[0].id;
