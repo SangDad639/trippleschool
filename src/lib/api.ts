@@ -1,6 +1,7 @@
 // Triple School API Client - Scheduler focused
 
 import type { PlanPriceSchedule } from '@/types/pricing';
+import type { PromoMeta, PromoAdmin, PromoInput } from '@/types/promo';
 
 class ApiClient {
   private token: string | null = null;
@@ -3165,6 +3166,33 @@ class ApiClient {
     const formData = new FormData();
     formData.append('file', file);
     return this.request('/api/courses/upload-html', { method: 'POST', body: formData });
+  }
+  // ========== โฆษณาแทรกในวิดีโอบทเรียน (routes/promos.ts) ==========
+  /** ผู้เรียน — meta ของโฆษณา (ไม่มี video_key) · 404 เมื่อปิดใช้ */
+  async getPromo(id: number): Promise<{ promo: PromoMeta }> {
+    return this.request(`/api/promos/${id}`);
+  }
+  /** ผู้เรียนดูโฆษณาจบ/ข้าม — ล็อกอินจะถูกจำที่เซิร์ฟเวอร์ 7 วัน (1 โฆษณา / 1 ผู้เรียน / 7 วัน) */
+  async markPromoSeen(id: number): Promise<{ ok: true; stored: boolean; cooldown_days: number; next_at?: string }> {
+    return this.request(`/api/promos/${id}/seen`, { method: 'POST' }, 0, 10_000);
+  }
+  async listPromosAdmin(): Promise<{ promos: PromoAdmin[]; max_mb: number }> {
+    return this.request('/api/promos/admin/all');
+  }
+  async createPromo(data: PromoInput): Promise<{ promo: PromoAdmin }> {
+    return this.request('/api/promos', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updatePromo(id: number, data: PromoInput): Promise<{ promo: PromoAdmin }> {
+    return this.request(`/api/promos/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deletePromo(id: number): Promise<{ ok: true; usage_count: number }> {
+    return this.request(`/api/promos/${id}`, { method: 'DELETE' });
+  }
+  /** ไฟล์วิดีโอโฆษณา (mp4/webm ≤ 200 MB) — ไม่ retry, ให้เวลา 60 นาที เหมือน uploadEbookFile */
+  async uploadPromoVideo(file: File): Promise<{ video_key: string; size_bytes: number; content_type: string; name: string; faststart: boolean }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request('/api/promos/upload-video', { method: 'POST', body: formData }, 0, 60 * 60 * 1000);
   }
   // Sections
   async getCourseSections(courseId: number) {

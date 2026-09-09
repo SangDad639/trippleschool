@@ -3,6 +3,9 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
 import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
+import { LessonVideoStage } from '@/components/course/LessonVideoStage';
+import { isPromoOnCooldown } from '@/lib/promoFrequency';
+import type { LessonPromoSlot } from '@/types/promo';
 import { api } from '@/lib/api';
 import { sectionLabel } from '@/lib/sectionLabel';
 import { shareLink, SITE_URL } from '@/lib/shareLink';
@@ -58,6 +61,8 @@ interface Lesson {
   /** รหัสลิงก์สั้นของบทนี้ — ลิงก์แชร์ = /app/courses/{share_code} */
   share_code?: string | null;
   materials?: LessonMaterial[];
+  /** จุดแทรกโฆษณา (offset 0 = ก่อนเริ่ม, ≥ 5 = กลางคลิป) — ว่าง = ไม่มีโฆษณา ใช้ iframe เดิม */
+  promos?: LessonPromoSlot[];
 }
 
 interface Section {
@@ -86,6 +91,8 @@ interface Course {
   lessons: Lesson[];
   sections?: Section[];
   unassigned_lessons?: Lesson[];
+  /** id โฆษณาที่ผู้เรียนคนนี้ดูไปแล้วภายใน 7 วัน (เฉพาะล็อกอิน — จาก /full) */
+  promos_seen?: number[];
 }
 
 interface Enrollment {
@@ -475,14 +482,29 @@ const CourseLearn = () => {
                   </div>
                 </div>
               ) : currentLesson.youtube_id ? (
-                <iframe
-                  key={currentLesson.id}
-                  src={`https://www.youtube.com/embed/${currentLesson.youtube_id}?rel=0`}
-                  title={currentLesson.title}
-                  className="w-full h-full"
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  allowFullScreen
-                />
+                // บทที่มีโฆษณาแทรก (pre-roll/mid-roll) และโฆษณานั้นยังไม่ถูกดูภายใน 7 วัน (1 โฆษณา / 1 ผู้เรียน / 7 วัน)
+                // — บทที่ไม่มี/ดูครบแล้ว ใช้ iframe เดิมเป๊ะด้านล่าง
+                (() => {
+                  const slots = (currentLesson.promos ?? []).filter((p) => !isPromoOnCooldown(p.promo_id, course.promos_seen));
+                  return slots.length > 0 ? (
+                    <LessonVideoStage
+                      key={currentLesson.id}
+                      lesson={{ id: currentLesson.id, title: currentLesson.title, youtube_id: currentLesson.youtube_id }}
+                      promos={slots}
+                      posterUrl={api.mediaUrl(`/api/courses/lessons/${currentLesson.id}/thumb`)}
+                      paused={sidebarOpen && isMobileView}
+                    />
+                  ) : null;
+                })() ?? (
+                  <iframe
+                    key={currentLesson.id}
+                    src={`https://www.youtube.com/embed/${currentLesson.youtube_id}?rel=0`}
+                    title={currentLesson.title}
+                    className="w-full h-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                )
               ) : (
                 <div className="w-full h-full flex items-center justify-center"><p className="text-gray-400 text-sm">ไม่พบวิดีโอ</p></div>
               )}

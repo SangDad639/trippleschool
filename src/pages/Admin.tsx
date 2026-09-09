@@ -980,6 +980,12 @@ const Admin = () => {
               </Button>
               <Button
                 variant="outline"
+                onClick={() => navigate('/admin/promos')}
+              >
+                🎬 โฆษณา
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => navigate('/admin/enrollments')}
               >
                 อนุมัติสมัครเรียน

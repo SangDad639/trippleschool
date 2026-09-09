@@ -141,6 +141,18 @@ export async function getFile(key: string) {
 }
 
 /**
+ * GET object เฉพาะช่วง bytes (HTTP Range proxy สำหรับวิดีโอ — /api/promos/:id/video)
+ * แยกจาก getFile() ที่มีจุดเรียกเดิม ~20 จุด · `range` รูปแบบ "bytes=start-end"
+ */
+export async function getFileRange(key: string, range?: string) {
+  return getS3Client().send(new GetObjectCommand({
+    Bucket: getBucketName(),
+    Key: key,
+    ...(range ? { Range: range } : {}),
+  }));
+}
+
+/**
  * Extract the S3 key from a value that may be a key, our S3 URL, or an external URL.
  * Used on writes: if the frontend round-trips a fresh signed URL, store just the key.
  */

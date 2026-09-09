@@ -212,7 +212,7 @@ function sanitizeMaterials(input: unknown): LessonMaterial[] {
 // Covers watch?v= (with any leading query params), youtu.be, /embed/, /shorts/,
 // /live/ and /v/. An unmatched form returns null so callers reject the URL
 // instead of silently keeping a stale id.
-function extractYoutubeId(url: string): string | null {
+export function extractYoutubeId(url: string): string | null {
   if (!url) return null;
   const trimmed = url.trim();
   const patterns = [
@@ -1329,6 +1329,62 @@ router.put('/lessons/:lessonId/unassign', authenticate, async (req: AuthRequest,
 
 // =====================  LESSON ENDPOINTS  =====================
 
+/* ---------- โฆษณาแทรก (migration 065, routes/promos.ts) ---------- */
+/**
+ * subselect จุดแทรกของบท → `promos: [{promo_id, offset_sec}]` เรียงตามเวลา (0 = ก่อนเริ่ม)
+ * `activeOnly` = ผู้เรียน (โฆษณาที่ปิดใช้หายไปเอง) · แอดมินเห็นทุกจุดเพื่อแก้ไข
+ * mask ของบทล็อก spread แถวเดิม → promos ผ่านไปได้ (ตั้งใจ — ไม่ใช่ความลับ และบทล็อกไม่มี player อยู่แล้ว)
+ */
+function lessonPromosSql(activeOnly: boolean, lessonRef = 'lessons.id'): string {
+  return `COALESCE((
+    SELECT json_agg(json_build_object('promo_id', lp.promo_id, 'offset_sec', lp.offset_sec) ORDER BY lp.offset_sec)
+      FROM lesson_promos lp JOIN promo_videos pv ON pv.id = lp.promo_id${activeOnly ? ' AND pv.is_active = true' : ''}
+     WHERE lp.lesson_id = ${lessonRef}), '[]'::json)`;
+}
+type PromoSlot = { promo_id: number; offset_sec: number };
+/** ตรวจ body.promos — undefined = ไม่แตะ · [] = ล้าง · คืน error ไทยถ้าไม่ผ่าน */
+async function parseLessonPromos(raw: unknown): Promise<{ list?: PromoSlot[]; error?: string }> {
+  if (raw === undefined) return {};
+  if (!Array.isArray(raw)) return { error: 'promos ต้องเป็นรายการ' };
+  if (raw.length > 20) return { error: 'จุดแทรกโฆษณาได้ไม่เกิน 20 จุดต่อบท' };
+  const list: PromoSlot[] = [];
+  const seen = new Set<number>();
+  for (const it of raw) {
+    const promo_id = Number(it?.promo_id);
+    const offset_sec = Number(it?.offset_sec ?? 0);
+    if (!Number.isInteger(promo_id) || promo_id <= 0) return { error: 'เลือกโฆษณาให้ครบทุกจุดแทรก' };
+    if (!Number.isInteger(offset_sec) || offset_sec < 0) return { error: 'เวลาจุดแทรกไม่ถูกต้อง' };
+    if (offset_sec !== 0 && offset_sec < 5) return { error: 'จุดแทรกกลางคลิปต้องอยู่หลังวินาทีที่ 5' };
+    if (seen.has(offset_sec)) return { error: `จุดแทรกซ้ำกันที่วินาทีที่ ${offset_sec}` };
+    seen.add(offset_sec);
+    list.push({ promo_id, offset_sec });
+  }
+  if (list.length) {
+    const ids = [...new Set(list.map((l) => l.promo_id))];
+    const found = await pool.query(`SELECT id FROM promo_videos WHERE id = ANY($1::int[])`, [ids]);
+    if (found.rowCount !== ids.length) return { error: 'มีโฆษณาที่ไม่พบในระบบ (อาจถูกลบไปแล้ว)' };
+  }
+  list.sort((a, b) => a.offset_sec - b.offset_sec);
+  return { list };
+}
+/** แทนที่จุดแทรกทั้งหมดของบท (transaction: ลบเดิม + ใส่ใหม่) */
+async function replaceLessonPromos(lessonId: number, list: PromoSlot[]): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM lesson_promos WHERE lesson_id = $1`, [lessonId]);
+    for (const s of list) {
+      await client.query(`INSERT INTO lesson_promos (lesson_id, promo_id, offset_sec) VALUES ($1, $2, $3)`, [lessonId, s.promo_id, s.offset_sec]);
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch { /* noop */ }
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 router.get('/:courseId/lessons', optionalAuth, async (req: AuthRequest, res) => {
   try {
     const { courseId } = req.params;
@@ -1340,7 +1396,8 @@ router.get('/:courseId/lessons', optionalAuth, async (req: AuthRequest, res) => 
     const result = await pool.query(`
       SELECT id, course_id, section_id, title, description, youtube_url, youtube_id,
              duration_minutes, lesson_order, is_preview, is_active, created_at, updated_at, cover_url,
-             ${materialsMetaSql('materials')} AS materials
+             ${materialsMetaSql('materials')} AS materials,
+             ${lessonPromosSql(!req.isAdmin)} AS promos
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [courseId]);
     // บทที่ล็อกต้องล้าง materials ด้วย (ลิงก์เอกสาร = เนื้อหาขายเช่นกัน) — ให้เหมือน /:slug/full;
@@ -1388,13 +1445,16 @@ router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) =>
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const { courseId } = req.params;
-    const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, section_id, materials } = req.body;
+    const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, section_id, materials, promos } = req.body;
     if (!title || !youtube_url) return res.status(400).json({ error: 'Title and YouTube URL are required' });
     const youtube_id = extractYoutubeId(youtube_url);
     if (!youtube_id) return res.status(400).json({ error: 'ลิงก์ YouTube ไม่ถูกต้อง (รองรับ watch?v=, youtu.be, /embed/, /shorts/, /live/)' });
     const cleanMaterials = sanitizeMaterials(materials);
     const sizeError = validateMaterialsSize(cleanMaterials);
     if (sizeError) return res.status(400).json({ error: sizeError });
+    // จุดแทรกโฆษณา — ตรวจก่อนสร้างบท (ไม่งั้นได้บทที่ไม่มีโฆษณาทั้งที่แอดมินตั้งไว้)
+    const promoParse = await parseLessonPromos(promos);
+    if (promoParse.error) return res.status(400).json({ error: promoParse.error });
     // ทุกบทต้องมีหมวด — ไม่ส่งมาก็ลงหมวดหมู่ "พื้นฐาน" ให้ (สร้างกล่องถ้าคอร์สยังไม่มี)
     // UI ไม่มีตัวเลือก "ไม่จัดหมวด" แล้ว อันนี้กันบทหลุดจากทางอื่นที่เรียก API ตรงๆ
     const sectionId = section_id ?? (await basicsSectionId(Number(courseId)));
@@ -1428,7 +1488,8 @@ router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) =>
     if (launch?.content_type === 'course' && launch.is_active && launch.n === 1) {
       await pool.query(`UPDATE courses SET is_billboard = false WHERE is_billboard = true`);
     }
-    res.json(result.rows[0]);
+    if (promoParse.list) await replaceLessonPromos(result.rows[0].id, promoParse.list);
+    res.json({ ...result.rows[0], promos: promoParse.list ?? [] });
   } catch (error) {
     console.error('Error creating lesson:', error);
     res.status(500).json({ error: 'Failed to create lesson' });
@@ -1439,7 +1500,7 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const { id } = req.params;
-    const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, is_active, section_id, materials } = req.body;
+    const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, is_active, section_id, materials, promos } = req.body;
     const youtube_id = youtube_url ? extractYoutubeId(youtube_url) : undefined;
     // Reject an unparseable URL: the COALESCE below would otherwise store the
     // new youtube_url while keeping the old youtube_id, leaving the player on
@@ -1449,6 +1510,9 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
       const sizeError = validateMaterialsSize(sanitizeMaterials(materials));
       if (sizeError) return res.status(400).json({ error: sizeError });
     }
+    // จุดแทรกโฆษณา: undefined = ไม่แตะ · [] = ล้างหมด
+    const promoParse = await parseLessonPromos(promos);
+    if (promoParse.error) return res.status(400).json({ error: promoParse.error });
     let query = `
       UPDATE lessons SET
         title = COALESCE($1, title),
@@ -1472,7 +1536,8 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
     await pool.query(`
       UPDATE courses SET total_lessons = (SELECT COUNT(*) FROM lessons WHERE course_id = $1 AND is_active = true), updated_at = CURRENT_TIMESTAMP WHERE id = $1
     `, [lesson.course_id]);
-    res.json(result.rows[0]);
+    if (promoParse.list) await replaceLessonPromos(lesson.id, promoParse.list);
+    res.json(promoParse.list ? { ...lesson, promos: promoParse.list } : lesson);
   } catch (error) {
     console.error('Error updating lesson:', error);
     res.status(500).json({ error: 'Failed to update lesson' });
@@ -1658,7 +1723,8 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
     `, [course.id]);
     const lessonsResult = await pool.query(`
       SELECT id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, section_id, cover_url, share_code,
-             ${materialsMetaSql('materials')} AS materials
+             ${materialsMetaSql('materials')} AS materials,
+             ${lessonPromosSql(true)} AS promos
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
     const lessons = lessonsResult.rows.map((lesson) => {
@@ -1670,7 +1736,19 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
     });
     const sections = sectionsResult.rows.map((section) => ({ ...section, lessons: lessons.filter(l => l.section_id === section.id) }));
     const unassignedLessons = lessons.filter(l => l.section_id === null);
-    res.json({ ...course, sections, unassigned_lessons: unassignedLessons, lessons, enrollment, hasAccess, isEnrolled: hasAccess });
+    // โฆษณาที่ผู้เรียนคนนี้ดูไปแล้วภายใน 7 วัน (migration 066) → FE ไม่แสดงซ้ำ (1 โฆษณา / 1 ผู้เรียน / 7 วัน)
+    let promosSeen: number[] = [];
+    if (userId) {
+      try {
+        const pv = await pool.query<{ promo_id: number }>(
+          `SELECT promo_id FROM promo_views WHERE user_id = $1 AND last_seen_at > NOW() - INTERVAL '7 days'`, [userId]
+        );
+        promosSeen = pv.rows.map((r) => Number(r.promo_id));
+      } catch (e) {
+        console.error('[courses] promo_views lookup failed (fail-open):', e);
+      }
+    }
+    res.json({ ...course, sections, unassigned_lessons: unassignedLessons, lessons, enrollment, hasAccess, isEnrolled: hasAccess, promos_seen: promosSeen });
   } catch (error) {
     console.error('Error fetching course:', error);
     res.status(500).json({ error: 'Failed to fetch course' });
@@ -1698,7 +1776,8 @@ router.get('/:slug', async (req, res) => {
     `, [course.id]);
     const lessonsResult = await pool.query(`
       SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id, cover_url, share_code,
-             ${materialsMetaSql('materials')} AS materials
+             ${materialsMetaSql('materials')} AS materials,
+             ${lessonPromosSql(true)} AS promos
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
     // Public payload: only preview lessons expose youtube + materials; paid lessons
