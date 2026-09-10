@@ -16,6 +16,8 @@ interface ContinueItem {
   course_slug: string;
   course_name: string;
   thumbnail_url: string;
+  /** เวลาปกเปลี่ยนล่าสุด (จาก /enrollments/mine) — ต่อท้าย URL ปกให้รูปเปลี่ยนทันที */
+  cover_rev?: string | null;
   total_lessons: number;
   progress_percent: number;
   last_lesson_id: number | null;
@@ -174,6 +176,7 @@ const Storefront = () => {
                   name: item.course_name,
                   slug: item.course_slug,
                   thumbnail_url: item.thumbnail_url,
+                  cover_rev: item.cover_rev ?? null,
                   total_lessons: item.total_lessons,
                 } as BrowseCourse}
                 variant="grid"

@@ -68,9 +68,10 @@ class ApiClient {
   }
 
   /**
-   * ปกคอร์ส = ภาพของ "วิดีโอล่าสุด" ในคอร์ส (เซิร์ฟเวอร์เลือกให้: ปกบทล่าสุด →
-   * ภาพจาก YouTube → ปกสำรองที่แอดมินอัป) จึงไม่ผูกกับ thumbnail_url อีกต่อไป
-   * r=cover_rev ทำให้ภาพเปลี่ยนทันทีเมื่อเพิ่ม/แก้วิดีโอ โดยไม่ต้องรอแคชหมดอายุ
+   * ปกคอร์ส — เซิร์ฟเวอร์เลือกให้ (route /api/courses/:id/cover):
+   *   ปกที่แอดมินตั้งเอง (courses.cover_url) → ปกบทล่าสุด → ภาพจาก YouTube → ปกสำรอง (thumbnail_url)
+   * FE จึงไม่ผูกกับ thumbnail_url · r=cover_rev (รวมเวลาที่ตั้ง/ล้างปกเอง) ทำให้ภาพเปลี่ยนทันที
+   * เมื่อเพิ่ม/แก้วิดีโอหรือแอดมินเปลี่ยนปก โดยไม่ต้องรอแคชหมดอายุ
    */
   courseCoverUrl(
     course: { id?: number; cover_rev?: string | null; thumbnail_url?: string | null } | null | undefined,
@@ -3141,6 +3142,15 @@ class ApiClient {
   }
   async deleteLessonCover(lessonId: number): Promise<{ ok: boolean }> {
     return this.request(`/api/courses/lessons/${lessonId}/cover`, { method: 'DELETE' });
+  }
+  /** ปกคอร์สที่แอดมินตั้งเอง (ทับปกอัตโนมัติจากคลิปล่าสุด) — มีผลทันที; delete = กลับไปใช้ปกอัตโนมัติ */
+  async uploadCourseCover(courseId: number, file: File): Promise<{ ok: boolean; cover_url: string; cover_set_at: string }> {
+    const form = new FormData();
+    form.append('cover', file);
+    return this.request(`/api/courses/${courseId}/cover`, { method: 'POST', body: form });
+  }
+  async deleteCourseCover(courseId: number): Promise<{ ok: boolean; cover_set_at: string }> {
+    return this.request(`/api/courses/${courseId}/cover`, { method: 'DELETE' });
   }
   async getAdminCourses() {
     return this.request('/api/courses/admin/all');

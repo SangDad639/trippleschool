@@ -622,22 +622,12 @@ const CourseDetail = () => {
             <BookOpen className="h-20 w-20 text-gray-600" />
           </div>
         )}
-        {/* hero ใช้ "ปกสำรอง" ที่แอดมินอัปในฟอร์มคอร์สก่อน — ไม่มี/รูปเสีย ค่อยตกไปใช้
-            ปกวิดีโอล่าสุด (การ์ดหน้า /courses, Billboard, og:image ยังใช้ปกวิดีโอล่าสุดเหมือนเดิม) */}
+        {/* hero ใช้กติกาเดียวกับการ์ด/Billboard/og:image: ปกที่แอดมินตั้งเอง → ปกวิดีโอล่าสุด → ปกสำรอง
+            (เซิร์ฟเวอร์เลือกให้ใน /cover) — รูปเสีย → ซ่อน เหลือพื้นเทา+ไอคอนหนังสือ */}
         <img
-          src={course.thumbnail_url
-            ? api.mediaUrl(course.thumbnail_url, 'hero')
-            : api.courseCoverUrl(course, 'hero')}
+          src={api.courseCoverUrl(course, 'hero')}
           alt={course.name}
-          onError={(e) => {
-            const img = e.target as HTMLImageElement;
-            const fallback = api.courseCoverUrl(course, 'hero');
-            if (course.thumbnail_url && img.src !== fallback) {
-              img.src = fallback; // ปกสำรองเสีย → ลองปกวิดีโอล่าสุด
-            } else {
-              img.style.display = 'none'; // พังทั้งคู่ → เหลือพื้นเทา+ไอคอนหนังสือ
-            }
-          }}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
           className="absolute inset-0 w-full h-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 to-transparent" />

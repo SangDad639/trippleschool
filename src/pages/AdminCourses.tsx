@@ -89,7 +89,13 @@ interface Course {
   slug: string;
   description: string;
   short_description: string;
+  /** ปกสำรอง — ใช้เฉพาะเมื่อคอร์สไม่มีวิดีโอและไม่ได้ตั้งปกเอง */
   thumbnail_url: string;
+  /** ปกที่แอดมินตั้งเอง (migration 068) — ชนะปกอัตโนมัติจากคลิปล่าสุด; null = อัตโนมัติ */
+  cover_url?: string | null;
+  cover_set_at?: string | null;
+  /** เวลาปกเปลี่ยนล่าสุด (บทเรียน/ปกตั้งเอง) → ต่อท้าย URL ปกให้รูปเปลี่ยนทันที */
+  cover_rev?: string | null;
   instructor_name: string;
   instructor_avatar: string;
   difficulty: string;
@@ -397,6 +403,10 @@ const AdminCourses = () => {
   const [coverBusy, setCoverBusy] = useState(false);
   const [coverRev, setCoverRev] = useState(0); // bump = force-refresh preview img
   const coverInputRef = useRef<HTMLInputElement>(null);
+  // ปกคอร์สที่ตั้งเอง (ทับปกอัตโนมัติจากคลิปล่าสุด)
+  const [courseCoverBusy, setCourseCoverBusy] = useState(false);
+  const [courseCoverRev, setCourseCoverRev] = useState(0);
+  const courseCoverInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
 
@@ -958,6 +968,44 @@ const AdminCourses = () => {
     }
   };
 
+  // ===== ปกคอร์สที่ตั้งเอง — ทับปกอัตโนมัติจากคลิปล่าสุด (มีผลทันที ไม่ผูกกับปุ่มบันทึกคอร์ส) =====
+  const handleCourseCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !editingCourse) return;
+    if (!file.type.startsWith('image/')) { toast.error('รองรับเฉพาะไฟล์รูปภาพ'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error('ไฟล์ต้องมีขนาดไม่เกิน 5MB'); return; }
+    setCourseCoverBusy(true);
+    try {
+      const r = await api.uploadCourseCover(editingCourse.id, file);
+      // cover_rev = เวลาตั้งปก → URL preview เปลี่ยน (เซิร์ฟเวอร์รวม cover_set_at ใน cover_rev เหมือนกัน)
+      setEditingCourse({ ...editingCourse, cover_url: r.cover_url, cover_set_at: r.cover_set_at, cover_rev: r.cover_set_at });
+      setCourseCoverRev((n) => n + 1);
+      toast.success('ตั้งปกคอร์สแล้ว — ใช้ปกนี้ทุกหน้าจนกว่าจะกดกลับไปใช้ปกอัตโนมัติ');
+      loadCourses();
+    } catch (error: any) {
+      toast.error(error?.message || 'อัปโหลดปกไม่สำเร็จ');
+    } finally {
+      setCourseCoverBusy(false);
+    }
+  };
+
+  const handleCourseCoverReset = async () => {
+    if (!editingCourse) return;
+    setCourseCoverBusy(true);
+    try {
+      const r = await api.deleteCourseCover(editingCourse.id);
+      setEditingCourse({ ...editingCourse, cover_url: null, cover_set_at: r.cover_set_at, cover_rev: r.cover_set_at });
+      setCourseCoverRev((n) => n + 1);
+      toast.success('กลับไปใช้ปกอัตโนมัติ (คลิปล่าสุด) แล้ว');
+      loadCourses();
+    } catch (error: any) {
+      toast.error(error?.message || 'ลบปกไม่สำเร็จ');
+    } finally {
+      setCourseCoverBusy(false);
+    }
+  };
+
   // Lesson CRUD
   const handleOpenLessonDialog = async (course: Course, lesson?: Lesson) => {
     setSelectedCourseForLesson(course);
@@ -1426,7 +1474,7 @@ const AdminCourses = () => {
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 w-full mr-2 sm:mr-4 min-w-0">
                       <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                        {/* ปกที่แสดงจริง = ภาพวิดีโอล่าสุด (เซิร์ฟเวอร์เลือกให้) ไม่ใช่ไฟล์ที่อัปไว้ */}
+                        {/* ปกที่แสดงจริง = ปกที่ตั้งเอง หรือภาพวิดีโอล่าสุด (เซิร์ฟเวอร์เลือกให้) */}
                         <div className="relative w-16 h-10 rounded bg-gray-700 flex items-center justify-center shrink-0 overflow-hidden">
                           <BookOpen className="h-5 w-5 text-gray-500" />
                           <img
@@ -1449,6 +1497,11 @@ const AdminCourses = () => {
                           <Badge className="bg-purple-500/15 text-purple-400 border border-purple-500/30 flex items-center gap-1">
                             <Clapperboard className="h-3 w-3" />
                             Billboard หน้าแรก{course.is_billboard ? ' (ปักเอง)' : ' (อัตโนมัติ)'}
+                          </Badge>
+                        )}
+                        {course.cover_url && (
+                          <Badge className="bg-amber-500/15 text-amber-400 border border-amber-500/30" title="ปกที่แอดมินตั้งเอง — เพิ่มคลิปใหม่ปกไม่เปลี่ยน">
+                            🖼️ ปกตั้งเอง
                           </Badge>
                         )}
                         {course.content_type === 'tip' && (
@@ -1884,79 +1937,143 @@ const AdminCourses = () => {
                 items={courseForm.samples}
                 onChange={(samples) => setCourseForm({ ...courseForm, samples })}
               />
-              {/* Thumbnail Upload Section */}
+              {/* ปกคอร์ส: ค่าเริ่มต้น = ภาพจากคลิปล่าสุด (อัตโนมัติ) · แอดมินอัปปกเองได้ → ใช้อันที่ตั้งเองจนกว่าจะกดกลับไปใช้อัตโนมัติ
+                  (มีผลทันทีผ่าน POST/DELETE /:id/cover ไม่ผูกกับปุ่มบันทึกคอร์ส) */}
               <div>
-                <Label>🖼️ รูปปกสำรอง (ใช้เฉพาะตอนคอร์สยังไม่มีวิดีโอ)</Label>
-                <p className="text-gray-500 text-xs mt-0.5">
-                  ปกคอร์สบนเว็บใช้ <span className="text-gray-300">ภาพของวิดีโอล่าสุดในคอร์สโดยอัตโนมัติ</span> — เพิ่ม/เปลี่ยนวิดีโอเมื่อไหร่ ปกเปลี่ยนตามทันที
-                  (อยากกำหนดเอง ให้ตั้ง "ปกบทเรียน" ที่บทล่าสุด) · ไฟล์สำรองแนะนำ 16:9 อย่างน้อย 1920×1080 ไม่เกิน 5MB
-                </p>
-                <div className="mt-2 flex flex-col sm:flex-row gap-4">
-                  {/* Preview: แสดง "ปกที่จะขึ้นจริง" ไม่ใช่ไฟล์ที่อัป (สัดส่วนตรงกับการ์ดบนเว็บ 16:9) */}
-                  <div className="relative w-40 aspect-video rounded-lg border border-gray-700 bg-gray-800 overflow-hidden flex-shrink-0">
-                    <div className="absolute inset-0 flex items-center justify-center text-gray-500">
-                      <ImageIcon className="h-8 w-8" />
-                    </div>
-                    {editingCourse ? (
+                <Label>🖼️ ปกคอร์ส</Label>
+                {editingCourse ? (
+                  <div className="mt-2 flex flex-col sm:flex-row gap-4">
+                    {/* Preview: "ปกที่จะขึ้นจริง" ตามที่เซิร์ฟเวอร์เลือก (16:9 เท่าการ์ด) — cr= บังคับโหลดใหม่หลังตั้ง/ล้าง */}
+                    <div className="relative w-40 aspect-video rounded-lg border border-gray-700 bg-gray-800 overflow-hidden flex-shrink-0">
+                      <div className="absolute inset-0 flex items-center justify-center text-gray-500">
+                        <ImageIcon className="h-8 w-8" />
+                      </div>
                       <img
-                        src={api.courseCoverUrl(editingCourse, 'card')}
+                        key={courseCoverRev}
+                        src={`${api.courseCoverUrl(editingCourse, 'card')}&cr=${courseCoverRev}`}
                         alt="ปกที่จะแสดงจริง"
                         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                         className="absolute inset-0 w-full h-full object-cover"
+                        data-testid="course-cover-preview"
                       />
-                    ) : courseForm.thumbnail_url ? (
-                      <img
-                        src={api.mediaUrl(courseForm.thumbnail_url, 'card')}
-                        alt="Preview"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                        className="absolute inset-0 w-full h-full object-cover"
-                      />
-                    ) : null}
-                  </div>
-                  {/* Upload Controls */}
-                  <div className="flex-1 space-y-2">
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => thumbnailInputRef.current?.click()}
-                        disabled={uploading}
+                    </div>
+                    <div className="flex-1 space-y-2">
+                      <p
+                        className={`text-xs ${editingCourse.cover_url ? 'text-green-400' : 'text-gray-400'}`}
+                        data-testid="course-cover-status"
                       >
-                        {uploading ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Upload className="h-4 w-4 mr-2" />
-                        )}
-                        {uploading ? 'กำลังอัพโหลด...' : 'เลือกไฟล์'}
-                      </Button>
-                      {courseForm.thumbnail_url && (
+                        {editingCourse.cover_url
+                          ? '✅ ใช้ปกที่ตั้งเอง — เพิ่ม/เปลี่ยนคลิปใหม่ ปกไม่เปลี่ยน'
+                          : '🎬 ใช้ปกอัตโนมัติ: ภาพจากคลิปล่าสุด — เพิ่ม/เปลี่ยนวิดีโอเมื่อไหร่ ปกเปลี่ยนตามทันที'}
+                      </p>
+                      <div className="flex flex-wrap gap-2">
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           size="sm"
-                          onClick={() => setCourseForm({ ...courseForm, thumbnail_url: '' })}
-                          className="text-red-400 hover:text-red-300"
+                          disabled={courseCoverBusy}
+                          onClick={() => courseCoverInputRef.current?.click()}
+                          data-testid="course-cover-upload"
                         >
-                          ลบ
+                          {courseCoverBusy ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : '📤 '}
+                          อัปโหลดปกเอง
                         </Button>
+                        {editingCourse.cover_url && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={courseCoverBusy}
+                            onClick={handleCourseCoverReset}
+                            className="text-gray-400"
+                            data-testid="course-cover-reset"
+                          >
+                            ↩ ใช้ปกอัตโนมัติ (คลิปล่าสุด)
+                          </Button>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-gray-500">
+                        มีผลทันทีทุกหน้า (การ์ด, Billboard, หน้ารายละเอียด) ไม่ต้องกดบันทึกคอร์ส · แนะนำ 16:9 อย่างน้อย 1280×720 ไม่เกิน 5MB
+                      </p>
+                      <input
+                        ref={courseCoverInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleCourseCoverUpload}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-500 text-xs mt-1">
+                    ปกจะใช้ภาพจากคลิปล่าสุดอัตโนมัติ — บันทึกคอร์สก่อน แล้วกลับมาแก้ไขถ้าต้องการอัปโหลดปกเอง
+                  </p>
+                )}
+
+                {/* ปกสำรอง (เดิม): ใช้เฉพาะเมื่อคอร์สยังไม่มีวิดีโอและไม่ได้ตั้งปกเอง — เก็บไว้เป็นบล็อกย่อย */}
+                <details className="mt-3 rounded-lg border border-gray-800 bg-gray-900/40 p-3">
+                  <summary className="text-xs text-gray-400 cursor-pointer select-none">
+                    ปกสำรอง — ใช้เมื่อคอร์สยังไม่มีวิดีโอและไม่ได้ตั้งปกเอง{courseForm.thumbnail_url ? ' (มีไฟล์แล้ว)' : ''}
+                  </summary>
+                  <div className="mt-2 flex flex-col sm:flex-row gap-3">
+                    <div className="relative w-28 aspect-video rounded-md border border-gray-700 bg-gray-800 overflow-hidden flex-shrink-0">
+                      <div className="absolute inset-0 flex items-center justify-center text-gray-600">
+                        <ImageIcon className="h-5 w-5" />
+                      </div>
+                      {courseForm.thumbnail_url && (
+                        <img
+                          src={api.mediaUrl(courseForm.thumbnail_url, 'card')}
+                          alt="ปกสำรอง"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                          className="absolute inset-0 w-full h-full object-cover"
+                        />
                       )}
                     </div>
-                    <Input
-                      value={courseForm.thumbnail_url}
-                      onChange={(e) => setCourseForm({ ...courseForm, thumbnail_url: e.target.value })}
-                      placeholder="หรือใส่ URL รูปภาพ..."
-                      className="text-sm"
-                    />
-                    <input
-                      ref={thumbnailInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp"
-                      onChange={handleThumbnailUpload}
-                      className="hidden"
-                    />
+                    <div className="flex-1 space-y-2">
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => thumbnailInputRef.current?.click()}
+                          disabled={uploading}
+                        >
+                          {uploading ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Upload className="h-4 w-4 mr-2" />
+                          )}
+                          {uploading ? 'กำลังอัพโหลด...' : 'เลือกไฟล์'}
+                        </Button>
+                        {courseForm.thumbnail_url && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setCourseForm({ ...courseForm, thumbnail_url: '' })}
+                            className="text-red-400 hover:text-red-300"
+                          >
+                            ลบ
+                          </Button>
+                        )}
+                      </div>
+                      <Input
+                        value={courseForm.thumbnail_url}
+                        onChange={(e) => setCourseForm({ ...courseForm, thumbnail_url: e.target.value })}
+                        placeholder="หรือใส่ URL รูปภาพ..."
+                        className="text-sm"
+                      />
+                      <p className="text-[11px] text-gray-500">บันทึกพร้อมฟอร์มคอร์ส · แนะนำ 16:9 ไม่เกิน 5MB</p>
+                      <input
+                        ref={thumbnailInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        onChange={handleThumbnailUpload}
+                        className="hidden"
+                      />
+                    </div>
                   </div>
-                </div>
+                </details>
               </div>
 
               <div>

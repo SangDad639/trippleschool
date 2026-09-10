@@ -232,7 +232,7 @@ export function extractYoutubeId(url: string): string | null {
 // so old thumbnails keep working until the backfill script has run.
 // prefix ที่ยอมให้ดึงผ่าน proxy สาธารณะนี้ — เดิมรับ key อะไรก็ได้ ทำให้ object อื่น
 // ในบัคเก็ต (เช่นสลิปโอนเงิน payment-slips/…) ถูกดึงได้ถ้ารู้คีย์
-const PUBLIC_IMAGE_PREFIXES = ['course-thumb/', 'lesson-cover/', 'lesson-thumb-cache/', 'course-cover-cache/', 'course-sample/'];
+const PUBLIC_IMAGE_PREFIXES = ['course-thumb/', 'course-cover/', 'lesson-cover/', 'lesson-thumb-cache/', 'course-cover-cache/', 'course-sample/'];
 
 router.get('/thumbnails/*', async (req: Request, res: Response) => {
   try {
@@ -322,9 +322,11 @@ router.get('/lessons/:lessonId/thumb', async (req: Request, res: Response) => {
   }
 });
 
-// ============ Public: course cover = ภาพของ "วิดีโอล่าสุด" ในคอร์ส ============
-// กติกา (ตามที่ตกลง): ปกคอร์สไม่ใช่ไฟล์ที่อัปแช่ไว้ แต่มาจากบทเรียนล่าสุดเสมอ
-// และเปลี่ยนตามทันทีเมื่อเพิ่ม/แก้วิดีโอ (FE ต่อ ?r=<cover_rev> ให้ URL เปลี่ยนเอง)
+// ============ Public: course cover ============
+// กติกา (ตกลง 31 ส.ค. + แก้ 10 ก.ย. 2026): ค่าเริ่มต้น = ภาพของ "วิดีโอล่าสุด" ในคอร์ส
+// เปลี่ยนตามทันทีเมื่อเพิ่ม/แก้วิดีโอ แต่ถ้าแอดมินตั้งปกเองทีหลัง ต้องใช้อันที่ตั้งเอง (ค้างจนกดกลับไปใช้อัตโนมัติ)
+// (FE ต่อ ?r=<cover_rev> ให้ URL เปลี่ยนเอง — cover_rev รวม courses.cover_set_at ด้วย)
+//   0. courses.cover_url — ปกที่แอดมินตั้งเองให้คอร์ส (migration 068) ชนะทุกข้อด้านล่าง
 //   1. บทล่าสุดที่มีภาพได้ → ปกที่แอดมินอัปให้บทนั้น (lessons.cover_url)
 //   2. ไม่มี → ดึงจาก YouTube (maxresdefault 1280x720 → hqdefault) แคชลง S3 + ทำ variant
 //   3. คอร์สยังไม่มีวิดีโอเลย → ใช้ courses.thumbnail_url ที่อัปไว้เป็น "ปกสำรอง"
@@ -337,6 +339,38 @@ router.get('/:courseId/cover', async (req: Request, res: Response) => {
     const variant: ThumbVariant | null =
       req.query.v === 'card' || req.query.v === 'hero' ? (req.query.v as ThumbVariant) : null;
 
+    // ปกเปลี่ยนได้เมื่อมีวิดีโอใหม่/แอดมินตั้งเอง → immutable ไม่ได้ ใช้ ETag + อายุสั้นแทน
+    const sendImage = (body: Buffer | NodeJS.ReadableStream, contentType: string, etag: string) => {
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.setHeader('ETag', `"${etag}"`);
+      if (Buffer.isBuffer(body)) return res.end(body);
+      (body as any).pipe(res);
+    };
+
+    // อ่านแถวคอร์สครั้งเดียว — ใช้ทั้งข้อ 0 (ปกตั้งเอง) และข้อ 3 (ปกสำรอง)
+    const course = (
+      await pool.query(`SELECT cover_url, cover_set_at, thumbnail_url FROM courses WHERE id = $1`, [courseId])
+    ).rows[0];
+
+    // 0) ปกที่แอดมินตั้งเองให้คอร์ส — ค้างไว้จนกด "ใช้ปกอัตโนมัติ" (เพิ่มคลิปใหม่ไม่ทับ)
+    if (course?.cover_url && typeof course.cover_url === 'string') {
+      const key = course.cover_url.replace('/api/courses/thumbnails/', '');
+      const setAt = course.cover_set_at ? new Date(course.cover_set_at).getTime() || 0 : 0;
+      const etag = `c${courseId}-manual-${setAt}-${variant || 'orig'}`;
+      try {
+        const obj = await getFile(variant ? variantKey(key, variant) : key);
+        return sendImage(obj.Body as any, variant ? 'image/webp' : obj.ContentType || 'image/jpeg', etag);
+      } catch {
+        try {
+          const obj = await getFile(key);
+          return sendImage(obj.Body as any, obj.ContentType || 'image/jpeg', `${etag}-orig`);
+        } catch {
+          /* ไฟล์หายจาก S3 — ตกไปใช้ปกอัตโนมัติเงียบๆ */
+        }
+      }
+    }
+
     const lesson = (
       await pool.query(
         `SELECT id, youtube_id, cover_url FROM lessons
@@ -347,15 +381,6 @@ router.get('/:courseId/cover', async (req: Request, res: Response) => {
         [courseId]
       )
     ).rows[0];
-
-    // ปกเปลี่ยนได้เมื่อมีวิดีโอใหม่ → immutable ไม่ได้ ใช้ ETag + อายุสั้นแทน
-    const sendImage = (body: Buffer | NodeJS.ReadableStream, contentType: string, etag: string) => {
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Cache-Control', 'public, max-age=300');
-      res.setHeader('ETag', `"${etag}"`);
-      if (Buffer.isBuffer(body)) return res.end(body);
-      (body as any).pipe(res);
-    };
 
     // 1) ปกที่แอดมินอัปให้บทล่าสุด (ย่อเป็น webp ตั้งแต่ตอนอัปแล้ว)
     if (lesson?.cover_url && typeof lesson.cover_url === 'string') {
@@ -405,8 +430,7 @@ router.get('/:courseId/cover', async (req: Request, res: Response) => {
       }
     }
 
-    // 3) ปกสำรองที่แอดมินอัปให้คอร์ส (คอร์สที่ยังไม่มีวิดีโอ)
-    const course = (await pool.query(`SELECT thumbnail_url FROM courses WHERE id = $1`, [courseId])).rows[0];
+    // 3) ปกสำรองที่แอดมินอัปให้คอร์ส (คอร์สที่ยังไม่มีวิดีโอ และไม่ได้ตั้งปกเอง)
     if (course?.thumbnail_url && typeof course.thumbnail_url === 'string') {
       if (/^https?:\/\//i.test(course.thumbnail_url)) return res.redirect(302, course.thumbnail_url);
       const key = course.thumbnail_url.replace('/api/courses/thumbnails/', '');
@@ -426,6 +450,62 @@ router.get('/:courseId/cover', async (req: Request, res: Response) => {
     res.status(404).end();
   } catch (error) {
     res.status(404).end();
+  }
+});
+
+// ============ Admin: ปกคอร์สที่ตั้งเอง (ทับปกอัตโนมัติจากคลิปล่าสุด) — migration 068 ============
+// อัปแล้วมีผลทันที (ไม่ผูกกับปุ่มบันทึกคอร์ส) และค้างไว้จนกด DELETE = กลับไปใช้ปกอัตโนมัติ
+// ทำ variant card/hero ตั้งแต่ตอนอัป (hero ใช้กับ billboard/หน้ารายละเอียด 1440px)
+router.post('/:courseId/cover', authenticate, uploadSingle(thumbUpload, 'cover'), async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    const courseId = Number(req.params.courseId);
+    if (!Number.isInteger(courseId) || courseId <= 0) return res.status(400).json({ error: 'Bad course id' });
+    const exists = (await pool.query(`SELECT id FROM courses WHERE id = $1`, [courseId])).rows[0];
+    if (!exists) return res.status(404).json({ error: 'ไม่พบคอร์ส' });
+    if (!req.file) return res.status(400).json({ error: 'กรุณาแนบไฟล์รูป' });
+
+    const ext = (req.file.originalname.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+    const rand = Math.random().toString(36).slice(2, 10);
+    const key = `course-cover/${courseId}-${rand}.${ext}`;
+    await uploadFile(req.file.buffer, key, req.file.mimetype, { contentDisposition: 'inline' });
+    for (const v of ['card', 'hero'] as const) {
+      try {
+        const out = await makeThumbnailVariant(req.file.buffer, v);
+        if (out) await uploadFile(out, variantKey(key, v), 'image/webp', { contentDisposition: 'inline' });
+      } catch (e) {
+        console.error(`[course-cover] ${v} variant failed:`, e);
+      }
+    }
+    const url = `/api/courses/thumbnails/${key}`;
+    const r = await pool.query(
+      `UPDATE courses SET cover_url = $2, cover_set_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 RETURNING cover_url, cover_set_at`,
+      [courseId, url]
+    );
+    res.json({ ok: true, cover_url: url, cover_set_at: r.rows[0].cover_set_at });
+  } catch (error) {
+    console.error('Error uploading course cover:', error);
+    res.status(500).json({ error: 'อัปโหลดปกไม่สำเร็จ' });
+  }
+});
+
+// กลับไปใช้ปกอัตโนมัติ (คลิปล่าสุด) — ไม่ลบไฟล์เก่าใน S3 (กันลิงก์ค้าง ราคาถูก) · cover_set_at ใหม่ให้ cover_rev เปลี่ยน
+router.delete('/:courseId/cover', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    const courseId = Number(req.params.courseId);
+    if (!Number.isInteger(courseId) || courseId <= 0) return res.status(400).json({ error: 'Bad course id' });
+    const r = await pool.query(
+      `UPDATE courses SET cover_url = NULL, cover_set_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1 RETURNING cover_set_at`,
+      [courseId]
+    );
+    if (r.rows.length === 0) return res.status(404).json({ error: 'ไม่พบคอร์ส' });
+    res.json({ ok: true, cover_set_at: r.rows[0].cover_set_at });
+  } catch (error) {
+    console.error('Error removing course cover:', error);
+    res.status(500).json({ error: 'ลบปกไม่สำเร็จ' });
   }
 });
 
@@ -827,7 +907,7 @@ router.get('/admin/all', authenticate, async (req: AuthRequest, res) => {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const result = await pool.query(`
       SELECT c.*, t.name AS tag, tt.name AS tip_tag,
-        GREATEST(MAX(l.created_at) FILTER (WHERE l.is_active = true), MAX(l.updated_at) FILTER (WHERE l.is_active = true)) AS cover_rev,
+        GREATEST(MAX(l.created_at) FILTER (WHERE l.is_active = true), MAX(l.updated_at) FILTER (WHERE l.is_active = true), c.cover_set_at) AS cover_rev,
         COUNT(DISTINCT l.id) as lesson_count,
         COUNT(DISTINCT e.id) as enrollment_count
       FROM courses c
@@ -852,11 +932,12 @@ router.get('/', async (req, res) => {
     let query = `
       SELECT c.*, t.name AS tag, tt.name AS tip_tag,
         MAX(l.created_at) FILTER (WHERE l.is_active = true) as last_lesson_at,
-        -- cover_rev: ปกคอร์สมาจากวิดีโอล่าสุด → ค่านี้เปลี่ยนเมื่อเพิ่ม/แก้บทเรียน
+        -- cover_rev: ปกคอร์สมาจากวิดีโอล่าสุด (หรือปกที่แอดมินตั้งเอง) → ค่านี้เปลี่ยนเมื่อเพิ่ม/แก้บทเรียน หรือตั้ง/ล้างปกเอง
         -- FE เอาไปต่อท้าย URL ปกเพื่อให้เบราว์เซอร์โหลดภาพใหม่ทันที
         GREATEST(
           MAX(l.created_at) FILTER (WHERE l.is_active = true),
-          MAX(l.updated_at) FILTER (WHERE l.is_active = true)
+          MAX(l.updated_at) FILTER (WHERE l.is_active = true),
+          c.cover_set_at
         ) as cover_rev,
         (SELECT l2.id FROM lessons l2 WHERE l2.course_id = c.id AND l2.is_active = true ORDER BY l2.created_at DESC NULLS LAST, l2.lesson_order DESC, l2.id DESC LIMIT 1) AS latest_lesson_id,
         COUNT(DISTINCT l.id) FILTER (WHERE l.is_active = true) as lesson_count,
@@ -1685,7 +1766,7 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
     const { slug } = req.params;
     const userId = req.userId;
     const courseResult = await pool.query(`SELECT c.*,
-        (SELECT GREATEST(MAX(created_at), MAX(updated_at)) FROM lessons WHERE course_id = c.id AND is_active = true) AS cover_rev,
+        GREATEST((SELECT GREATEST(MAX(created_at), MAX(updated_at)) FROM lessons WHERE course_id = c.id AND is_active = true), c.cover_set_at) AS cover_rev,
         -- id ของบทล่าสุด: การ์ดที่โชว์ปกคลิปใหม่ ลิงก์มาที่บทนี้โดยตรง
         (SELECT l.id FROM lessons l WHERE l.course_id = c.id AND l.is_active = true ORDER BY l.created_at DESC NULLS LAST, l.lesson_order DESC, l.id DESC LIMIT 1) AS latest_lesson_id,
         (SELECT COUNT(*) FROM course_enrollments WHERE course_id = c.id AND status = 'approved') AS enrollment_count,
@@ -1759,7 +1840,7 @@ router.get('/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
     const courseResult = await pool.query(`SELECT c.*,
-        (SELECT GREATEST(MAX(created_at), MAX(updated_at)) FROM lessons WHERE course_id = c.id AND is_active = true) AS cover_rev,
+        GREATEST((SELECT GREATEST(MAX(created_at), MAX(updated_at)) FROM lessons WHERE course_id = c.id AND is_active = true), c.cover_set_at) AS cover_rev,
         -- id ของบทล่าสุด: การ์ดที่โชว์ปกคลิปใหม่ ลิงก์มาที่บทนี้โดยตรง
         (SELECT l.id FROM lessons l WHERE l.course_id = c.id AND l.is_active = true ORDER BY l.created_at DESC NULLS LAST, l.lesson_order DESC, l.id DESC LIMIT 1) AS latest_lesson_id,
         (SELECT COUNT(*) FROM course_enrollments WHERE course_id = c.id AND status = 'approved') AS enrollment_count,

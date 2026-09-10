@@ -209,9 +209,9 @@ router.get('/mine', authenticate, async (req: AuthRequest, res: Response) => {
     let query = `
       SELECT e.*, c.name as course_name, c.slug as course_slug, c.thumbnail_url,
              c.instructor_name, c.difficulty, c.total_lessons, c.duration_hours,
-             -- ปกคอร์ส = ภาพวิดีโอล่าสุด → ส่ง cover_rev ไปให้ FE bust แคชได้ทันทีเหมือนหน้าอื่น
-             (SELECT GREATEST(MAX(l.created_at), MAX(l.updated_at)) FROM lessons l
-               WHERE l.course_id = c.id AND l.is_active = true) AS cover_rev
+             -- ปกคอร์ส = ภาพวิดีโอล่าสุด (หรือปกที่แอดมินตั้งเอง) → ส่ง cover_rev ไปให้ FE bust แคชได้ทันทีเหมือนหน้าอื่น
+             GREATEST((SELECT GREATEST(MAX(l.created_at), MAX(l.updated_at)) FROM lessons l
+               WHERE l.course_id = c.id AND l.is_active = true), c.cover_set_at) AS cover_rev
       FROM course_enrollments e
       JOIN courses c ON e.course_id = c.id
       WHERE e.user_id = $1
