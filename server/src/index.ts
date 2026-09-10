@@ -21,6 +21,7 @@ import enrollmentsRoutes from './routes/enrollments.js';
 import agentChatRoutes from './routes/agentChat.js';
 import guideRoutes from './routes/guide.js';
 import promosRoutes from './routes/promos.js';
+import adminCodesRoutes from './routes/adminCodes.js';
 import pool from './db.js';
 import { startSubscriptionNotificationJob } from './jobs/subscriptionNotificationJob.js';
 import { runMigrations } from './migrations/runner.js';
@@ -128,6 +129,7 @@ app.use('/api/enrollments', enrollmentsRoutes);
 app.use('/api/agent-chat', agentChatRoutes);
 app.use('/api/guide', guideRoutes);
 app.use('/api/promos', promosRoutes);
+app.use('/api/admin-codes', adminCodesRoutes);
 
 // Initialize database tables
 async function initializeDatabase() {

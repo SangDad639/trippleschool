@@ -57,6 +57,47 @@ export function applyRefDiscount(amount: number, pct: number): number {
 }
 
 // ============================================================
+// โค้ดส่วนลดของแอดมิน (admin_codes) — migration 069
+//   ช่องกรอกโค้ดตอน checkout รับได้ 2 แบบ: โค้ดแอดมิน (ลดเท่ากัน · ไม่ผูก referrer · ไม่สร้างค่าคอม · เก็บ funnel)
+//   หรือโค้ดผู้แนะนำของสมาชิก (checkRefcode เดิม) · namespace ไม่ชนกัน (ตรวจตอนสร้างทั้งสองทาง)
+// ============================================================
+export type CheckoutCodeKind = 'affiliate' | 'admin' | 'none';
+export interface CheckoutCodeCheck {
+  valid: boolean;
+  kind: CheckoutCodeKind;
+  discountPercent: number;
+  /** เจ้าของโค้ดผู้แนะนำ (affiliate) — โค้ดแอดมินเป็น null เสมอ */
+  referrerId: number | null;
+  /** id ของ admin_codes เมื่อเป็นโค้ดแอดมิน — ใช้เก็บ funnel บนออเดอร์ */
+  adminCodeId: number | null;
+  adminCode?: { id: number; code: string; label: string | null };
+  reason?: RefcodeCheck['reason'] | 'CODE_INACTIVE';
+}
+
+/** ตรวจโค้ดตอน checkout: โค้ดแอดมินก่อน (active → ใช้ได้ · inactive → CODE_INACTIVE) ไม่พบค่อยตกไป checkRefcode */
+export async function checkCheckoutCode(code: string, userId: number): Promise<CheckoutCodeCheck> {
+  const clean = normalizeRefcode(code);
+  const none = (reason: CheckoutCodeCheck['reason']): CheckoutCodeCheck =>
+    ({ valid: false, kind: 'none', discountPercent: 0, referrerId: null, adminCodeId: null, reason });
+  if (!clean) return none('EMPTY');
+  const a = await pool.query(`SELECT id, code, label, is_active FROM admin_codes WHERE LOWER(code) = $1 LIMIT 1`, [clean]);
+  if (a.rows.length > 0) {
+    const row = a.rows[0];
+    if (!row.is_active) return none('CODE_INACTIVE');
+    return {
+      valid: true,
+      kind: 'admin',
+      discountPercent: await getRefcodeDiscountPercent(), // เท่ากับโค้ดผู้แนะนำ (user เคาะ)
+      referrerId: null,
+      adminCodeId: Number(row.id),
+      adminCode: { id: Number(row.id), code: String(row.code), label: row.label ?? null },
+    };
+  }
+  const r = await checkRefcode(clean, userId);
+  return { valid: r.valid, kind: r.valid ? 'affiliate' : 'none', discountPercent: r.discountPercent, referrerId: r.referrerId, adminCodeId: null, reason: r.reason };
+}
+
+// ============================================================
 // โค้ดกำหนดเอง (custom refcode) — migration 067
 //   ผู้ใช้เปลี่ยน users.refcode เป็นโค้ดของตัวเองได้ไม่จำกัดครั้ง · โค้ดเก่าใช้ไม่ได้ทันที
 //   เก็บ lowercase เสมอ → lookup เดิมทุกจุด (LOWER(refcode)) ทำงานต่อโดยไม่แก้
@@ -125,6 +166,9 @@ export async function setUserRefcode(
       await client.query('ROLLBACK');
       return { refcode: next, changed: false };
     }
+    // 069: ห้ามจับจองโค้ดที่เป็นโค้ดส่วนลดของแอดมิน (ทั้ง active/inactive) — namespace เดียวกันตอน checkout
+    const clash = await client.query(`SELECT 1 FROM admin_codes WHERE LOWER(code) = $1 LIMIT 1`, [next]);
+    if (clash.rows.length > 0) throw new RefcodeError('REFCODE_TAKEN', 409, 'โค้ดนี้มีคนใช้แล้ว กรุณาใช้โค้ดอื่น');
     await client.query(`UPDATE users SET refcode = $1 WHERE id = $2`, [next, userId]);
     await client.query(
       `INSERT INTO refcode_changes (user_id, old_refcode, new_refcode, changed_by) VALUES ($1, $2, $3, $4)`,

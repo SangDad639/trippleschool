@@ -1010,6 +1010,12 @@ const Admin = () => {
               </Button>
               <Button
                 variant="outline"
+                onClick={() => navigate('/admin/codes')}
+              >
+                🏷️ โค้ดส่วนลด
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => navigate('/admin/enrollments')}
               >
                 อนุมัติสมัครเรียน

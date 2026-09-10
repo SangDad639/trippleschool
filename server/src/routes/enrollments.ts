@@ -10,7 +10,7 @@ import pool from '../db.js';
 import { authenticate, authenticateQueryOrHeader, AuthRequest } from '../middleware/auth.js';
 import { uploadFile, getFile } from '../utils/s3.js';
 import { createAffiliateCommission } from '../services/stripeService.js';
-import { checkRefcode, bindReferrerIfEmpty, applyRefDiscount } from '../services/refcode.js';
+import { checkCheckoutCode, bindReferrerIfEmpty, applyRefDiscount } from '../services/refcode.js';
 import { cancelCommissionsBySource } from '../services/affiliateRules.js';
 
 const router = Router();
@@ -19,7 +19,9 @@ const router = Router();
  * ผูก referrer จากโค้ดที่บันทึกไว้บน enrollment — เรียกตอน admin อนุมัติเท่านั้น
  * (จ่ายเงินจริงแล้ว) mirror pattern ฝั่ง subscription ที่ bind หลัง verify สลิปผ่าน
  */
-async function bindReferrerFromEnrollment(enrollment: { user_id: number; refcode?: string | null; referrer_user_id?: number | null }): Promise<void> {
+async function bindReferrerFromEnrollment(enrollment: { user_id: number; refcode?: string | null; referrer_user_id?: number | null; admin_code_id?: number | null }): Promise<void> {
+  // 069: โค้ดส่วนลดของแอดมิน = ไม่ผูก referrer (สตริงใน refcode เป็นโค้ดแอดมิน ไม่ใช่ของสมาชิก)
+  if (enrollment.admin_code_id != null) return;
   if (!enrollment.refcode && enrollment.referrer_user_id == null) return;
   try {
     // 067: ใช้ id ที่ snapshot ไว้ตอน submit ก่อน — เจ้าของเปลี่ยนโค้ดระหว่างรออนุมัติ / คนอื่นมาจับจองโค้ดเก่า ไม่กระทบว่าเงินไปหาใคร
@@ -58,6 +60,20 @@ async function createCourseCommission(enrollment: { id: number; user_id: number;
     // approve สำเร็จไปแล้ว — ค่าคอมที่หายต้องไล่เจอจาก log นี้ (ไม่มี retry อัตโนมัติ)
     console.error(`[Affiliate][ALERT] course commission FAILED enrollment=${enrollment.id} user=${enrollment.user_id}:`, e);
   }
+}
+
+/**
+ * ตอน admin อนุมัติ: ผูก referrer + สร้างค่าคอม — ยกเว้นออเดอร์ที่ใช้โค้ดส่วนลดของแอดมิน (069)
+ * ต้องข้ามชัดเจน เพราะ createAffiliateCommission อ่าน users.referrer_id (ไม่ใช่โค้ดบนออเดอร์)
+ * → ผู้ซื้อที่มี referrer อยู่แล้วจะยังเกิดคอมถ้าไม่ข้าม (กติกา: โค้ดแอดมิน = ไม่รับเงิน affiliate)
+ */
+async function settleAffiliateOnApprove(row: { id: number; user_id: number; course_id: number; paid_amount?: number | string | null; refcode?: string | null; referrer_user_id?: number | null; admin_code_id?: number | null }): Promise<void> {
+  if (row.admin_code_id != null) {
+    console.log(`[Affiliate] enrollment #${row.id} ใช้โค้ดแอดมิน #${row.admin_code_id} → ไม่ผูก referrer / ไม่สร้างค่าคอม`);
+    return;
+  }
+  await bindReferrerFromEnrollment(row);
+  await createCourseCommission(row);
 }
 
 const SLIP_MAX_BYTES = 5 * 1024 * 1024;
@@ -140,15 +156,20 @@ router.post('/:courseId/enroll', authenticate, uploadSlip, async (req: AuthReque
     let appliedRef: string | null = null;
     // 067: snapshot "เจ้าของโค้ด" เป็น id ลงออเดอร์ด้วย — โค้ดเป็นแค่สตริงที่เจ้าของเปลี่ยนได้ทีหลัง
     let appliedReferrerId: number | null = null;
+    // 069: โค้ดส่วนลดของแอดมิน → เก็บ admin_code_id (funnel) แทน referrer
+    let appliedAdminCodeId: number | null = null;
     if (rawRef && baseAmount > 0) {
-      const chk = await checkRefcode(rawRef, userId);
+      const chk = await checkCheckoutCode(rawRef, userId);
       if (!chk.valid) {
-        const msg = chk.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : 'โค้ดผู้แนะนำไม่ถูกต้อง';
+        const msg = chk.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้'
+          : chk.reason === 'CODE_INACTIVE' ? 'โค้ดนี้ปิดใช้งานแล้ว'
+          : 'โค้ดผู้แนะนำไม่ถูกต้อง';
         return res.status(400).json({ error: msg, errorCode: 'INVALID_REFCODE' });
       }
       paidAmount = applyRefDiscount(baseAmount, chk.discountPercent);
       appliedRef = rawRef.toLowerCase();
       appliedReferrerId = chk.referrerId;
+      appliedAdminCodeId = chk.adminCodeId;
     }
 
     let slipUrl: string | null = null;
@@ -169,8 +190,11 @@ router.post('/:courseId/enroll', authenticate, uploadSlip, async (req: AuthReque
       if (appliedRef && row.refcode && row.refcode !== appliedRef) {
         // 067: เทียบ "เจ้าของ" ไม่ใช่สตริง — ผู้แนะนำเปลี่ยนโค้ดไปแล้ว ผู้ซื้อกรอกโค้ดใหม่ของคนเดิมแทนได้
         // (แถวเก่าก่อน 067 ไม่มี referrer_user_id → ตกลงมาเทียบสตริงแบบเดิม = ล็อก)
-        const sameOwner = row.referrer_user_id != null && appliedReferrerId != null
-          && Number(row.referrer_user_id) === Number(appliedReferrerId);
+        const sameOwner = (row.referrer_user_id != null && appliedReferrerId != null
+          && Number(row.referrer_user_id) === Number(appliedReferrerId))
+          // 069: โค้ดแอดมินตัวเดิม (id เดียวกัน) ก็ถือว่าเจ้าของเดียวกัน
+          || (row.admin_code_id != null && appliedAdminCodeId != null
+          && Number(row.admin_code_id) === Number(appliedAdminCodeId));
         if (!sameOwner) {
           return res.status(400).json({
             error: `คำสั่งซื้อนี้ใช้โค้ด ${row.refcode} ไปแล้ว เปลี่ยนโค้ดไม่ได้ — ลบโค้ดใหม่ออกแล้วส่งอีกครั้ง`,
@@ -183,16 +207,17 @@ router.post('/:courseId/enroll', authenticate, uploadSlip, async (req: AuthReque
       await pool.query(
         `UPDATE course_enrollments SET status='pending', rejection_reason=NULL, slip_url=COALESCE($2, slip_url),
            paid_amount=COALESCE($3, paid_amount, $5), refcode=COALESCE($4, refcode),
-           referrer_user_id=COALESCE($6, referrer_user_id), updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
-        [row.id, slipUrl, appliedRef ? paidAmount : null, appliedRef, baseAmount, appliedReferrerId]
+           referrer_user_id=COALESCE($6, referrer_user_id), admin_code_id=COALESCE($7, admin_code_id),
+           updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
+        [row.id, slipUrl, appliedRef ? paidAmount : null, appliedRef, baseAmount, appliedReferrerId, appliedAdminCodeId]
       );
       return res.json({ message: 'ส่งคำขอแล้ว รอการอนุมัติ', status: 'pending', paid_amount: appliedRef ? paidAmount : (row.paid_amount ?? baseAmount) });
     }
 
     const result = await pool.query(
-      `INSERT INTO course_enrollments (user_id, course_id, status, slip_url, paid_amount, refcode, referrer_user_id)
-       VALUES ($1, $2, 'pending', $3, $4, $5, $6) RETURNING *`,
-      [userId, courseId, slipUrl, paidAmount, appliedRef, appliedReferrerId]
+      `INSERT INTO course_enrollments (user_id, course_id, status, slip_url, paid_amount, refcode, referrer_user_id, admin_code_id)
+       VALUES ($1, $2, 'pending', $3, $4, $5, $6, $7) RETURNING *`,
+      [userId, courseId, slipUrl, paidAmount, appliedRef, appliedReferrerId, appliedAdminCodeId]
     );
     res.json({ message: 'ส่งคำขอแล้ว รอการอนุมัติ', enrollment: result.rows[0] });
   } catch (error) {
@@ -292,12 +317,15 @@ router.get('/admin/all', authenticate, async (req: AuthRequest, res: Response) =
       SELECT e.*, u.email as user_email, c.name as course_name, c.slug as course_slug, c.price, c.discount_price,
              approver.email as approved_by_email,
              -- 067: เจ้าของโค้ดที่ใช้ (id snapshot) — แสดงได้แม้เจ้าของเปลี่ยนโค้ดไปแล้ว
-             ru.email as referrer_email
+             ru.email as referrer_email,
+             -- 069: โค้ดส่วนลดของแอดมิน (funnel)
+             ac.code as admin_code, ac.label as admin_code_label
       FROM course_enrollments e
       JOIN users u ON e.user_id = u.id
       JOIN courses c ON e.course_id = c.id
       LEFT JOIN users approver ON e.approved_by = approver.id
       LEFT JOIN users ru ON e.referrer_user_id = ru.id
+      LEFT JOIN admin_codes ac ON e.admin_code_id = ac.id
       ${where}
       ORDER BY e.updated_at DESC LIMIT $${i} OFFSET $${i + 1}
     `, [...params, limit, offset]);
@@ -335,8 +363,7 @@ router.put('/admin/:id/approve', authenticate, async (req: AuthRequest, res: Res
       WHERE id=$2 AND status='pending' RETURNING *
     `, [req.userId, id]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'Enrollment not found or already processed' });
-    await bindReferrerFromEnrollment(result.rows[0]);
-    await createCourseCommission(result.rows[0]);
+    await settleAffiliateOnApprove(result.rows[0]);
     res.json({ message: 'Enrollment approved', enrollment: result.rows[0] });
   } catch (error) {
     console.error('Error approving enrollment:', error);
@@ -395,11 +422,10 @@ router.post('/admin/bulk-approve', authenticate, async (req: AuthRequest, res: R
     }
     const result = await pool.query(`
       UPDATE course_enrollments SET status='approved', approved_by=$1, approved_at=CURRENT_TIMESTAMP, rejection_reason=NULL, updated_at=CURRENT_TIMESTAMP
-      WHERE id = ANY($2) AND status='pending' RETURNING id, user_id, course_id, paid_amount, refcode, referrer_user_id
+      WHERE id = ANY($2) AND status='pending' RETURNING id, user_id, course_id, paid_amount, refcode, referrer_user_id, admin_code_id
     `, [req.userId, enrollment_ids]);
     for (const row of result.rows) {
-      await bindReferrerFromEnrollment(row);
-      await createCourseCommission(row);
+      await settleAffiliateOnApprove(row);
     }
     res.json({ message: `${result.rowCount} enrollments approved`, approved_ids: result.rows.map(r => r.id) });
   } catch (error) {

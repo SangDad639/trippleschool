@@ -398,7 +398,7 @@ const CourseDetail = () => {
       setRefCheck(state);
       if (!silent) {
         if (r.valid) toast.success(`ใช้โค้ดสำเร็จ 🎉 ลด ${r.discount_percent}%`);
-        else toast.error(r.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : r.reason === 'OWNER_INACTIVE' ? 'โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)' : 'ไม่พบโค้ดนี้');
+        else toast.error(r.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : r.reason === 'OWNER_INACTIVE' ? 'โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)' : r.reason === 'CODE_INACTIVE' ? 'โค้ดนี้ปิดใช้งานแล้ว' : 'ไม่พบโค้ดนี้');
       }
       return state;
     } catch {
@@ -1266,9 +1266,9 @@ const CourseDetail = () => {
 
             {buyAmount > 0 && (
               <>
-                {/* โค้ดผู้แนะนำ = ส่วนลดตอนซื้อ + เจ้าของโค้ดได้ค่าคอม */}
+                {/* โค้ดส่วนลด: โค้ดผู้แนะนำ (เจ้าของได้ค่าคอม) หรือโค้ดส่วนลดของแอดมิน (069) — ช่องเดียวกัน ลด % เท่ากัน */}
                 <div className="space-y-1.5">
-                  <p className="text-gray-300 text-xs font-medium">🎟️ โค้ดผู้แนะนำ (ถ้ามี)</p>
+                  <p className="text-gray-300 text-xs font-medium">🎟️ โค้ดส่วนลด / โค้ดผู้แนะนำ (ถ้ามี)</p>
                   <div className="flex gap-2">
                     <Input
                       value={refCode}
@@ -1295,7 +1295,7 @@ const CourseDetail = () => {
                   )}
                   {refCheck && !refCheck.valid && (
                     <p className="text-red-400 text-xs">
-                      ❌ {refCheck.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : refCheck.reason === 'OWNER_INACTIVE' ? 'โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)' : 'ไม่พบโค้ดนี้ ตรวจสอบอีกครั้ง'}
+                      ❌ {refCheck.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : refCheck.reason === 'OWNER_INACTIVE' ? 'โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)' : refCheck.reason === 'CODE_INACTIVE' ? 'โค้ดนี้ปิดใช้งานแล้ว' : 'ไม่พบโค้ดนี้ ตรวจสอบอีกครั้ง'}
                     </p>
                   )}
                 </div>

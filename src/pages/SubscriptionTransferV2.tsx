@@ -32,7 +32,8 @@ const SubscriptionTransferV2 = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   // โค้ดผู้แนะนำ — valid แล้วยอดโอนลด % (server ตรวจซ้ำและคาดหวังยอดลดตอน verify สลิป)
   const [refCode, setRefCode] = useState(() => localStorage.getItem('ts_ref') || '');
-  const [refCheck, setRefCheck] = useState<{ valid: boolean; pct: number; reason?: string; code: string } | null>(null);
+  // kind: 'admin' = โค้ดส่วนลดของแอดมิน (069) · 'affiliate' = โค้ดผู้แนะนำ — ส่วนลด % เท่ากัน ต่างแค่ข้อความ
+  const [refCheck, setRefCheck] = useState<{ valid: boolean; pct: number; reason?: string; code: string; kind?: string } | null>(null);
   const [refChecking, setRefChecking] = useState(false);
 
   const isMonthly = selectedPlan === 'monthly';
@@ -107,10 +108,10 @@ const SubscriptionTransferV2 = () => {
     try {
       setRefChecking(true);
       const r = await api.validateRefcode(code);
-      setRefCheck({ valid: r.valid, pct: r.discount_percent, reason: r.reason, code: code.toLowerCase() });
+      setRefCheck({ valid: r.valid, pct: r.discount_percent, reason: r.reason, code: code.toLowerCase(), kind: r.kind });
       if (!silent) {
         if (r.valid) toast.success(l(`ใช้โค้ดสำเร็จ 🎉 ลด ${r.discount_percent}%`, `Code applied 🎉 ${r.discount_percent}% off`));
-        else toast.error(r.reason === 'OWN_CODE' ? l('ใช้โค้ดของตัวเองไม่ได้', 'Cannot use your own code') : r.reason === 'OWNER_INACTIVE' ? l('โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)', 'This code is not active right now (code owner is not a member)') : l('ไม่พบโค้ดนี้', 'Code not found'));
+        else toast.error(r.reason === 'OWN_CODE' ? l('ใช้โค้ดของตัวเองไม่ได้', 'Cannot use your own code') : r.reason === 'OWNER_INACTIVE' ? l('โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)', 'This code is not active right now (code owner is not a member)') : r.reason === 'CODE_INACTIVE' ? l('โค้ดนี้ปิดใช้งานแล้ว', 'This code has been disabled') : l('ไม่พบโค้ดนี้', 'Code not found'));
       }
     } catch {
       if (!silent) toast.error(l('ตรวจสอบโค้ดไม่สำเร็จ ลองใหม่อีกครั้ง', 'Could not validate code, please retry'));
@@ -369,9 +370,9 @@ const SubscriptionTransferV2 = () => {
                 {copied === l('เลขบัญชี', 'Account number') ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
               </Button>
             </div>
-            {/* โค้ดผู้แนะนำ = ส่วนลด + เจ้าของโค้ดได้ค่าคอม */}
+            {/* โค้ดส่วนลด: โค้ดผู้แนะนำ (เจ้าของได้ค่าคอม) หรือโค้ดส่วนลดของแอดมิน (069) — ช่องเดียวกัน ลด % เท่ากัน */}
             <div className="pt-1.5 border-t border-green-500/20 space-y-1.5">
-              <p className="text-[10px] text-gray-500">{l('🎟️ โค้ดผู้แนะนำ (ถ้ามี)', '🎟️ Referral code (optional)')}</p>
+              <p className="text-[10px] text-gray-500">{l('🎟️ โค้ดส่วนลด / โค้ดผู้แนะนำ (ถ้ามี)', '🎟️ Discount / referral code (optional)')}</p>
               <div className="flex gap-2">
                 <input
                   value={refCode}
@@ -396,7 +397,7 @@ const SubscriptionTransferV2 = () => {
                 <p className="text-green-400 text-xs">✅ {l(`ใช้โค้ดแล้ว ลด ${refCheck.pct}%`, `Code applied — ${refCheck.pct}% off`)}</p>
               )}
               {refCheck && !refCheck.valid && (
-                <p className="text-red-400 text-xs">❌ {refCheck.reason === 'OWN_CODE' ? l('ใช้โค้ดของตัวเองไม่ได้', 'Cannot use your own code') : refCheck.reason === 'OWNER_INACTIVE' ? l('โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)', 'This code is not active right now (code owner is not a member)') : l('ไม่พบโค้ดนี้ ตรวจสอบอีกครั้ง', 'Code not found')}</p>
+                <p className="text-red-400 text-xs">❌ {refCheck.reason === 'OWN_CODE' ? l('ใช้โค้ดของตัวเองไม่ได้', 'Cannot use your own code') : refCheck.reason === 'OWNER_INACTIVE' ? l('โค้ดนี้ใช้ไม่ได้ในขณะนี้ (เจ้าของโค้ดยังไม่ได้เป็นสมาชิก)', 'This code is not active right now (code owner is not a member)') : refCheck.reason === 'CODE_INACTIVE' ? l('โค้ดนี้ปิดใช้งานแล้ว', 'This code has been disabled') : l('ไม่พบโค้ดนี้ ตรวจสอบอีกครั้ง', 'Code not found')}</p>
               )}
             </div>
 
@@ -409,7 +410,7 @@ const SubscriptionTransferV2 = () => {
                 </div>
                 {refValid && refDiscountAmt > 0 && (
                   <div className="flex items-center justify-between text-green-400">
-                    <span>{l(`ส่วนลดโค้ดผู้แนะนำ ${refCheck!.pct}%`, `Referral code ${refCheck!.pct}% off`)}</span>
+                    <span>{refCheck!.kind === 'admin' ? l(`ส่วนลดโค้ด ${refCheck!.pct}%`, `Discount code ${refCheck!.pct}% off`) : l(`ส่วนลดโค้ดผู้แนะนำ ${refCheck!.pct}%`, `Referral code ${refCheck!.pct}% off`)}</span>
                     <span>-฿{refDiscountAmt.toLocaleString()}</span>
                   </div>
                 )}

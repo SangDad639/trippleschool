@@ -777,8 +777,8 @@ class ApiClient {
     });
   }
 
-  // ตรวจโค้ดผู้แนะนำก่อน checkout — valid = ได้ส่วนลด discount_percent%
-  async validateRefcode(code: string): Promise<{ valid: boolean; discount_percent: number; reason?: string }> {
+  // ตรวจโค้ดก่อน checkout — valid = ได้ส่วนลด discount_percent% · kind: 'affiliate' (โค้ดผู้แนะนำ) | 'admin' (โค้ดส่วนลดของแอดมิน 069)
+  async validateRefcode(code: string): Promise<{ valid: boolean; discount_percent: number; reason?: string; kind?: 'affiliate' | 'admin' | 'none'; label?: string | null }> {
     return this.request(`/api/affiliate/validate-code?code=${encodeURIComponent(code)}`);
   }
 
@@ -3212,6 +3212,23 @@ class ApiClient {
   async updatePromo(id: number, data: PromoInput): Promise<{ promo: PromoAdmin }> {
     return this.request(`/api/promos/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   }
+  // ===== โค้ดส่วนลดของแอดมิน (routes/adminCodes.ts · migration 069) =====
+  async listAdminCodes(): Promise<{ codes: import('@/types/adminCode').AdminCode[] }> {
+    return this.request('/api/admin-codes/admin/all');
+  }
+  async createAdminCode(data: import('@/types/adminCode').AdminCodeInput): Promise<{ code: import('@/types/adminCode').AdminCode }> {
+    return this.request('/api/admin-codes', { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateAdminCode(id: number, data: import('@/types/adminCode').AdminCodeInput): Promise<{ code: import('@/types/adminCode').AdminCode }> {
+    return this.request(`/api/admin-codes/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteAdminCode(id: number): Promise<{ ok: true }> {
+    return this.request(`/api/admin-codes/${id}`, { method: 'DELETE' });
+  }
+  async getAdminCodeUsage(id: number, limit = 50): Promise<{ usage: import('@/types/adminCode').AdminCodeUsage[] }> {
+    return this.request(`/api/admin-codes/${id}/usage?limit=${limit}`);
+  }
+
   async deletePromo(id: number): Promise<{ ok: true; usage_count: number }> {
     return this.request(`/api/promos/${id}`, { method: 'DELETE' });
   }

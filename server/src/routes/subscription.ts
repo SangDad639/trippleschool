@@ -11,7 +11,7 @@ import { verifySlipImage, ThunderError } from '../utils/thunderApi.js';
 import { PRICING, VAT_RATE, pricingFromPlan } from '../config/pricing.js';
 import * as plansService from '../services/plansService.js';
 import { maybePromoteOnPurchase } from '../services/tierAssignmentService.js';
-import { checkRefcode, bindReferrerIfEmpty, applyRefDiscount } from '../services/refcode.js';
+import { checkCheckoutCode, bindReferrerIfEmpty, applyRefDiscount } from '../services/refcode.js';
 import { hasSubscriptionHistory } from '../services/affiliateRules.js';
 import * as taxInvoiceService from '../services/taxInvoiceService.js';
 import { getBucketName, getFile } from '../utils/s3.js';
@@ -374,15 +374,20 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
     let refDiscountPct = 0;
     let refReferrerId: number | null = null;
     let appliedRef: string | null = null;
+    // 069: โค้ดส่วนลดของแอดมิน → ลดเท่ากัน แต่ไม่ผูก referrer/ไม่สร้างค่าคอม · เก็บ id ลง log (funnel)
+    let refAdminCodeId: number | null = null;
     if (rawRef) {
-      const chk = await checkRefcode(rawRef, userId);
+      const chk = await checkCheckoutCode(rawRef, userId);
       if (!chk.valid) {
-        const msg = chk.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้' : 'โค้ดผู้แนะนำไม่ถูกต้อง';
+        const msg = chk.reason === 'OWN_CODE' ? 'ใช้โค้ดของตัวเองไม่ได้'
+          : chk.reason === 'CODE_INACTIVE' ? 'โค้ดนี้ปิดใช้งานแล้ว'
+          : 'โค้ดผู้แนะนำไม่ถูกต้อง';
         return res.status(400).json({ error: msg, errorCode: 'INVALID_REFCODE' });
       }
       refDiscountPct = chk.discountPercent;
       refReferrerId = chk.referrerId;
       appliedRef = rawRef.toLowerCase();
+      refAdminCodeId = chk.adminCodeId;
     }
     const effectiveSubtotal = refDiscountPct > 0 ? applyRefDiscount(planRecord.subtotal, refDiscountPct) : planRecord.subtotal;
     const expectedAmount = refDiscountPct > 0
@@ -538,8 +543,8 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
     const extLog = await client.query(
       `INSERT INTO subscription_extension_logs
          (user_id, admin_id, days_added, amount, slip_url, approval_method,
-          subtotal, vat_amount, vat_rate, refcode, referrer_user_id)
-       VALUES ($1, NULL, $2, $3, $4, 'autoapprove', $5, $6, $7, $8, $9)
+          subtotal, vat_amount, vat_rate, refcode, referrer_user_id, admin_code_id)
+       VALUES ($1, NULL, $2, $3, $4, 'autoapprove', $5, $6, $7, $8, $9, $10)
        RETURNING id`,
       [
         userId,
@@ -552,6 +557,8 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
         appliedRef,
         // 067: เจ้าของโค้ดเป็น id — โค้ดเป็นสตริงที่เจ้าของเปลี่ยนได้ทีหลัง log ต้องยังรู้ว่ามาจากใคร
         refReferrerId,
+        // 069: โค้ดส่วนลดของแอดมิน (funnel)
+        refAdminCodeId,
       ]
     );
     const extensionLogId: number = extLog.rows[0].id;
@@ -566,7 +573,15 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
     // โค้ดที่กรอกตอน checkout ผูกผู้แนะนำครั้งแรก (โค้ด valid โค้ดแรกชนะ ไม่ทับของเดิม)
     // → ค่าคอมเกิดตั้งแต่การจ่ายครั้งนี้เลย ฐาน = subtotal หลังหักส่วนลดโค้ด
     let effectiveReferrerId = referrerId;
-    if (!effectiveReferrerId && refReferrerId) {
+    let commissionCreated = false;
+    let commissionSkipReason: string | null = null;
+    if (refAdminCodeId != null) {
+      // 069: โค้ดส่วนลดของแอดมิน = ไม่รับเงิน affiliate — ไม่ผูก referrer และไม่สร้างค่าคอม
+      // (แม้ผู้ซื้อมี referrer อยู่แล้ว เพราะ createAffiliateCommission อ่าน users.referrer_id ไม่ใช่โค้ดบนออเดอร์)
+      effectiveReferrerId = null;
+      commissionSkipReason = 'admin_code';
+      console.log(`[Affiliate] user=${userId} ใช้โค้ดแอดมิน #${refAdminCodeId} → ไม่ผูก referrer / ไม่สร้างค่าคอม`);
+    } else if (!effectiveReferrerId && refReferrerId) {
       try {
         await bindReferrerIfEmpty(userId, refReferrerId);
         effectiveReferrerId = refReferrerId;
@@ -574,8 +589,6 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
         console.error('[autoapprove] Failed to bind referrer:', bindError);
       }
     }
-    let commissionCreated = false;
-    let commissionSkipReason: string | null = null;
     if (effectiveReferrerId && !isFirstSubscription) {
       // R7: ต่ออายุ (บัญชีเคยมี subscription แล้ว) → ไม่เกิดค่าคอม แม้มีผู้แนะนำ
       commissionSkipReason = 'renewal';

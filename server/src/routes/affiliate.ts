@@ -7,7 +7,7 @@ import fs from 'fs';
 import { getBucketName, uploadFile, getSignedFileUrl, getFile } from '../utils/s3.js';
 import { getCommissionPercentSetting } from '../services/commissionService.js';
 import { cancelCommissionById } from '../services/affiliateRules.js';
-import { checkRefcode, setUserRefcode, RefcodeError } from '../services/refcode.js';
+import { checkCheckoutCode, setUserRefcode, RefcodeError } from '../services/refcode.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 
 // กันไล่เดาโค้ดคนอื่น (oracle): 30 ครั้ง/นาที ต่อ user ก็เหลือเฟือสำหรับใช้งานจริง
@@ -79,8 +79,15 @@ router.get('/announcement', async (req, res: Response) => {
  */
 router.get('/validate-code', authenticate, validateCodeRateLimit, async (req: AuthRequest, res: Response) => {
   try {
-    const chk = await checkRefcode(String(req.query.code || ''), req.userId!);
-    res.json({ valid: chk.valid, discount_percent: chk.discountPercent, reason: chk.reason });
+    // 069: รับได้ทั้งโค้ดผู้แนะนำและโค้ดส่วนลดของแอดมิน — kind บอก FE ว่าเป็นแบบไหน (ส่วนลด % เท่ากัน)
+    const chk = await checkCheckoutCode(String(req.query.code || ''), req.userId!);
+    res.json({
+      valid: chk.valid,
+      discount_percent: chk.discountPercent,
+      reason: chk.reason,
+      kind: chk.kind,
+      label: chk.kind === 'admin' ? chk.adminCode?.label ?? null : undefined,
+    });
   } catch (error) {
     console.error('Validate refcode error:', error);
     res.status(500).json({ error: 'Failed to validate code' });
