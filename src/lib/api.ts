@@ -1,7 +1,7 @@
 // Triple School API Client - Scheduler focused
 
 import type { PlanPriceSchedule } from '@/types/pricing';
-import type { PromoMeta, PromoAdmin, PromoInput } from '@/types/promo';
+import type { PromoMeta, PromoAdmin, PromoInput, PromoSettings, PromoSettingsInput } from '@/types/promo';
 
 class ApiClient {
   private token: string | null = null;
@@ -3199,12 +3199,23 @@ class ApiClient {
   async getPromo(id: number): Promise<{ promo: PromoMeta }> {
     return this.request(`/api/promos/${id}`);
   }
-  /** ผู้เรียนดูโฆษณาจบ/ข้าม — ล็อกอินจะถูกจำที่เซิร์ฟเวอร์ 7 วัน (1 โฆษณา / 1 ผู้เรียน / 7 วัน) */
-  async markPromoSeen(id: number): Promise<{ ok: true; stored: boolean; cooldown_days: number; next_at?: string }> {
+  /** ผู้เรียนเห็นโฆษณาแล้ว (ยิงตอนเริ่มเล่น) — ล็อกอินจะถูกจำที่เซิร์ฟเวอร์ N วันตามตั้งค่า (070) */
+  async markPromoSeen(id: number): Promise<{ ok: true; stored: boolean; cooldown_days: number; next_at?: string | null }> {
     return this.request(`/api/promos/${id}/seen`, { method: 'POST' }, 0, 10_000);
   }
-  async listPromosAdmin(): Promise<{ promos: PromoAdmin[]; max_mb: number }> {
+  /** ล้างประวัติ "เห็นแล้ว" ของตัวเอง (ปุ่ม 🔁 ในหน้าแอดมิน) */
+  async clearPromoSeen(id: number): Promise<{ ok: true; cleared: number }> {
+    return this.request(`/api/promos/${id}/seen`, { method: 'DELETE' });
+  }
+  async listPromosAdmin(): Promise<{ promos: PromoAdmin[]; max_mb: number; settings: PromoSettings }> {
     return this.request('/api/promos/admin/all');
+  }
+  /** ตั้งค่าโฆษณาก่อนเริ่มทุกคลิป (070) — เปลี่ยนวัน/โฆษณา หรือ reset_cycle → ทุกคนเห็นอีกครั้ง */
+  async getPromoSettingsAdmin(): Promise<{ settings: PromoSettings }> {
+    return this.request('/api/promos/admin/settings');
+  }
+  async updatePromoSettings(data: PromoSettingsInput): Promise<{ settings: PromoSettings; cycle_reset: boolean }> {
+    return this.request('/api/promos/admin/settings', { method: 'PUT', body: JSON.stringify(data) });
   }
   async createPromo(data: PromoInput): Promise<{ promo: PromoAdmin }> {
     return this.request('/api/promos', { method: 'POST', body: JSON.stringify(data) });
@@ -3229,7 +3240,7 @@ class ApiClient {
     return this.request(`/api/admin-codes/${id}/usage?limit=${limit}`);
   }
 
-  async deletePromo(id: number): Promise<{ ok: true; usage_count: number }> {
+  async deletePromo(id: number): Promise<{ ok: true }> {
     return this.request(`/api/promos/${id}`, { method: 'DELETE' });
   }
   /** ไฟล์วิดีโอโฆษณา (mp4/webm ≤ 200 MB) — ไม่ retry, ให้เวลา 60 นาที เหมือน uploadEbookFile */

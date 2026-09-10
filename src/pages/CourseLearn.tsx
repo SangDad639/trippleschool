@@ -5,7 +5,6 @@ import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
 import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
 import { LessonVideoStage } from '@/components/course/LessonVideoStage';
 import { isPromoOnCooldown } from '@/lib/promoFrequency';
-import type { LessonPromoSlot } from '@/types/promo';
 import { api } from '@/lib/api';
 import { sectionLabel } from '@/lib/sectionLabel';
 import { shareLink, SITE_URL } from '@/lib/shareLink';
@@ -61,8 +60,6 @@ interface Lesson {
   /** รหัสลิงก์สั้นของบทนี้ — ลิงก์แชร์ = /app/courses/{share_code} */
   share_code?: string | null;
   materials?: LessonMaterial[];
-  /** จุดแทรกโฆษณา (offset 0 = ก่อนเริ่ม, ≥ 5 = กลางคลิป) — ว่าง = ไม่มีโฆษณา ใช้ iframe เดิม */
-  promos?: LessonPromoSlot[];
 }
 
 interface Section {
@@ -91,8 +88,13 @@ interface Course {
   lessons: Lesson[];
   sections?: Section[];
   unassigned_lessons?: Lesson[];
-  /** id โฆษณาที่ผู้เรียนคนนี้ดูไปแล้วภายใน 7 วัน (เฉพาะล็อกอิน — จาก /full) */
+  /** id โฆษณาที่ผู้เรียนคนนี้เห็นแล้วในรอบปัจจุบันและยังไม่ครบ N วัน (เฉพาะล็อกอิน — จาก /full) */
   promos_seen?: number[];
+  /** โฆษณาก่อนเริ่มทุกคลิป (070/071): id เดียวใช้ทุกบทที่มีวิดีโอ · null = ไม่มีโฆษณา */
+  pre_roll_promo_id?: number | null;
+  /** ตั้งค่าความถี่ (070): N วัน (0 = ทุกครั้ง) + เวลาเริ่มรอบปัจจุบัน — ใช้กับ localStorage ด้วย */
+  promo_cooldown_days?: number | null;
+  promo_cycle_started_at?: string | null;
 }
 
 interface Enrollment {
@@ -482,15 +484,17 @@ const CourseLearn = () => {
                   </div>
                 </div>
               ) : currentLesson.youtube_id ? (
-                // บทที่มีโฆษณาแทรก (pre-roll/mid-roll) และโฆษณานั้นยังไม่ถูกดูภายใน 7 วัน (1 โฆษณา / 1 ผู้เรียน / 7 วัน)
-                // — บทที่ไม่มี/ดูครบแล้ว ใช้ iframe เดิมเป๊ะด้านล่าง
+                // โฆษณาก่อนเริ่มทุกคลิป (070/071): มีตั้งค่า + ผู้เรียนคนนี้ยังไม่ติด cooldown (เห็นซ้ำได้เมื่อครบ N วัน — แอดมินตั้ง)
+                // → ปก ▶ → โฆษณา → บทเรียน · ไม่มี/ติดอยู่ → iframe เดิมเป๊ะด้านล่าง
                 (() => {
-                  const slots = (currentLesson.promos ?? []).filter((p) => !isPromoOnCooldown(p.promo_id, course.promos_seen));
-                  return slots.length > 0 ? (
+                  const preId = course.pre_roll_promo_id;
+                  const cooldown = { cooldownDays: course.promo_cooldown_days, cycleStartedAt: course.promo_cycle_started_at };
+                  const showAd = preId != null && !isPromoOnCooldown(preId, course.promos_seen, cooldown);
+                  return showAd ? (
                     <LessonVideoStage
                       key={currentLesson.id}
                       lesson={{ id: currentLesson.id, title: currentLesson.title, youtube_id: currentLesson.youtube_id }}
-                      promos={slots}
+                      promoId={preId}
                       posterUrl={api.mediaUrl(`/api/courses/lessons/${currentLesson.id}/thumb`)}
                       paused={sidebarOpen && isMobileView}
                     />

@@ -5,7 +5,7 @@
  *   · 'youtube' (หลัก — user ให้คลิป YouTube มาเป็นโฆษณา): เก็บ youtube_id, ฝั่ง client เล่นผ่าน YouTube IFrame API
  *   · 'file': ไฟล์วิดีโอของเราเอง (mp4/webm) บน S3 ใต้ `promo-videos/…` → เสิร์ฟผ่าน GET/HEAD /api/promos/:id/video
  *     ซึ่งรองรับ HTTP Range/206 (ตัวแรกของ repo — iOS Safari ไม่เล่นวิดีโอเลยถ้า probe `bytes=0-1` ไม่ได้ 206) · Tigris ไม่มี public URL
- * - จุดแทรกต่อบทเรียนอยู่ที่ `lesson_promos` (จัดการผ่าน POST/PUT lessons ใน routes/courses.ts)
+ * - ไม่มีจุดแทรกรายบทแล้ว (071 ถอด lesson_promos) — ใช้งานผ่าน promo_settings (การ์ด ⚙️: โฆษณาตัวเดียวก่อนเริ่มทุกคลิป) เท่านั้น
  * - ชื่อ path/prefix ใช้ "promo" ไม่ใช่ "ad" — filter list ของ adblock บล็อก /ads/ ทั้ง path
  * - meta สาธารณะ (GET /:id) ไม่ส่ง video_key ออกไป · โฆษณาไม่ใช่เนื้อหาขาย video endpoint จึง public
  */
@@ -20,6 +20,7 @@ import pool from '../db.js';
 import { authenticate, optionalAuth, requireAdmin, AuthRequest } from '../middleware/auth.js';
 import { uploadFileFromPath, getFile, getFileRange, getFileSize, deleteFile } from '../utils/s3.js';
 import { extractYoutubeId } from './courses.js';
+import { getPromoSettings, invalidatePromoSettingsCache, DEFAULT_PROMO_COOLDOWN_DAYS, type PromoSettings } from '../services/promoSettings.js';
 
 const router = Router();
 const MB = 1024 * 1024;
@@ -138,7 +139,6 @@ interface PromoRow {
   created_by: number | null;
   created_at: Date | string;
   updated_at: Date | string;
-  usage_count?: number;
 }
 
 const toMs = (v: Date | string) => (v instanceof Date ? v.getTime() : new Date(v).getTime());
@@ -167,7 +167,6 @@ function toAdmin(r: PromoRow) {
     content_type: r.content_type,
     size_bytes: r.size_bytes == null ? null : Number(r.size_bytes),
     is_active: !!r.is_active,
-    usage_count: Number(r.usage_count ?? 0),
     created_by: r.created_by,
     created_at: r.created_at,
     updated_at: r.updated_at,
@@ -240,20 +239,103 @@ function parsePromoFields(body: any, isUpdate: boolean): FieldSpec[] {
   return out;
 }
 
-const ADMIN_SELECT = `
-  SELECT p.*, (SELECT COUNT(*)::int FROM lesson_promos lp WHERE lp.promo_id = p.id) AS usage_count
-    FROM promo_videos p`;
+const ADMIN_SELECT = `SELECT p.* FROM promo_videos p`;
 
 /* ------------------------------------------------------------------ */
 /*  Admin CRUD                                                         */
 /* ------------------------------------------------------------------ */
-router.get('/admin/all', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+/** settings → JSON ให้ FE (cycle_started_at เป็น ISO) */
+function settingsJson(s: PromoSettings) {
+  return {
+    is_enabled: s.is_enabled,
+    promo_id: s.promo_id,
+    cooldown_days: s.cooldown_days,
+    cycle_started_at: s.cycle_started_at.toISOString(),
+    updated_at: s.updated_at ? s.updated_at.toISOString() : null,
+  };
+}
+/** แถว promo_views นี้ยัง "ติด cooldown" ตามตั้งค่าปัจจุบันไหม (ในรอบ + ยังไม่ครบ N วัน) */
+function seenIsActive(at: Date, s: PromoSettings): boolean {
+  if (s.cooldown_days <= 0) return false;
+  if (at < s.cycle_started_at) return false;
+  return Date.now() - at.getTime() < s.cooldown_days * 86400_000;
+}
+
+router.get('/admin/all', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
   try {
-    const r = await pool.query<PromoRow>(`${ADMIN_SELECT} ORDER BY p.id DESC LIMIT 500`);
-    res.json({ promos: r.rows.map(toAdmin), max_mb: PROMO_MAX_MB });
+    const [r, settings, seen] = await Promise.all([
+      pool.query<PromoRow>(`${ADMIN_SELECT} ORDER BY p.id DESC LIMIT 500`),
+      getPromoSettings(),
+      // 070: บอกแอดมินว่า "คุณเคยเห็นโฆษณานี้แล้ว" (สาเหตุยอดฮิตที่ทดสอบแล้วไม่เห็น) + ปุ่ม 🔁 ล้างของตัวเอง
+      req.userId ? pool.query<{ promo_id: number; last_seen_at: Date }>(`SELECT promo_id, last_seen_at FROM promo_views WHERE user_id = $1`, [req.userId]) : Promise.resolve({ rows: [] as { promo_id: number; last_seen_at: Date }[] }),
+    ]);
+    const seenMap = new Map(seen.rows.map((x) => [Number(x.promo_id), new Date(x.last_seen_at)]));
+    const promos = r.rows.map((row) => {
+      const a = toAdmin(row);
+      const at = seenMap.get(a.id) ?? null;
+      return { ...a, seen_by_me_at: at ? at.toISOString() : null, seen_by_me_active: at ? seenIsActive(at, settings) : false };
+    });
+    res.json({ promos, max_mb: PROMO_MAX_MB, settings: settingsJson(settings) });
   } catch (error) {
     console.error('[promos] list error:', error);
     res.status(500).json({ error: 'โหลดรายการโฆษณาไม่สำเร็จ' });
+  }
+});
+
+/* ------------------------------------------------------------------ */
+/*  ตั้งค่าโฆษณาก่อนเริ่มทุกคลิป (migration 070)                        */
+/*  เปลี่ยนจำนวนวัน / เปลี่ยนโฆษณา / reset_cycle → เริ่มรอบใหม่ (ทุกคนเห็นอีกครั้ง) */
+/* ------------------------------------------------------------------ */
+router.get('/admin/settings', authenticate, requireAdmin, async (_req: AuthRequest, res: Response) => {
+  try {
+    res.json({ settings: settingsJson(await getPromoSettings()) });
+  } catch (error) {
+    console.error('[promos] settings read error:', error);
+    res.status(500).json({ error: 'โหลดตั้งค่าไม่สำเร็จ' });
+  }
+});
+
+router.put('/admin/settings', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const body = req.body ?? {};
+    await pool.query(`INSERT INTO promo_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING`);
+    const curRow = (await pool.query(`SELECT is_enabled, promo_id, cooldown_days FROM promo_settings WHERE id = 1`)).rows[0];
+    const sets: string[] = [];
+    const values: unknown[] = [];
+    const push = (col: string, v: unknown) => { values.push(v); sets.push(`${col} = $${values.length}`); };
+    let resetCycle = body.reset_cycle === true;
+
+    if (body.is_enabled !== undefined) push('is_enabled', body.is_enabled === true);
+    if (body.promo_id !== undefined) {
+      const raw = body.promo_id;
+      const pid = raw === null || raw === '' ? null : Number(raw);
+      if (pid !== null) {
+        if (!Number.isInteger(pid) || pid <= 0) return res.status(400).json({ error: 'โฆษณาไม่ถูกต้อง' });
+        const p = await pool.query(`SELECT is_active FROM promo_videos WHERE id = $1`, [pid]);
+        if (p.rows.length === 0) return res.status(400).json({ error: 'ไม่พบโฆษณาที่เลือก' });
+        if (!p.rows[0].is_active) return res.status(400).json({ error: 'โฆษณาที่เลือกปิดใช้อยู่ — เปิดใช้ก่อน' });
+      }
+      if ((curRow?.promo_id == null ? null : Number(curRow.promo_id)) !== pid) resetCycle = true;
+      push('promo_id', pid);
+    }
+    if (body.cooldown_days !== undefined) {
+      const n = Number(body.cooldown_days);
+      if (!Number.isInteger(n) || n < 0 || n > 365) return res.status(400).json({ error: 'จำนวนวันต้องเป็นตัวเลข 0-365 (0 = แสดงทุกครั้ง)' });
+      if (Number(curRow?.cooldown_days) !== n) resetCycle = true;
+      push('cooldown_days', n);
+    }
+    if (resetCycle) sets.push('cycle_started_at = NOW()');
+    if (sets.length === 0) return res.status(400).json({ error: 'ไม่มีอะไรให้แก้' });
+    push('updated_by', req.userId ?? null);
+    sets.push('updated_at = NOW()');
+    await pool.query(`UPDATE promo_settings SET ${sets.join(', ')} WHERE id = 1`, values);
+    invalidatePromoSettingsCache();
+    const settings = await getPromoSettings();
+    console.log(`[promos][AUDIT] settings ${JSON.stringify(settingsJson(settings))}${resetCycle ? ' (รีเซ็ตรอบ)' : ''} by admin #${req.userId}`);
+    res.json({ settings: settingsJson(settings), cycle_reset: resetCycle });
+  } catch (error) {
+    console.error('[promos] settings update error:', error);
+    res.status(500).json({ error: 'บันทึกตั้งค่าไม่สำเร็จ' });
   }
 });
 
@@ -296,6 +378,8 @@ router.put('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Res
     const values = cols.map((c) => c.value);
     values.push(id);
     await pool.query(`UPDATE promo_videos SET ${sets.join(', ')} WHERE id = $${values.length}`, values);
+    // ปิด/เปิดใช้ → cache ตั้งค่า (ถือ promo_is_active) ต้องอ่านใหม่ ไม่งั้น pre_roll_promo_id ค้างได้ถึง 30 วิ
+    if (cols.some((c) => c.col === 'is_active')) invalidatePromoSettingsCache();
     // เปลี่ยนไฟล์ / สลับไป YouTube → ลบ object เก่า (best-effort)
     const keySpec = cols.find((c) => c.col === 'video_key');
     const oldKey = cur.rows[0].video_key;
@@ -315,16 +399,17 @@ router.delete('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: 
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'invalid id' });
-    const usage = await pool.query<{ n: number }>(`SELECT COUNT(*)::int AS n FROM lesson_promos WHERE promo_id = $1`, [id]);
     const del = await pool.query<{ video_key: string; title: string }>(
       `DELETE FROM promo_videos WHERE id = $1 RETURNING video_key, title`, [id]
     );
     if (del.rows.length === 0) return res.status(404).json({ error: 'ไม่พบโฆษณา' });
+    // ถ้าเป็นโฆษณา "ทุกคลิป" → promo_settings.promo_id ถูก SET NULL โดย FK แล้ว → ล้าง cache 30 วิให้ตั้งค่าที่อ่านถัดไปตรง DB
+    invalidatePromoSettingsCache();
     if (isPromoKey(del.rows[0].video_key)) {
       deleteFile(del.rows[0].video_key!).catch((e) => console.warn('[promos] delete object failed:', e?.message || e));
     }
-    console.log(`[promos][AUDIT] deleted #${id} "${del.rows[0].title}" (was used in ${usage.rows[0].n} slots) by admin #${req.userId}`);
-    res.json({ ok: true, usage_count: usage.rows[0].n });
+    console.log(`[promos][AUDIT] deleted #${id} "${del.rows[0].title}" by admin #${req.userId}`);
+    res.json({ ok: true });
   } catch (error) {
     console.error('[promos] delete error:', error);
     res.status(500).json({ error: 'ลบโฆษณาไม่สำเร็จ' });
@@ -334,18 +419,20 @@ router.delete('/:id', authenticate, requireAdmin, async (req: AuthRequest, res: 
 /* ------------------------------------------------------------------ */
 /*  Learner: meta + video stream + บันทึกว่าดูแล้ว                    */
 /* ------------------------------------------------------------------ */
-/** 1 โฆษณา / 1 ผู้เรียน / 7 วัน (migration 066) */
-export const PROMO_COOLDOWN_DAYS = 7;
+/** ค่าเริ่มต้น 7 วัน (migration 066) — ค่าจริงมาจาก promo_settings.cooldown_days (070, แอดมินตั้งเอง) */
+export const PROMO_COOLDOWN_DAYS = DEFAULT_PROMO_COOLDOWN_DAYS;
 
 /**
- * POST /api/promos/:id/seen — ผู้เรียนดูโฆษณานี้จบ/ข้ามแล้ว
+ * POST /api/promos/:id/seen — ผู้เรียนเห็นโฆษณานี้แล้ว (FE ยิงตอนโฆษณาเริ่มเล่น — เห็น 1 ครั้งจากคลิปไหนก็นับ)
  * ล็อกอิน → upsert promo_views (จำข้ามอุปกรณ์) · guest → ตอบ ok เฉยๆ (FE จำใน localStorage เอง)
  */
 router.post('/:id/seen', optionalAuth, async (req: AuthRequest, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'ไม่พบโฆษณา' });
-    if (!req.userId) return res.json({ ok: true, stored: false, cooldown_days: PROMO_COOLDOWN_DAYS });
+    const settings = await getPromoSettings();
+    const days = settings.cooldown_days;
+    if (!req.userId) return res.json({ ok: true, stored: false, cooldown_days: days, next_at: null });
     const r = await pool.query<{ last_seen_at: Date }>(
       `INSERT INTO promo_views (user_id, promo_id, last_seen_at, view_count)
        SELECT $1, id, NOW(), 1 FROM promo_videos WHERE id = $2
@@ -354,11 +441,27 @@ router.post('/:id/seen', optionalAuth, async (req: AuthRequest, res: Response) =
       [req.userId, id],
     );
     if (r.rows.length === 0) return res.status(404).json({ error: 'ไม่พบโฆษณา' });
-    const next = new Date(new Date(r.rows[0].last_seen_at).getTime() + PROMO_COOLDOWN_DAYS * 86400_000);
-    res.json({ ok: true, stored: true, cooldown_days: PROMO_COOLDOWN_DAYS, next_at: next.toISOString() });
+    const next = days > 0 ? new Date(new Date(r.rows[0].last_seen_at).getTime() + days * 86400_000).toISOString() : null;
+    res.json({ ok: true, stored: true, cooldown_days: days, next_at: next });
   } catch (error) {
     console.error('[promos] mark seen error:', error);
     res.status(500).json({ error: 'บันทึกไม่สำเร็จ' });
+  }
+});
+
+/**
+ * DELETE /api/promos/:id/seen — ล้างประวัติ "เห็นแล้ว" ของ **ตัวเอง** (ไว้ให้แอดมิน/ผู้ทดสอบดูโฆษณาอีกครั้ง)
+ * ลบเฉพาะแถวของผู้เรียกเท่านั้น — ล้างของทุกคนใช้ PUT /admin/settings {reset_cycle:true}
+ */
+router.delete('/:id/seen', authenticate, async (req: AuthRequest, res: Response) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'ไม่พบโฆษณา' });
+    const r = await pool.query(`DELETE FROM promo_views WHERE user_id = $1 AND promo_id = $2`, [req.userId, id]);
+    res.json({ ok: true, cleared: r.rowCount ?? 0 });
+  } catch (error) {
+    console.error('[promos] clear seen error:', error);
+    res.status(500).json({ error: 'ล้างไม่สำเร็จ' });
   }
 });
 

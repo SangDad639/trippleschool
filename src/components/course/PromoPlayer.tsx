@@ -5,7 +5,7 @@ import type { PromoMeta } from '@/types/promo';
 import { loadYouTubeIframeApi, type YTPlayer } from '@/lib/youtubeIframeApi';
 
 /**
- * ตัวเล่นโฆษณา (ใช้ทั้ง pre-roll และ mid-roll) — วางทับ/แทน player บทเรียนภายใน stage 16:9
+ * ตัวเล่นโฆษณาก่อนเริ่มคลิป (071: ไม่มี mid-roll แล้ว) — แทน player บทเรียนภายใน stage 16:9 จนกว่าจะจบ/ข้าม
  *   - source 'youtube' → YouTube IFrame API (controls=0 + แผ่นกันคลิก) — โฆษณาที่ user ให้มาเป็นคลิป YouTube
  *   - source 'file'    → <video> ของเราเอง (ไฟล์บน S3 ผ่าน Range proxy)
  * UI (user รีวิว 8 ก.ย.): ไม่มีป้าย/ชื่อโฆษณา ไม่มีปุ่มลิงก์ ไม่มีข้อความบอกให้แตะ — เหลือปุ่มข้าม (หลัง skip_after_sec, null = ห้ามข้าม),
@@ -15,10 +15,11 @@ import { loadYouTubeIframeApi, type YTPlayer } from '@/lib/youtubeIframeApi';
  */
 export interface PromoPlayerProps {
   promoId: number;
-  mode: 'pre' | 'mid';
   /** หยุดชั่วคราว (เช่น drawer รายการบทเปิดทับบนมือถือ) */
   paused?: boolean;
   onDone: (result: 'ended' | 'skipped' | 'error') => void;
+  /** โฆษณาเริ่มเล่นครั้งแรก (เห็นแล้ว 1 ครั้ง = นับความถี่ทันที ไม่ต้องรอจบ/ข้าม) — เรียกครั้งเดียว */
+  onStart?: () => void;
 }
 
 type EngineEvent = 'playing' | 'muted' | 'blocked' | 'stalled' | 'ended' | 'error';
@@ -228,7 +229,7 @@ function FileEngine({ src, poster, paused, ctrl, onTick, onEvent }: EngineProps 
 }
 
 /* ---------------- ตัวเล่นโฆษณา + chrome ---------------- */
-export function PromoPlayer({ promoId, mode, paused = false, onDone }: PromoPlayerProps) {
+export function PromoPlayer({ promoId, paused = false, onDone, onStart }: PromoPlayerProps) {
   const [meta, setMeta] = useState<PromoMeta | null>(null);
   const [status, setStatus] = useState<'loading' | 'playing' | 'blocked'>('loading');
   const [elapsed, setElapsed] = useState(0);
@@ -237,8 +238,16 @@ export function PromoPlayer({ promoId, mode, paused = false, onDone }: PromoPlay
   const [stalledLong, setStalledLong] = useState(false);
   const ctrl = useRef<EngineControls | null>(null);
   const doneRef = useRef(false);
+  const startedRef = useRef(false);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  const onStartRef = useRef(onStart);
+  onStartRef.current = onStart;
+  const notifyStart = () => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    onStartRef.current?.();
+  };
 
   const finish = (r: 'ended' | 'skipped' | 'error') => {
     if (doneRef.current) return;
@@ -257,7 +266,7 @@ export function PromoPlayer({ promoId, mode, paused = false, onDone }: PromoPlay
 
   const handleEvent = (e: EngineEvent) => {
     switch (e) {
-      case 'playing': setStatus('playing'); setStalledLong(false); break;
+      case 'playing': setStatus('playing'); setStalledLong(false); notifyStart(); break;
       case 'muted': setMuted(true); break;
       case 'blocked': setStatus('blocked'); break;
       case 'stalled': setStalledLong(true); break;
@@ -288,7 +297,6 @@ export function PromoPlayer({ promoId, mode, paused = false, onDone }: PromoPlay
     <div
       className="absolute inset-0 z-10 bg-black text-white select-none"
       data-testid="promo-player"
-      data-mode={mode}
       data-status={status}
       data-elapsed={Math.round(elapsed)}
       data-source={meta?.source_type ?? ''}

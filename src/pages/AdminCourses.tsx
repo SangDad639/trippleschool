@@ -5,8 +5,6 @@ import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
 import { api, type TagDto, type TagKind, type CategoryDto } from '@/lib/api';
 import { sectionLabel } from '@/lib/sectionLabel';
 import SamplesEditor, { type MediaSample } from '@/components/admin/SamplesEditor';
-import { LessonPromosEditor } from '@/components/admin/LessonPromosEditor';
-import type { LessonPromoSlot } from '@/types/promo';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -177,8 +175,6 @@ interface Lesson {
   is_active: boolean;
   cover_url?: string | null;
   materials?: LessonMaterial[];
-  /** จุดแทรกโฆษณา (offset 0 = ก่อนเริ่ม, ≥ 5 = กลางคลิป) */
-  promos?: LessonPromoSlot[];
 }
 
 const initialCourseForm = {
@@ -213,7 +209,6 @@ const initialLessonForm = {
   is_preview: false,
   section_id: null as number | null,
   materials: [] as LessonMaterial[],
-  promos: [] as LessonPromoSlot[],
 };
 
 /**
@@ -1034,7 +1029,6 @@ const AdminCourses = () => {
         is_preview: lesson.is_preview,
         section_id: lesson.section_id,
         materials,
-        promos: Array.isArray(lesson.promos) ? lesson.promos : [],
       });
       setPendingSectionValue(valueForSection(sections || [], lesson.section_id, defaultSectionValue));
     } else {
@@ -2374,12 +2368,7 @@ const AdminCourses = () => {
                 <Label>ให้ดู Preview ได้ (ไม่ต้องลงทะเบียน)</Label>
               </div>
 
-              {/* 🎬 โฆษณาแทรก — pre-roll / mid-roll (migration 065) */}
-              <LessonPromosEditor
-                value={lessonForm.promos}
-                onChange={(promos) => setLessonForm({ ...lessonForm, promos })}
-                durationMinutes={lessonForm.duration_minutes}
-              />
+              {/* โฆษณาก่อนเริ่มคลิป: ไม่ตั้งรายบทแล้ว (071) — ตั้งครั้งเดียวที่ /admin/promos การ์ด ⚙️ แล้วมีทุกบทอัตโนมัติ */}
 
               {/* เอกสารประกอบ — downloadable documents (links + uploaded PDFs) */}
               <div className="border-t border-gray-800 pt-4">

@@ -1,6 +1,6 @@
 /**
  * YouTube IFrame Player API — โหลดครั้งเดียว (singleton) แบบ lazy
- * ใช้เฉพาะ (1) ตัวเล่นโฆษณาแบบ YouTube และ (2) บทเรียนที่มีจุดแทรกกลางคลิป (mid-roll)
+ * ใช้เฉพาะตัวเล่นโฆษณาแบบ YouTube (PromoPlayer) — 071 ไม่มี mid-roll แล้ว iframe บทเรียนไม่ใช้ API นี้
  * บทที่ไม่มีโฆษณาต้องไม่โหลด script นี้เลย · โหลดไม่ได้/ช้าเกิน → reject ให้ผู้เรียก fail-open
  *
  * type ขั้นต่ำเขียนเองแทน @types/youtube (ใช้แค่ไม่กี่ method)

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Plus, Pencil, Trash2, Loader2, Upload, Youtube, Film, Eye, EyeOff, Clapperboard } from 'lucide-react';
+import { ArrowLeft, Plus, Pencil, Trash2, Loader2, Upload, Youtube, Film, Eye, EyeOff, Clapperboard, Settings2, RotateCcw, Star } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,15 +13,29 @@ import {
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { invalidatePromoCache } from '@/components/admin/LessonPromosEditor';
-import type { PromoAdmin, PromoInput } from '@/types/promo';
+import { clearPromoSeen } from '@/lib/promoFrequency';
+import type { PromoAdmin, PromoInput, PromoSettings } from '@/types/promo';
 
 /**
  * /admin/promos — คลังโฆษณาแทรกในวิดีโอบทเรียน (migration 065 · routes/promos.ts)
  * แหล่งวิดีโอ 2 แบบ: ลิงก์ YouTube (หลัก — user ให้คลิป YouTube มา) หรืออัปโหลดไฟล์ mp4/webm ≤ 200 MB
  * การ์ดพรีวิว = smoke test ของการเล่นจริง (YouTube embed / Range endpoint) บน prod
- * ผูกโฆษณากับบทเรียนที่ /admin/courses → แก้ไขบทเรียน → "🎬 โฆษณาแทรก"
+ * การ์ด ⚙️ (070): โฆษณาก่อนเริ่ม "ทุกคลิป" อัตโนมัติ (รวมบทใหม่) + แสดงซ้ำทุก N วัน (0 = ทุกครั้ง) นับต่อผู้เรียน
+ *   → เปลี่ยนวัน/โฆษณา/กดรีเซ็ต = เริ่มรอบใหม่ ทุกคนเห็นอีกครั้ง · ปุ่ม 🔁 ล้างประวัติของตัวเองไว้ทดสอบ
+ * ไม่มีจุดแทรกรายบท/กลางคลิปแล้ว (071) — การ์ด ⚙️ คือทางเดียว
  */
+interface SettingsForm { is_enabled: boolean; promo_id: string; cooldown_days: string }
+const toSettingsForm = (s: PromoSettings): SettingsForm => ({
+  is_enabled: s.is_enabled,
+  promo_id: s.promo_id == null ? '' : String(s.promo_id),
+  cooldown_days: String(s.cooldown_days),
+});
+const fmtDateTime = (iso: string | null | undefined) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return '—';
+  return `${d.getDate()}/${d.getMonth() + 1} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+};
 type SkipChoice = 'none' | '0' | '5' | '10' | '15';
 interface Form {
   id?: number;
@@ -78,6 +92,11 @@ export default function AdminPromos() {
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState<PromoAdmin | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [settings, setSettings] = useState<PromoSettings | null>(null);
+  const [sForm, setSForm] = useState<SettingsForm | null>(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const posterRef = useRef<HTMLInputElement>(null);
 
@@ -87,6 +106,16 @@ export default function AdminPromos() {
       const r = await api.listPromosAdmin();
       setPromos(r.promos);
       setMaxMb(r.max_mb || 200);
+      if (r.settings) {
+        setSettings(r.settings);
+        // ค่าเริ่มต้นของ dropdown: ถ้ายังไม่เคยตั้ง ให้เลือกโฆษณาที่เปิดใช้ตัวแรก (user มีตัวเดียว)
+        const f = toSettingsForm(r.settings);
+        if (!f.promo_id) {
+          const first = r.promos.find((p) => p.is_active) ?? r.promos[0];
+          if (first) f.promo_id = String(first.id);
+        }
+        setSForm(f);
+      }
     } catch (err: any) {
       toast.error(err?.message || 'โหลดรายการโฆษณาไม่สำเร็จ');
     } finally {
@@ -94,6 +123,66 @@ export default function AdminPromos() {
     }
   };
   useEffect(() => { load(); }, []);
+
+  const globalPromo = settings?.promo_id != null ? promos.find((p) => p.id === settings.promo_id) ?? null : null;
+  const settingsDirty = !!settings && !!sForm && (
+    sForm.is_enabled !== settings.is_enabled ||
+    (sForm.promo_id === '' ? null : Number(sForm.promo_id)) !== settings.promo_id ||
+    Number(sForm.cooldown_days) !== settings.cooldown_days
+  );
+  const daysWillChange = !!settings && !!sForm && Number(sForm.cooldown_days) !== settings.cooldown_days;
+  const promoWillChange = !!settings && !!sForm && (sForm.promo_id === '' ? null : Number(sForm.promo_id)) !== settings.promo_id;
+
+  const saveSettings = async () => {
+    if (!sForm) return;
+    const days = Number(sForm.cooldown_days);
+    if (!Number.isInteger(days) || days < 0 || days > 365) return toast.error('จำนวนวันต้องเป็นตัวเลข 0-365 (0 = แสดงทุกครั้ง)');
+    if (sForm.is_enabled && !sForm.promo_id) return toast.error('เลือกโฆษณาที่จะใช้ก่อน');
+    setSavingSettings(true);
+    try {
+      const r = await api.updatePromoSettings({
+        is_enabled: sForm.is_enabled,
+        promo_id: sForm.promo_id === '' ? null : Number(sForm.promo_id),
+        cooldown_days: days,
+      });
+      setSettings(r.settings);
+      setSForm(toSettingsForm(r.settings));
+      toast.success(r.cycle_reset ? 'บันทึกแล้ว — เริ่มรอบใหม่ ทุกคนจะเห็นโฆษณาอีกครั้ง' : 'บันทึกการตั้งค่าแล้ว', { duration: 6000 });
+      await load();
+    } catch (err: any) {
+      toast.error(err?.message || 'บันทึกไม่สำเร็จ');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+  const resetCycle = async () => {
+    setResetting(true);
+    try {
+      const r = await api.updatePromoSettings({ reset_cycle: true });
+      setSettings(r.settings);
+      setSForm(toSettingsForm(r.settings));
+      setConfirmReset(false);
+      toast.success('รีเซ็ตแล้ว — ผู้เรียนทุกคนจะเห็นโฆษณาอีกครั้งในคลิปถัดไป');
+      await load();
+    } catch (err: any) {
+      toast.error(err?.message || 'รีเซ็ตไม่สำเร็จ');
+    } finally {
+      setResetting(false);
+    }
+  };
+  /** 🔁 ล้างประวัติ "เห็นแล้ว" ของแอดมินคนนี้ (localStorage + promo_views) — ไว้ทดสอบซ้ำ */
+  const letMeSeeAgain = async (p: PromoAdmin) => {
+    setBusyId(p.id);
+    try {
+      await clearPromoSeen(p.id);
+      toast.success('ล้างแล้ว — เปิดคลิปไหนก็จะเห็นโฆษณานี้อีกครั้ง (เฉพาะบัญชีคุณ)');
+      await load();
+    } catch (err: any) {
+      toast.error(err?.message || 'ล้างไม่สำเร็จ');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   if (!user?.isAdmin) {
     return (
@@ -181,9 +270,8 @@ export default function AdminPromos() {
         toast.success('บันทึกโฆษณาแล้ว');
       } else {
         await api.createPromo(body);
-        toast.success('เพิ่มโฆษณาแล้ว — ไปผูกกับบทเรียนที่ คอร์สเรียน → แก้ไขบทเรียน → 🎬 โฆษณาแทรก', { duration: 7000 });
+        toast.success('เพิ่มโฆษณาแล้ว — เลือกใช้ที่การ์ด ⚙️ ด้านบน เพื่อให้เล่นก่อนเริ่มทุกคลิป', { duration: 7000 });
       }
-      invalidatePromoCache();
       setForm(null);
       await load();
     } catch (err: any) {
@@ -197,8 +285,10 @@ export default function AdminPromos() {
     setBusyId(p.id);
     try {
       await api.updatePromo(p.id, { is_active: !p.is_active });
-      invalidatePromoCache();
-      toast.success(p.is_active ? 'ปิดใช้แล้ว — จุดแทรกที่ใช้โฆษณานี้จะไม่แสดง' : 'เปิดใช้แล้ว');
+      const isGlobal = settings?.promo_id === p.id;
+      toast.success(p.is_active
+        ? (isGlobal ? 'ปิดใช้แล้ว — โฆษณาก่อนเริ่มทุกคลิปจะหยุดแสดงจนกว่าจะเปิดใช้อีกครั้ง' : 'ปิดใช้แล้ว')
+        : 'เปิดใช้แล้ว', { duration: isGlobal ? 7000 : 4000 });
       await load();
     } catch (err: any) {
       toast.error(err?.message || 'ไม่สำเร็จ');
@@ -210,9 +300,8 @@ export default function AdminPromos() {
     if (!deleting) return;
     setBusyId(deleting.id);
     try {
-      const r = await api.deletePromo(deleting.id);
-      invalidatePromoCache();
-      toast.success(`ลบแล้ว${r.usage_count ? ` — จุดแทรก ${r.usage_count} จุดถูกถอดออก` : ''}`);
+      await api.deletePromo(deleting.id);
+      toast.success(settings?.promo_id === deleting.id ? 'ลบแล้ว — โฆษณาก่อนเริ่มทุกคลิปหยุดแสดงจนกว่าจะเลือกตัวใหม่' : 'ลบแล้ว');
       setDeleting(null);
       await load();
     } catch (err: any) {
@@ -232,8 +321,88 @@ export default function AdminPromos() {
         </Button>
       </div>
       <p className="text-sm text-muted-foreground mb-6">
-        คลิปโฆษณาที่จะแทรกก่อนเริ่ม/กลางวิดีโอบทเรียน — ใส่ลิงก์ YouTube หรืออัปโหลดไฟล์ · ผูกกับบทเรียนที่ <button className="underline text-yellow-400" onClick={() => navigate('/admin/courses')}>คอร์สเรียน</button> → แก้ไขบทเรียน → "🎬 โฆษณาแทรก"
+        คลิปโฆษณาที่จะเล่นก่อนเริ่มวิดีโอบทเรียน — ใส่ลิงก์ YouTube หรืออัปโหลดไฟล์ แล้วเลือกใช้ที่การ์ด ⚙️ ด้านล่าง จะเล่นก่อนเริ่ม "ทุกคลิป ทุกคอร์ส" อัตโนมัติ รวมคลิปที่เพิ่มทีหลัง
       </p>
+
+      {/* ===== ⚙️ โฆษณาก่อนเริ่มทุกคลิป (070) ===== */}
+      {!loading && settings && sForm && (
+        <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/5 p-4 mb-6 space-y-4" data-testid="promo-settings-card">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="font-semibold flex items-center gap-2"><Settings2 className="h-4 w-4 text-yellow-400" /> ⚙️ โฆษณาก่อนเริ่มทุกคลิป</h2>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                เล่นอัตโนมัติก่อนเริ่มวิดีโอ "ทุกบท ทุกคอร์ส" รวมบทที่เพิ่มทีหลัง — ไม่ต้องตั้งรายบท
+              </p>
+            </div>
+            <div className="text-xs text-right shrink-0" data-testid="promo-settings-status">
+              {settings.is_enabled && globalPromo ? (
+                <span className="text-green-400">✅ กำลังใช้งาน · ซ้ำ{settings.cooldown_days === 0 ? 'ทุกครั้ง' : `ทุก ${settings.cooldown_days} วัน`}</span>
+              ) : settings.is_enabled && !globalPromo ? (
+                <span className="text-yellow-400">⚠️ เปิดใช้อยู่แต่ไม่มีโฆษณา — เลือกโฆษณาแล้วบันทึก</span>
+              ) : (
+                <span className="text-muted-foreground">⏸ ปิดอยู่</span>
+              )}
+              <div className="text-muted-foreground mt-0.5">รอบปัจจุบันเริ่ม {fmtDateTime(settings.cycle_started_at)}</div>
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-[auto_1fr_auto] sm:items-end">
+            <label className="flex items-center gap-2 text-sm h-10">
+              <Checkbox checked={sForm.is_enabled} onCheckedChange={(c) => setSForm({ ...sForm, is_enabled: c === true })} data-testid="promo-settings-enabled" />
+              เปิดใช้
+            </label>
+            <div>
+              <Label className="text-xs">โฆษณาที่ใช้</Label>
+              <select
+                value={sForm.promo_id}
+                onChange={(e) => setSForm({ ...sForm, promo_id: e.target.value })}
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                data-testid="promo-settings-promo"
+              >
+                <option value="">— เลือกโฆษณา —</option>
+                {promos.map((p) => (
+                  <option key={p.id} value={String(p.id)} disabled={!p.is_active}>
+                    {p.title}{p.is_active ? '' : ' (ปิดใช้อยู่)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label className="text-xs">แสดงซ้ำทุก (วัน)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number" min={0} max={365} step={1}
+                  value={sForm.cooldown_days}
+                  onChange={(e) => setSForm({ ...sForm, cooldown_days: e.target.value })}
+                  className="w-24"
+                  data-testid="promo-settings-days"
+                />
+                <span className="text-xs text-muted-foreground whitespace-nowrap">0 = ทุกครั้ง</span>
+              </div>
+            </div>
+          </div>
+          <p className="text-[11px] text-muted-foreground -mt-2">
+            ผู้เรียน 1 คนเห็นโฆษณาแล้ว 1 ครั้ง (จากคลิปไหนก็ได้) จะไม่เห็นอีกจนครบจำนวนวัน · <b className="text-yellow-400">เปลี่ยนจำนวนวันหรือเปลี่ยนโฆษณา = เริ่มรอบใหม่ ทุกคนเห็นอีกครั้ง</b>
+          </p>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button onClick={saveSettings} disabled={savingSettings || !settingsDirty} className="bg-[#FFB300] hover:bg-[#FF9D00] text-black" data-testid="promo-settings-save">
+              {savingSettings ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              {daysWillChange || promoWillChange ? 'บันทึก + เริ่มรอบใหม่' : 'บันทึกการตั้งค่า'}
+            </Button>
+            <Button variant="outline" onClick={() => setConfirmReset(true)} disabled={resetting} data-testid="promo-settings-reset">
+              <RotateCcw className="h-4 w-4 mr-1" /> 🔄 รีเซ็ตให้ทุกคนเห็นใหม่
+            </Button>
+            {globalPromo && (
+              <span className="text-xs text-muted-foreground ml-auto">
+                {globalPromo.seen_by_me_active
+                  ? <>👁 คุณเห็นแล้วเมื่อ {fmtDateTime(globalPromo.seen_by_me_at)} — ทดสอบไม่เห็น? กด 🔁 ที่การ์ดโฆษณา</>
+                  : <>👁 บัญชีคุณจะเห็นโฆษณาในคลิปถัดไป</>}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-[#FFB300]" /></div>
@@ -262,7 +431,14 @@ export default function AdminPromos() {
               </div>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="font-semibold truncate">{p.title}</div>
+                  <div className="font-semibold truncate flex items-center gap-1.5">
+                    {settings?.promo_id === p.id && (
+                      <span className="shrink-0 inline-flex items-center gap-0.5 rounded-full bg-yellow-500/15 text-yellow-400 px-1.5 py-0.5 text-[10px] font-semibold" title="ตั้งเป็นโฆษณาก่อนเริ่มทุกคลิป">
+                        <Star className="h-3 w-3" /> ⭐ ทุกคลิป
+                      </span>
+                    )}
+                    <span className="truncate">{p.title}</span>
+                  </div>
                   <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                     <span className="inline-flex items-center gap-1">
                       {p.source_type === 'youtube' ? <Youtube className="h-3.5 w-3.5 text-red-500" /> : <Film className="h-3.5 w-3.5" />}
@@ -270,12 +446,24 @@ export default function AdminPromos() {
                     </span>
                     <span>⏱ {fmtDur(p.duration_sec)}</span>
                     <span>{skipLabel(p.skip_after_sec)}</span>
-                    <span className={p.usage_count ? 'text-green-400' : ''}>ใช้ใน {p.usage_count} จุด</span>
                   </div>
                 </div>
                 <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${p.is_active ? 'bg-green-500/15 text-green-400' : 'bg-muted text-muted-foreground'}`}>
                   {p.is_active ? <><Eye className="h-3 w-3" /> เปิดใช้</> : <><EyeOff className="h-3 w-3" /> ปิดอยู่</>}
                 </span>
+              </div>
+              {/* ประวัติของแอดมินคนนี้ + ปุ่ม 🔁 (ทดสอบซ้ำได้ — ล้างเฉพาะบัญชีตัวเอง) */}
+              <div className="flex items-center gap-2 text-xs text-muted-foreground" data-testid={`promo-seen-${p.id}`}>
+                {p.seen_by_me_active
+                  ? <span>👁 คุณเคยเห็นแล้ว ({fmtDateTime(p.seen_by_me_at)}) — จะไม่เห็นอีกจนครบ {settings?.cooldown_days ?? 7} วัน</span>
+                  : p.seen_by_me_at
+                    ? <span>👁 เคยเห็น {fmtDateTime(p.seen_by_me_at)} (รอบก่อน) — คลิปถัดไปจะเห็นอีก</span>
+                    : <span>👁 บัญชีคุณยังไม่เคยเห็นในรอบนี้</span>}
+                {(p.seen_by_me_active || p.seen_by_me_at) && (
+                  <Button variant="ghost" size="sm" className="h-7 px-2 text-yellow-400 ml-auto" onClick={() => letMeSeeAgain(p)} disabled={busyId === p.id} data-testid={`promo-see-again-${p.id}`}>
+                    {busyId === p.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : '🔁 ให้ฉันเห็นอีกครั้ง'}
+                  </Button>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => toggleActive(p)} disabled={busyId === p.id}>
@@ -373,7 +561,7 @@ export default function AdminPromos() {
 
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox checked={form.is_active} onCheckedChange={(c) => setForm({ ...form, is_active: c === true })} />
-                เปิดใช้งาน (ปิด = จุดแทรกที่ใช้โฆษณานี้จะไม่แสดง แต่ยังไม่ลบ)
+                เปิดใช้งาน (ปิด = โฆษณานี้หยุดแสดง รวมก่อนเริ่มทุกคลิปถ้าตั้งไว้ แต่ยังไม่ลบ)
               </label>
             </div>
           )}
@@ -392,9 +580,9 @@ export default function AdminPromos() {
           <AlertDialogHeader>
             <AlertDialogTitle>ลบโฆษณา "{deleting?.title}"?</AlertDialogTitle>
             <AlertDialogDescription>
-              {deleting?.usage_count
-                ? `โฆษณานี้ใช้อยู่ใน ${deleting.usage_count} จุดแทรก — ลบแล้วจุดแทรกเหล่านั้นจะหายไป (บทเรียนยังอยู่)`
-                : 'ยังไม่ได้ผูกกับบทเรียนใด'}
+              {deleting && settings?.promo_id === deleting.id
+                ? '⚠️ โฆษณานี้ตั้งเป็น "โฆษณาก่อนเริ่มทุกคลิป" อยู่ — ลบแล้วโฆษณาก่อนเริ่มทุกคลิปจะหยุดแสดงจนกว่าจะเลือกตัวใหม่'
+                : 'ลบออกจากคลังถาวร (ประวัติการเห็นของผู้เรียนสำหรับโฆษณานี้ถูกลบด้วย)'}
               {deleting?.source_type === 'file' ? ' · ไฟล์บน S3 จะถูกลบด้วย' : ''}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -402,6 +590,24 @@ export default function AdminPromos() {
             <AlertDialogCancel disabled={busyId != null}>เก็บไว้</AlertDialogCancel>
             <AlertDialogAction onClick={(e) => { e.preventDefault(); confirmDelete(); }} disabled={busyId != null} className="bg-red-600 hover:bg-red-700 text-white">
               {busyId != null ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trash2 className="h-4 w-4 mr-1" />} ยืนยันลบ
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ===== 🔄 รีเซ็ตรอบ ===== */}
+      <AlertDialog open={confirmReset} onOpenChange={(o) => { if (!o && !resetting) setConfirmReset(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>🔄 รีเซ็ตให้ทุกคนเห็นโฆษณาใหม่?</AlertDialogTitle>
+            <AlertDialogDescription>
+              เริ่มรอบใหม่ทันที — ผู้เรียนทุกคนที่เคยเห็นโฆษณาก่อนเริ่มทุกคลิปแล้ว จะเห็นอีกครั้งในคลิปถัดไปที่เปิด (แล้วนับ {settings?.cooldown_days ?? 7} วันใหม่) · ประวัติเดิมยังเก็บไว้เป็นสถิติ
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>ยกเลิก</AlertDialogCancel>
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); resetCycle(); }} disabled={resetting} className="bg-[#FFB300] hover:bg-[#FF9D00] text-black" data-testid="promo-settings-reset-confirm">
+              {resetting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RotateCcw className="h-4 w-4 mr-1" />} ยืนยันรีเซ็ต
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
