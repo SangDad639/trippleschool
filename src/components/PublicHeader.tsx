@@ -313,7 +313,7 @@ const PublicHeader = ({ overlay = false, search }: PublicHeaderProps = {}) => {
                   {daysLeft !== null && (
                     <DropdownMenuItem
                       onClick={() => navigate('/subscription')}
-                      className={`xs:hidden ${daysLeft <= 7 ? 'text-red-400 focus:text-red-400' : 'text-[#FFB300] focus:text-[#FFB300]'}`}
+                      className={`xs:hidden ${daysLeft <= 7 ? 'text-red-400 focus:text-red-400' : 'text-brand focus:text-brand'}`}
                     >
                       <Crown className="h-4 w-4 mr-2" /> สมาชิกเหลือ {daysLeft} วัน
                     </DropdownMenuItem>

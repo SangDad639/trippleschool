@@ -166,7 +166,7 @@ const Pricing = () => {
                 <p className={`text-sm mb-2 ${row.hot ? 'font-bold' : 'font-medium'}`}>{row.label}</p>
                 <div className="grid grid-cols-3 gap-1.5 text-center text-xs">
                   {([['ซื้อรายชิ้น', row.perCourse], ['รายเดือน', row.monthly], ['👑 รายปี', row.yearly]] as [string, BenefitCell][]).map(([head, cell]) => (
-                    <div key={head} className="rounded-lg bg-black/25 px-1.5 py-1.5">
+                    <div key={head} className="rounded-lg bg-muted/50 px-1.5 py-1.5">
                       <div className={`text-[10px] mb-0.5 ${head.includes('รายปี') ? 'text-[#FFB300]' : 'text-muted-foreground'}`}>{head}</div>
                       <div className={`${CELL_CLASS[cell.kind]} leading-snug`}>{cell.label}</div>
                     </div>
@@ -278,7 +278,7 @@ const Pricing = () => {
               <p className="text-sm text-yellow-100/90 flex items-center gap-1.5">
                 <Eye className="h-4 w-4 shrink-0" /> ดูได้อย่างเดียวในเว็บ — ดาวน์โหลดไฟล์ไม่ได้
               </p>
-              <span className="inline-block mt-2 text-[11px] px-2 py-0.5 rounded-full bg-black/30 text-muted-foreground">
+              <span className="inline-block mt-2 text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
                 อยากเก็บไฟล์ไว้? เลือกรายปี
               </span>
             </div>
@@ -339,7 +339,7 @@ const Pricing = () => {
               <p className="text-sm text-yellow-100/90 flex items-center gap-1.5">
                 <Download className="h-4 w-4 shrink-0 text-[#FFB300]" /> ดาวน์โหลดไฟล์เก็บไว้อ่านออฟไลน์ได้ตลอดอายุสมาชิก
               </p>
-              <span className="inline-block mt-2 text-[11px] px-2 py-0.5 rounded-full bg-black/30 text-[#FFB300] font-medium">
+              <span className="inline-block mt-2 text-[11px] px-2 py-0.5 rounded-full bg-muted text-brand font-medium">
                 สิทธิ์เฉพาะรายปี
               </span>
             </div>

@@ -225,7 +225,7 @@ function InlineText({ value, onChange, placeholder, className = '', multiline = 
           value={draft}
           onChange={e => setDraft(e.target.value)}
           onBlur={commit}
-          className={`w-full bg-zinc-800 border border-[#FFB300]/60 rounded px-2 py-1 outline-none text-sm font-mono ${className}`}
+          className={`w-full bg-input text-foreground border border-ring rounded px-2 py-1 outline-none text-sm font-mono ${className}`}
         />
       );
     }
@@ -236,7 +236,7 @@ function InlineText({ value, onChange, placeholder, className = '', multiline = 
         onChange={e => setDraft(e.target.value)}
         onBlur={commit}
         onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setDraft(value); setEditing(false); } }}
-        className={`bg-zinc-800 border border-[#FFB300]/60 rounded px-2 py-0.5 outline-none ${className}`}
+        className={`bg-input text-foreground border border-ring rounded px-2 py-0.5 outline-none ${className}`}
       />
     );
   }
@@ -278,9 +278,9 @@ function BannerImageEdit({ value, onChange }: { value: string; onChange: (url: s
       {value ? (
         <img src={value} alt="" className="w-full object-cover" />
       ) : (
-        <div className="aspect-video flex items-center justify-center bg-zinc-800 text-muted-foreground text-sm">คลิกเพื่ออัปโหลด banner</div>
+        <div className="aspect-video flex items-center justify-center bg-muted text-muted-foreground text-sm">คลิกเพื่ออัปโหลด banner</div>
       )}
-      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+      <div className="dark-stage absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
         {uploading ? <Loader2 className="h-6 w-6 animate-spin text-white" /> : (
           <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-black/70 text-white text-sm">
             <Upload className="h-4 w-4" /> เปลี่ยนรูป
@@ -312,7 +312,7 @@ function DateEdit({ dateTh, dateEn, onChange }: { dateTh: string; dateEn: string
             }
           }}
           onBlur={() => setEditing(false)}
-          className="bg-zinc-800 border border-[#FFB300]/60 rounded px-2 py-1 text-sm"
+          className="bg-input text-foreground border border-ring rounded px-2 py-1 text-sm"
         />
       </div>
     );
@@ -339,14 +339,14 @@ function BlockWrap({ onMoveUp, onMoveDown, onDelete, onAddBelow, children }: {
   return (
     <div className="relative group">
       {children}
-      <div className="absolute -right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1 bg-zinc-900/90 border border-zinc-700 rounded-lg p-1 z-10">
+      <div className="absolute -right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-1 bg-popover/95 text-popover-foreground border border-border rounded-lg p-1 z-10">
         {onMoveUp && <button onClick={onMoveUp} className="p-1 hover:bg-muted rounded" title="ขึ้น"><ChevronUp className="h-3 w-3" /></button>}
         {onMoveDown && <button onClick={onMoveDown} className="p-1 hover:bg-muted rounded" title="ลง"><ChevronDown className="h-3 w-3" /></button>}
         {onDelete && <button onClick={onDelete} className="p-1 hover:bg-red-500/20 rounded text-red-400" title="ลบ"><Trash2 className="h-3 w-3" /></button>}
       </div>
       {onAddBelow && (
         <div className="flex justify-center py-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onAddBelow} className="text-[10px] text-muted-foreground hover:text-[#FFB300] inline-flex items-center gap-1">
+          <button onClick={onAddBelow} className="text-[10px] text-muted-foreground hover:text-brand inline-flex items-center gap-1">
             <Plus className="h-3 w-3" /> เพิ่ม block ด้านล่าง
           </button>
         </div>
@@ -505,7 +505,7 @@ function DetailsList({ items, onChange }: { items: DetailItem[]; onChange: (v: D
                 size="sm"
                 variant="ghost"
                 onClick={() => addVideoAfter(section.itemIndices.length > 0 ? section.itemIndices[section.itemIndices.length - 1] : (section.headingIdx ?? -1))}
-                className="text-xs text-muted-foreground hover:text-[#FFB300]"
+                className="text-xs text-muted-foreground hover:text-brand"
               >
                 <Plus className="h-3 w-3 mr-1" /> เพิ่ม Video ใน section นี้
               </Button>
@@ -548,7 +548,7 @@ function VideoBlock({ item, update }: { item: DetailItem; update: (patch: Partia
         />
       </div>
       {item.videoUrl ? (
-        <div className="aspect-video rounded-xl overflow-hidden bg-zinc-900">
+        <div className="dark-stage aspect-video rounded-xl overflow-hidden bg-zinc-900">
           <YouTubePreview url={item.videoUrl} />
         </div>
       ) : (
@@ -557,7 +557,7 @@ function VideoBlock({ item, update }: { item: DetailItem; update: (patch: Partia
           value={item.videoUrl || ''}
           onChange={e => update({ videoUrl: e.target.value })}
           placeholder="วาง YouTube URL ที่นี่ — https://youtu.be/... หรือ https://www.youtube.com/watch?v=..."
-          className="w-full bg-zinc-800 border border-dashed border-zinc-700 rounded px-3 py-3 text-xs font-mono outline-none focus:border-[#FFB300]/60"
+          className="w-full bg-input text-foreground border border-dashed border-border rounded px-3 py-3 text-xs font-mono outline-none focus:border-ring"
         />
       )}
       {item.videoUrl && <UrlEditToggle url={item.videoUrl} onChange={v => update({ videoUrl: v })} />}
@@ -595,7 +595,7 @@ function ChildrenList({ items, onChange }: { items: { text: { th: string; en: st
               />
             </div>
             {c.videoUrl ? (
-              <div className="aspect-video rounded-xl overflow-hidden bg-zinc-900">
+              <div className="dark-stage aspect-video rounded-xl overflow-hidden bg-zinc-900">
                 <YouTubePreview url={c.videoUrl} />
               </div>
             ) : null}
@@ -628,7 +628,7 @@ function LinksList({ items, onChange }: { items: Link[]; onChange: (v: Link[]) =
             target="_blank"
             rel="noreferrer"
             onClick={e => e.preventDefault()}
-            className="block px-4 py-2 rounded-xl bg-zinc-800 border border-zinc-700 hover:border-[#FFB300]/40"
+            className="block px-4 py-2 rounded-xl bg-muted border border-border hover:border-ring"
           >
             <div className="text-sm">
               <InlineText
@@ -673,7 +673,7 @@ function PromptsList({ items, onChange }: { items: Prompt[]; onChange: (v: Promp
             <h3 className="text-lg font-semibold text-white">
               <InlineText value={p.label} onChange={v => update(i, { label: v })} placeholder="Prompt label" />
             </h3>
-            <div className="rounded-xl border border-zinc-700 bg-zinc-900 p-4">
+            <div className="rounded-xl border border-border bg-muted p-4">
               <InlineText
                 value={p.text}
                 onChange={v => update(i, { text: v })}
@@ -699,7 +699,7 @@ function UrlEditToggle({ url, onChange }: { url: string; onChange: (v: string) =
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-2 text-[10px] text-muted-foreground hover:text-[#FFB300] inline-flex items-center gap-1 px-2"
+        className="mt-2 text-[10px] text-muted-foreground hover:text-brand inline-flex items-center gap-1 px-2"
       >
         🔗 แก้ URL
       </button>
@@ -714,7 +714,7 @@ function UrlEditToggle({ url, onChange }: { url: string; onChange: (v: string) =
         autoFocus
         onBlur={() => setOpen(false)}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === 'Escape') setOpen(false); }}
-        className="flex-1 bg-zinc-800 border border-[#FFB300]/60 rounded px-2 py-1 text-xs font-mono outline-none"
+        className="flex-1 bg-input text-foreground border border-ring rounded px-2 py-1 text-xs font-mono outline-none"
       />
     </div>
   );
@@ -793,7 +793,7 @@ function YouTubePreview({ url }: { url: string }) {
       <button
         type="button"
         onClick={() => setPlaying(true)}
-        className="relative w-full h-full block group"
+        className="dark-stage relative w-full h-full block group"
       >
         <img src={thumb} alt="" className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).src = thumb.replace('maxresdefault', 'hqdefault'); }} />
         <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition-colors">

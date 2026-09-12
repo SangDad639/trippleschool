@@ -425,7 +425,7 @@ export default function AdminTaxInvoicesPanel() {
           {previewUrl && (
             <div className="w-full h-[70vh]">
               {previewMime.startsWith('image/') ? (
-                <img src={previewUrl} alt="Invoice" className="w-full h-full object-contain bg-zinc-900 rounded" />
+                <img src={previewUrl} alt="Invoice" className="dark-stage w-full h-full object-contain bg-zinc-900 rounded" />
               ) : (
                 <iframe src={previewUrl} className="w-full h-full bg-white rounded" title="Invoice preview" />
               )}

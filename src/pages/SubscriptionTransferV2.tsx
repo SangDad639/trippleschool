@@ -449,7 +449,7 @@ const SubscriptionTransferV2 = () => {
               {l('ต้องการใบกำกับภาษีรบกวนแจ้งแอดมิน', 'Need a tax invoice? Please contact admin')}
             </p>
             <p className="text-xs text-gray-500 mt-0.5">
-              {l('LINE ID: ', 'LINE ID: ')}<span className="text-[#06C755] font-semibold">@tpn639</span>
+              {l('LINE ID: ', 'LINE ID: ')}<span className="text-line font-semibold">@tpn639</span>
             </p>
           </div>
           <a
@@ -457,8 +457,8 @@ const SubscriptionTransferV2 = () => {
             target="_blank"
             rel="noopener noreferrer"
           >
-            <Button size="sm" variant="outline" className="h-9 text-xs font-bold border-[#06C755] text-[#06C755] hover:bg-[#06C755]/10 hover:text-[#06C755] rounded-lg">
-              <MessageCircle className="h-4 w-4 mr-1.5 text-[#06C755]" />
+            <Button size="sm" variant="outline" className="h-9 text-xs font-bold border-line text-line hover:bg-line/10 hover:text-line rounded-lg">
+              <MessageCircle className="h-4 w-4 mr-1.5 text-line" />
               LINE
             </Button>
           </a>
@@ -492,7 +492,7 @@ const SubscriptionTransferV2 = () => {
             <div className="space-y-3">
               {previewUrl && (
                 <div className="rounded-xl overflow-hidden border border-border">
-                  <img src={previewUrl} alt="Slip preview" className="w-full max-h-80 object-contain bg-zinc-900" />
+                  <img src={previewUrl} alt="Slip preview" className="dark-stage w-full max-h-80 object-contain bg-zinc-900" />
                 </div>
               )}
               <div className="flex items-center justify-between gap-2">

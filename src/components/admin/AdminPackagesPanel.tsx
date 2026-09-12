@@ -1044,7 +1044,7 @@ export default function AdminPackagesPanel() {
                     {l('เก็บรายการไว้', 'Keep it')}
                   </Button>
                   {/* variant=destructive — variant default เป็น gradient ทอง (background-image) ทับ bg-red-* */}
-                  <Button variant="destructive" onClick={confirmCancelSchedule} disabled={cancelling} className="bg-red-600 hover:bg-red-700 text-white font-bold">
+                  <Button variant="destructive" onClick={confirmCancelSchedule} disabled={cancelling} className="bg-red-600 text-destructive-foreground hover:bg-red-700 font-bold">
                     {cancelling ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <X className="h-4 w-4 mr-1" />}
                     {l('ยืนยันยกเลิก', 'Yes, cancel it')}
                   </Button>

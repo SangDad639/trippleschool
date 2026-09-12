@@ -16,6 +16,8 @@
 
     --primary: 45 100% 50%;
     --primary-foreground: 0 0% 6%;
+    --brand: 42 100% 50%;
+    --line: 145 94% 40%;
 
     --secondary: 45 100% 50%;
     --secondary-foreground: 0 0% 6%;
@@ -26,7 +28,7 @@
     --muted: 0 0% 13%;
     --muted-foreground: 0 0% 66%;
 
-    --destructive: 0 84% 60%;
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
 
     --border: 0 0% 16%;
@@ -247,7 +249,7 @@
 
    กติกา:
    - เพิ่มคลาสเทา/ขาว hardcode ตัวใหม่เมื่อไหร่ ต้องเติมแถวในตารางนี้ด้วย
-   - `:not(.dark-stage *)` = ยกเว้นบริเวณทับรูป (hero, การ์ดปก, วิดีโอ) ซึ่งต้อง
+   - `:not(.dark-stage):not(.dark-stage *)` = ยกเว้นทั้ง container และลูกหลานของบริเวณทับรูป
      คงมืด+ตัวหนังสือขาวทั้งสองธีมแบบ Netflix — แปะคลาส `dark-stage` ที่ container
    - bg-black/XX และ from/via/to-black ไม่ override เลย: เกือบทั้งหมดเป็นม่านทับรูป
      หรือฉากหลัง dialog ซึ่งต้องมืดทุกธีมอยู่แล้ว
@@ -265,6 +267,9 @@
   /* ทองเข้มขึ้นหนึ่งสเต็ป (#E6A100) — ทอง #FFB300 เพียวๆ จมบนพื้นครีม */
   --primary: 42 100% 45%;
   --primary-foreground: 0 0% 6%;
+  /* แยกสีทองสำหรับตัวหนังสือจากสีทองของพื้นปุ่ม เพื่อให้ contrast ผ่านบนพื้นครีม */
+  --brand: 42 100% 28%;
+  --line: 145 94% 25%;
   --secondary: 42 100% 45%;
   --secondary-foreground: 0 0% 6%;
   --accent: 42 100% 42%;
@@ -275,7 +280,7 @@
 
   --border: 41 55% 86%;        /* #EFE3C8 ทองอ่อน */
   --input: 41 55% 92%;
-  --ring: 42 100% 45%;
+  --ring: 42 100% 29%;
 
   --gradient-from: 42 100% 45%;
   --gradient-via: 37 100% 45%;
@@ -293,59 +298,156 @@
 }
 
 /* ---------- ตัวหนังสือ ---------- */
-.light .text-white:not(.dark-stage *) { color: #201a10; }
-.light .text-white\/90:not(.dark-stage *) { color: rgba(32, 26, 16, 0.9); }
-.light .text-gray-200:not(.dark-stage *) { color: #4a4030; }
-.light .text-gray-300:not(.dark-stage *) { color: #4a4030; }
-.light .text-gray-400:not(.dark-stage *) { color: #6b5d45; }
-.light .text-gray-500:not(.dark-stage *) { color: #857661; }
-/* ทองเพียวเป็น "ตัวหนังสือ" บนพื้นครีมอ่านยาก → เข้มขึ้น (ปุ่มพื้นทองไม่เกี่ยว) */
-.light .text-\[\#FFB300\]:not(.dark-stage *) { color: #a97800; }
+/* พื้นที่รูป/วิดีโอคงสีแบรนด์สว่างไว้ ส่วนพื้น Light ใช้ทองเข้มสำหรับข้อความ */
+.light .dark-stage {
+  --background: 0 0% 8%;
+  --foreground: 0 0% 94%;
+  --card: 0 0% 11%;
+  --card-foreground: 0 0% 94%;
+  --popover: 0 0% 11%;
+  --popover-foreground: 0 0% 94%;
+  --primary: 45 100% 50%;
+  --primary-foreground: 0 0% 6%;
+  --brand: 42 100% 50%;
+  --line: 145 94% 40%;
+  --secondary: 45 100% 50%;
+  --secondary-foreground: 0 0% 6%;
+  --accent: 45 100% 50%;
+  --accent-foreground: 0 0% 6%;
+  --muted: 0 0% 13%;
+  --muted-foreground: 0 0% 66%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 0 0% 16%;
+  --input: 0 0% 13%;
+  --ring: 45 100% 50%;
+  color: #f0f0f0;
+}
+
+.light .text-white:not(.dark-stage):not(.dark-stage *) { color: #201a10; }
+.light .text-white\/80:not(.dark-stage):not(.dark-stage *) { color: rgba(32, 26, 16, 0.8); }
+.light .text-white\/90:not(.dark-stage):not(.dark-stage *) { color: rgba(32, 26, 16, 0.9); }
+.light .hover\:text-white:hover:not(.dark-stage):not(.dark-stage *),
+.light .focus\:text-white:focus:not(.dark-stage):not(.dark-stage *) { color: #201a10; }
+
+.light .text-gray-200:not(.dark-stage):not(.dark-stage *),
+.light .text-gray-300:not(.dark-stage):not(.dark-stage *) { color: #4a4030; }
+.light .text-gray-400:not(.dark-stage):not(.dark-stage *),
+.light .text-gray-500:not(.dark-stage):not(.dark-stage *) { color: #6b5d45; }
+.light .hover\:text-gray-300:hover:not(.dark-stage):not(.dark-stage *) { color: #4a4030; }
+
+.light .text-zinc-300:not(.dark-stage):not(.dark-stage *) { color: #4a4030; }
+.light .text-zinc-400:not(.dark-stage):not(.dark-stage *),
+.light .text-zinc-500:not(.dark-stage):not(.dark-stage *) { color: #6b5d45; }
+.light .hover\:text-zinc-300:hover:not(.dark-stage):not(.dark-stage *) { color: #4a4030; }
+.light .text-slate-300:not(.dark-stage):not(.dark-stage *) { color: #475569; }
+
+/* สีทองสำหรับข้อความต้องเข้มกว่าสีพื้นปุ่ม */
+.light .text-primary:not(.dark-stage):not(.dark-stage *),
+.light .text-\[\#FFB300\]:not(.dark-stage):not(.dark-stage *),
+.light .text-\[\#FFB300\]\/70:not(.dark-stage):not(.dark-stage *) { color: hsl(var(--brand)); }
+
+/* สีสถานะระดับ 100-500 เดิมเหมาะกับพื้นดำ แต่จางบนพื้นครีม จึงรวมเป็น foreground ที่ผ่าน contrast */
+.light :is(
+  .text-red-300, .text-red-300\/80,
+  .text-red-400, .text-red-400\/70, .text-red-400\/80, .text-red-400\/90,
+  .text-red-500
+):not(.dark-stage):not(.dark-stage *) { color: #b91c1c; }
+
+.light :is(
+  .text-green-100, .text-green-300, .text-green-400, .text-green-400\/80, .text-green-500,
+  .text-emerald-300, .text-emerald-400, .text-emerald-500
+):not(.dark-stage):not(.dark-stage *) { color: #166534; }
+
+.light :is(
+  .text-yellow-100, .text-yellow-100\/90,
+  .text-yellow-200, .text-yellow-200\/90,
+  .text-yellow-300, .text-yellow-300\/80, .text-yellow-300\/90,
+  .text-yellow-400, .text-yellow-400\/90,
+  .text-yellow-500, .text-yellow-500\/80, .text-yellow-500\/90,
+  .text-amber-400
+):not(.dark-stage):not(.dark-stage *) { color: #854d0e; }
+
+.light :is(.text-orange-300, .text-orange-400, .text-orange-500):not(.dark-stage):not(.dark-stage *) { color: #9a3412; }
+.light :is(.text-blue-400, .text-blue-500):not(.dark-stage):not(.dark-stage *) { color: #1d4ed8; }
+.light :is(.text-sky-300, .text-sky-400, .text-cyan-400):not(.dark-stage):not(.dark-stage *) { color: #155e75; }
+.light :is(
+  .text-purple-100, .text-purple-200, .text-purple-300, .text-purple-300\/70,
+  .text-purple-400, .text-purple-500, .text-violet-300, .text-violet-400, .text-violet-500
+):not(.dark-stage):not(.dark-stage *) { color: #6d28d9; }
+.light .text-indigo-400:not(.dark-stage):not(.dark-stage *) { color: #4338ca; }
+.light .text-pink-400:not(.dark-stage):not(.dark-stage *) { color: #9d174d; }
+
+/* state-prefixed utilities เป็นคนละ selector กับ base utility จึงต้องดูแลแยก */
+.light :is(.hover\:text-red-300:hover, .hover\:text-red-400:hover, .hover\:text-red-500:hover,
+  .focus\:text-red-400:focus):not(.dark-stage):not(.dark-stage *) { color: #b91c1c; }
+.light :is(.hover\:text-green-400:hover, .hover\:text-emerald-300:hover):not(.dark-stage):not(.dark-stage *) { color: #166534; }
+.light .hover\:text-yellow-400:hover:not(.dark-stage):not(.dark-stage *) { color: #854d0e; }
+.light :is(.hover\:text-purple-100:hover, .hover\:text-purple-200:hover, .hover\:text-purple-400:hover):not(.dark-stage):not(.dark-stage *) { color: #6d28d9; }
 /* text-black / text-gray-600..900 อ่านออกบนพื้นสว่างอยู่แล้ว — ไม่ต้องแตะ */
 
 /* ---------- พื้นผิว ---------- */
-.light .bg-black:not(.dark-stage *) { background-color: #f3ecdb; }
-.light .bg-gray-900:not(.dark-stage *) { background-color: #ffffff; }
-.light .bg-gray-900\/20:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.04); }
-.light .bg-gray-900\/40:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.05); }
-.light .bg-gray-900\/50:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.06); }
-.light .bg-gray-900\/60:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.07); }
-.light .bg-gray-800:not(.dark-stage *) { background-color: #faf3e3; }
-.light .bg-gray-800\/20:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.03); }
-.light .bg-gray-800\/30:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.04); }
-.light .bg-gray-800\/40:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.05); }
-.light .bg-gray-800\/50:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.06); }
-.light .bg-gray-800\/60:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.07); }
-.light .bg-gray-800\/70:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.08); }
-.light .bg-gray-700:not(.dark-stage *) { background-color: #f1e8d3; }
-.light .bg-gray-700\/60:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.08); }
-.light .bg-gray-600\/60:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.14); }
-.light .bg-gray-600\/70:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.16); }
-.light .bg-gray-600\/80:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.18); }
+.light .bg-black:not(.dark-stage):not(.dark-stage *) { background-color: #f3ecdb; }
+.light .bg-gray-900:not(.dark-stage):not(.dark-stage *) { background-color: #ffffff; }
+.light .bg-gray-900\/20:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.04); }
+.light .bg-gray-900\/40:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.05); }
+.light .bg-gray-900\/50:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.06); }
+.light .bg-gray-900\/60:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.07); }
+.light .bg-gray-800:not(.dark-stage):not(.dark-stage *) { background-color: #faf3e3; }
+.light .bg-gray-800\/20:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.03); }
+.light .bg-gray-800\/30:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.04); }
+.light .bg-gray-800\/40:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.05); }
+.light .bg-gray-800\/50:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.06); }
+.light .bg-gray-800\/60:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.07); }
+.light .bg-gray-800\/70:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.08); }
+.light .bg-gray-700:not(.dark-stage):not(.dark-stage *) { background-color: #f1e8d3; }
+.light .bg-gray-700\/60:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.08); }
+.light .bg-gray-600\/60:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.14); }
+.light .bg-gray-600\/70:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.16); }
+.light .bg-gray-600\/80:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.18); }
+
+.light .bg-zinc-950:not(.dark-stage):not(.dark-stage *),
+.light .bg-zinc-900:not(.dark-stage):not(.dark-stage *) { background-color: #ffffff; }
+.light .bg-zinc-900\/30:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.04); }
+.light .bg-zinc-900\/40:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.05); }
+.light .bg-zinc-900\/70:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.08); }
+.light .bg-zinc-900\/90:not(.dark-stage):not(.dark-stage *) { background-color: rgba(255, 255, 255, 0.96); }
+.light .bg-zinc-800:not(.dark-stage):not(.dark-stage *) { background-color: #faf3e3; }
+.light .bg-zinc-800\/30:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.04); }
+.light .bg-zinc-700:not(.dark-stage):not(.dark-stage *) { background-color: #f1e8d3; }
 /* ทินท์ขาวบนพื้นมืด (ชิปแก้ว) → กลายเป็นทินท์น้ำตาลจางบนพื้นครีม */
-.light .bg-white\/5:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.04); }
-.light .bg-white\/10:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.06); }
-.light .bg-white\/20:not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.1); }
+.light .bg-white\/5:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.04); }
+.light .bg-white\/10:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.06); }
+.light .bg-white\/20:not(.dark-stage):not(.dark-stage *) { background-color: rgba(60, 48, 25, 0.1); }
 
 /* ---------- เส้นขอบ ---------- */
-.light .border-gray-500:not(.dark-stage *) { border-color: #d9ccaa; }
-.light .border-gray-500\/30:not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.14); }
-.light .border-gray-500\/50:not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.2); }
-.light .border-gray-600:not(.dark-stage *) { border-color: #e2d6b8; }
-.light .border-gray-700:not(.dark-stage *) { border-color: #efe3c8; }
-.light .border-gray-700\/60:not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.1); }
-.light .border-gray-700\/80:not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.12); }
-.light .border-gray-800:not(.dark-stage *) { border-color: #f2e9d4; }
-.light .border-gray-800\/50:not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.08); }
-.light .border-white\/20:not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.15); }
+.light .border-gray-500:not(.dark-stage):not(.dark-stage *) { border-color: #d9ccaa; }
+.light .border-gray-500\/30:not(.dark-stage):not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.14); }
+.light .border-gray-500\/50:not(.dark-stage):not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.2); }
+.light .border-gray-600:not(.dark-stage):not(.dark-stage *) { border-color: #e2d6b8; }
+.light .border-gray-700:not(.dark-stage):not(.dark-stage *) { border-color: #efe3c8; }
+.light .border-gray-700\/60:not(.dark-stage):not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.1); }
+.light .border-gray-700\/80:not(.dark-stage):not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.12); }
+.light .border-gray-800:not(.dark-stage):not(.dark-stage *) { border-color: #f2e9d4; }
+.light .border-gray-800\/50:not(.dark-stage):not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.08); }
+
+.light .border-zinc-500:not(.dark-stage):not(.dark-stage *) { border-color: #d9ccaa; }
+.light .border-zinc-700:not(.dark-stage):not(.dark-stage *) { border-color: #efe3c8; }
+.light .border-zinc-700\/80:not(.dark-stage):not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.12); }
+.light .border-zinc-800:not(.dark-stage):not(.dark-stage *) { border-color: #f2e9d4; }
+.light .border-zinc-800\/60:not(.dark-stage):not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.1); }
+.light .border-zinc-800\/80:not(.dark-stage):not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.12); }
+.light .border-white\/20:not(.dark-stage):not(.dark-stage *) { border-color: rgba(60, 48, 25, 0.15); }
 
 /* ---------- gradient stop สีเทา (ฉากหลังการ์ด/placeholder) ---------- */
-.light .from-gray-700:not(.dark-stage *) { --tw-gradient-from: #f1e8d3 var(--tw-gradient-from-position); --tw-gradient-to: rgb(241 232 211 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
-.light .to-gray-800:not(.dark-stage *) { --tw-gradient-to: #faf3e3 var(--tw-gradient-to-position); }
-.light .from-gray-900\/60:not(.dark-stage *) { --tw-gradient-from: rgba(60,48,25,0.06) var(--tw-gradient-from-position); --tw-gradient-to: rgb(60 48 25 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
-.light .via-gray-900:not(.dark-stage *) { --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #fbf5e7 var(--tw-gradient-via-position), var(--tw-gradient-to); }
-.light .via-gray-900\/40:not(.dark-stage *) { --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), rgba(60,48,25,0.04) var(--tw-gradient-via-position), var(--tw-gradient-to); }
-.light .to-gray-900\/60:not(.dark-stage *) { --tw-gradient-to: rgba(60,48,25,0.06) var(--tw-gradient-to-position); }
+.light .from-gray-700:not(.dark-stage):not(.dark-stage *) { --tw-gradient-from: #f1e8d3 var(--tw-gradient-from-position); --tw-gradient-to: rgb(241 232 211 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.light .to-gray-800:not(.dark-stage):not(.dark-stage *) { --tw-gradient-to: #faf3e3 var(--tw-gradient-to-position); }
+.light .from-gray-900\/60:not(.dark-stage):not(.dark-stage *) { --tw-gradient-from: rgba(60,48,25,0.06) var(--tw-gradient-from-position); --tw-gradient-to: rgb(60 48 25 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.light .via-gray-900:not(.dark-stage):not(.dark-stage *) { --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), #fbf5e7 var(--tw-gradient-via-position), var(--tw-gradient-to); }
+.light .via-gray-900\/40:not(.dark-stage):not(.dark-stage *) { --tw-gradient-to: rgb(255 255 255 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), rgba(60,48,25,0.04) var(--tw-gradient-via-position), var(--tw-gradient-to); }
+.light .to-gray-900\/60:not(.dark-stage):not(.dark-stage *) { --tw-gradient-to: rgba(60,48,25,0.06) var(--tw-gradient-to-position); }
+.light .from-zinc-800:not(.dark-stage):not(.dark-stage *) { --tw-gradient-from: #faf3e3 var(--tw-gradient-from-position); --tw-gradient-to: rgb(250 243 227 / 0) var(--tw-gradient-to-position); --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to); }
+.light .to-zinc-900:not(.dark-stage):not(.dark-stage *) { --tw-gradient-to: #ffffff var(--tw-gradient-to-position); }
 
 /* ม่านกันตัวหนังสือฝั่งซ้ายของ hero (from-background via-background/70) —
    token ตามธีมทำให้กลายเป็นม่านครีมใต้ตัวหนังสือขาว อ่านไม่ออก → ใน dark-stage

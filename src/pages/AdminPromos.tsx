@@ -414,7 +414,7 @@ export default function AdminPromos() {
         <div className="grid gap-4 sm:grid-cols-2">
           {promos.map((p) => (
             <div key={p.id} className={`rounded-xl border border-border bg-card p-4 space-y-3 ${p.is_active ? '' : 'opacity-60'}`}>
-              <div className="aspect-video w-full overflow-hidden rounded-lg bg-black">
+              <div className="dark-stage aspect-video w-full overflow-hidden rounded-lg bg-black">
                 {p.source_type === 'youtube' && p.youtube_id ? (
                   <iframe
                     src={`https://www.youtube.com/embed/${p.youtube_id}?rel=0`}
@@ -507,7 +507,7 @@ export default function AdminPromos() {
                   <div>
                     <Input value={form.youtube_url} onChange={(e) => setForm({ ...form, youtube_url: e.target.value })} placeholder="https://youtu.be/aY7GY9rgWSY" />
                     {ytIdOf(form.youtube_url) ? (
-                      <div className="mt-2 aspect-video w-full max-w-xs overflow-hidden rounded-lg bg-black">
+                      <div className="dark-stage mt-2 aspect-video w-full max-w-xs overflow-hidden rounded-lg bg-black">
                         <iframe src={`https://www.youtube.com/embed/${ytIdOf(form.youtube_url)}?rel=0`} title="preview" className="w-full h-full" allow="encrypted-media" />
                       </div>
                     ) : form.youtube_url.trim() ? (
@@ -588,7 +588,7 @@ export default function AdminPromos() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={busyId != null}>เก็บไว้</AlertDialogCancel>
-            <AlertDialogAction onClick={(e) => { e.preventDefault(); confirmDelete(); }} disabled={busyId != null} className="bg-red-600 hover:bg-red-700 text-white">
+            <AlertDialogAction onClick={(e) => { e.preventDefault(); confirmDelete(); }} disabled={busyId != null} className="bg-red-600 text-destructive-foreground hover:bg-red-700">
               {busyId != null ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trash2 className="h-4 w-4 mr-1" />} ยืนยันลบ
             </AlertDialogAction>
           </AlertDialogFooter>

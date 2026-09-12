@@ -43,7 +43,7 @@ function YouTubePreview({ url, title }: { url: string; title?: string }) {
   }
   if (thumb) {
     return (
-      <button type="button" onClick={() => setPlaying(true)} className="relative w-full h-full block group" aria-label="Play video">
+      <button type="button" onClick={() => setPlaying(true)} className="dark-stage relative w-full h-full block group" aria-label="Play video">
         <img src={thumb} alt={title || ''} className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).src = thumb.replace('maxresdefault', 'hqdefault'); }} />
         <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/40 transition-colors">
           <div className="w-16 h-16 rounded-full bg-red-600/90 flex items-center justify-center shadow-2xl group-hover:scale-110 transition-transform">

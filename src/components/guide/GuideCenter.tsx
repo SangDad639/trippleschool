@@ -56,7 +56,7 @@ const GuideCard = ({ doc, lang, number }: { doc: GuideDoc; lang: Lang; number: n
       to={`/guide/${doc.slug}`}
       className="group relative flex gap-4 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 transition-colors hover:border-[#FFB300]/50 hover:bg-zinc-900/70"
     >
-      <span className="pointer-events-none absolute -right-1 top-1 select-none font-mono text-4xl font-bold text-white/[0.04] transition-colors group-hover:text-[#FFB300]/10">
+      <span className="pointer-events-none absolute -right-1 top-1 select-none font-mono text-4xl font-bold text-white/[0.04] transition-colors group-hover:text-brand/10">
         {String(number).padStart(2, '0')}
       </span>
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#FFB300]/12 text-[#FFB300] transition-transform group-hover:scale-105">
@@ -71,7 +71,7 @@ const GuideCard = ({ doc, lang, number }: { doc: GuideDoc; lang: Lang; number: n
             <Clock className="h-3 w-3" />
             {doc.minutes} {lang === 'th' ? 'นาที' : 'min'}
           </span>
-          <ArrowRight className="ml-auto h-4 w-4 text-zinc-600 transition-all group-hover:translate-x-0.5 group-hover:text-[#FFB300]" />
+          <ArrowRight className="ml-auto h-4 w-4 text-zinc-600 transition-all group-hover:translate-x-0.5 group-hover:text-brand" />
         </span>
       </span>
     </Link>
@@ -399,7 +399,7 @@ export const GuideArticle = () => {
                     <ArrowLeft className="h-3 w-3" />
                     {lang === 'th' ? 'ก่อนหน้า' : 'Previous'}
                   </span>
-                  <span className="mt-1 block text-sm font-medium text-white group-hover:text-[#FFB300]">
+                  <span className="mt-1 block text-sm font-medium text-white group-hover:text-brand">
                     {prev.title[lang]}
                   </span>
                 </Link>
@@ -415,7 +415,7 @@ export const GuideArticle = () => {
                     {lang === 'th' ? 'ถัดไป' : 'Next'}
                     <ArrowRight className="h-3 w-3" />
                   </span>
-                  <span className="mt-1 block text-sm font-medium text-white group-hover:text-[#FFB300]">
+                  <span className="mt-1 block text-sm font-medium text-white group-hover:text-brand">
                     {next.title[lang]}
                   </span>
                 </Link>

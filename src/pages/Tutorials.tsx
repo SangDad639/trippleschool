@@ -135,7 +135,7 @@ const Tutorials = () => {
                 <span className="text-[10px] md:text-xs font-semibold tracking-widest text-muted-foreground uppercase">
                   {item.label}
                 </span>
-                <div className="relative w-16 h-20 md:w-[88px] md:h-[104px] rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
+                <div className="dark-stage relative w-16 h-20 md:w-[88px] md:h-[104px] rounded-lg overflow-hidden shadow-[0_4px_20px_rgba(0,0,0,0.5)]">
                   {/* Card background */}
                   <div className="absolute inset-0 bg-[#2a2a2a] border border-[#3a3a3a] rounded-lg" />
                   {/* Center divider line */}
@@ -161,7 +161,7 @@ const Tutorials = () => {
               {language === 'th' ? 'บทเรียนที่ 1 - ความลับและเทคนิคการสร้างเงินล้าน ด้วย Facebook Reels' : 'Lesson 1 - Secrets & Techniques to Make Millions with Facebook Reels'}
             </h3>
           </div>
-          <div className="aspect-video rounded-xl overflow-hidden relative">
+          <div className="dark-stage aspect-video rounded-xl overflow-hidden relative">
             {isExpired ? (
               <div
                 onClick={() => setUnlockOpen(true)}
@@ -199,7 +199,7 @@ const Tutorials = () => {
               {language === 'th' ? 'บทเรียนที่ 2 - โปรแกรมโกงการสร้างคลิปแบบ AutoMation' : 'Lesson 2 - Cheat Program for Automated Clip Creation'}
             </h3>
           </div>
-          <div className="aspect-video rounded-xl overflow-hidden relative">
+          <div className="dark-stage aspect-video rounded-xl overflow-hidden relative">
             {isExpired ? (
               <div
                 onClick={() => setUnlockOpen(true)}

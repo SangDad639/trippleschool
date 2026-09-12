@@ -400,7 +400,7 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
             {conv && conv.status === 'ai' && (
               <button
                 onClick={handleEscalate}
-                className="text-[11px] text-muted-foreground hover:text-primary transition-colors"
+                className="text-[11px] text-muted-foreground hover:text-brand transition-colors"
               >
                 🙋 คุยกับแอดมิน
               </button>
@@ -408,7 +408,7 @@ const AgentChatWidget = ({ courseId, courseName }: AgentChatWidgetProps) => {
             {conv && (conv.status === 'escalated' || conv.status === 'answered') && (
               <button
                 onClick={handleBackToAi}
-                className="text-[11px] text-muted-foreground hover:text-primary transition-colors"
+                className="text-[11px] text-muted-foreground hover:text-brand transition-colors"
               >
                 🤖 กลับไปคุยกับน้องทริปเปิ้ล
               </button>

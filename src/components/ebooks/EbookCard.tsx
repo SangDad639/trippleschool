@@ -21,7 +21,7 @@ const EbookCard = ({ ebook }: EbookCardProps) => {
   return (
     <Link
       to={`/ebooks/${ebook.slug}`}
-      className={`relative block rounded-md overflow-hidden bg-gray-800 group/card transition-transform duration-300 hover:scale-105 hover:z-10 hover:shadow-2xl hover:shadow-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/70 ${
+      className={`dark-stage relative block rounded-md overflow-hidden bg-gray-800 group/card transition-transform duration-300 hover:scale-105 hover:z-10 hover:shadow-2xl hover:shadow-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/70 ${
         portraitCover ? 'aspect-[3/4]' : 'aspect-video'
       }`}
     >

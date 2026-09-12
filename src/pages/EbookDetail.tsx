@@ -262,7 +262,7 @@ const EbookDetail = () => {
           <Button
             variant="outline"
             onClick={() => navigate('/pricing')}
-            className="flex-1 basis-48 h-11 border-[#FFB300]/40 text-[#FFB300] hover:bg-[#FFB300]/10 hover:text-[#FFB300]"
+            className="flex-1 basis-48 h-11 border-primary/50 text-brand hover:bg-primary/10 hover:text-brand"
             title="สมาชิกรายเดือนอ่านในเว็บได้อย่างเดียว — อัปเกรดเป็นรายปีเพื่อดาวน์โหลด"
           >
             <Lock className="h-4 w-4 mr-2" />
@@ -309,7 +309,7 @@ const EbookDetail = () => {
           <div className="grid lg:grid-cols-5 gap-0">
             {/* Cover — รองรับทั้งปกแนวนอน 16:9 และปกหนังสือแนวตั้ง: รูปจริง object-contain
                 ไม่โดน crop ส่วนพื้นหลังเป็นปกเดียวกันเบลอๆ ให้กรอบไม่โล่งตอนปกแนวตั้ง */}
-            <div className="relative lg:col-span-2 bg-[#0d0d14] p-4 lg:p-6 flex items-center justify-center overflow-hidden">
+            <div className="dark-stage relative lg:col-span-2 bg-[#0d0d14] p-4 lg:p-6 flex items-center justify-center overflow-hidden">
               {ebook.cover_url ? (
                 <>
                   <img
@@ -417,7 +417,7 @@ const EbookDetail = () => {
           </div>
 
           {showReader && canView && (
-            <div className="border-t border-gray-800 bg-[#0d0d14]">
+            <div className="dark-stage border-t border-gray-800 bg-[#0d0d14]">
               {/* #toolbar=0 hides the browser's own PDF viewer chrome (incl. its
                   built-in Download/Print buttons) — a UI-level deterrent only,
                   not real DRM (Ctrl+S / dev tools still work), but removes the
@@ -429,7 +429,7 @@ const EbookDetail = () => {
           {/* ตัวอ่าน "ตัวอย่างจำกัดหน้า" — ไฟล์ที่โหลดมามีแค่หน้าตัวอย่างจริงๆ ไม่ใช่ไฟล์เต็ม
               ค่าเริ่มต้นเลื่อนอ่านต่อเนื่อง (จบแล้วเจอบล็อกชวนสมัคร) — พังค่อยตกไป iframe PDF */}
           {showPreview && locked && ebook.has_preview && (
-            <div ref={previewRef} className="border-t border-gray-800 bg-[#0d0d14] scroll-mt-14 lg:scroll-mt-16">
+            <div ref={previewRef} className="dark-stage border-t border-gray-800 bg-[#0d0d14] scroll-mt-14 lg:scroll-mt-16">
               {previewMode === 'webtoon' ? (
                 <Suspense
                   fallback={

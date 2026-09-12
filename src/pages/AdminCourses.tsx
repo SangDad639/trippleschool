@@ -2636,7 +2636,7 @@ const AdminCourses = () => {
             <AlertDialogFooter>
               <AlertDialogCancel>ยกเลิก</AlertDialogCancel>
               <AlertDialogAction
-                className="bg-red-600 hover:bg-red-700 text-white"
+                className="bg-red-600 text-destructive-foreground hover:bg-red-700"
                 onClick={() => { confirmState?.onConfirm(); setConfirmState(null); }}
               >
                 🗑️ ลบ

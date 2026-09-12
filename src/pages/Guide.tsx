@@ -98,7 +98,7 @@ const GuideGroupCard = ({ group, onClick }: { group: GuideGroupDto; onClick: () 
   return (
     <div
       onClick={onClick}
-      className="group/card relative aspect-video w-full cursor-pointer overflow-hidden rounded-md bg-gray-800 transition-transform duration-300 hover:z-10 hover:scale-105 hover:shadow-2xl hover:shadow-black/60"
+      className="dark-stage group/card relative aspect-video w-full cursor-pointer overflow-hidden rounded-md bg-gray-800 transition-transform duration-300 hover:z-10 hover:scale-105 hover:shadow-2xl hover:shadow-black/60"
     >
       {group.cover_url ? (
         <img

@@ -621,7 +621,7 @@ const AdminEnrollments = () => {
                 สลิปการโอนเงิน
               </DialogTitle>
             </DialogHeader>
-            <div className="flex items-center justify-center bg-gray-900 rounded-lg p-4 min-h-[300px]">
+            <div className="dark-stage flex items-center justify-center bg-gray-900 rounded-lg p-4 min-h-[300px]">
               {previewSlipUrl ? (
                 <img
                   src={previewSlipUrl}
@@ -629,7 +629,7 @@ const AdminEnrollments = () => {
                   className="max-w-full max-h-[500px] object-contain rounded"
                 />
               ) : (
-                <div className="text-gray-500">ไม่มีรูปสลิป</div>
+                <div className="text-gray-300">ไม่มีรูปสลิป</div>
               )}
             </div>
             <DialogFooter>

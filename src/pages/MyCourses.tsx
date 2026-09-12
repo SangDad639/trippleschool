@@ -165,10 +165,10 @@ const MyCourses = () => {
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="bg-gray-800/50 mb-6">
-          <TabsTrigger value="in-progress" className="data-[state=active]:bg-purple-600">
+          <TabsTrigger value="in-progress" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">
             กำลังเรียน ({inProgressCourses.length})
           </TabsTrigger>
-          <TabsTrigger value="completed" className="data-[state=active]:bg-purple-600">
+          <TabsTrigger value="completed" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">
             เรียนจบ ({completedCourses.length})
           </TabsTrigger>
         </TabsList>

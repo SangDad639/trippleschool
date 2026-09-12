@@ -251,8 +251,8 @@ function UpdateBannersInner() {
             >
               <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab shrink-0" />
               <div className="flex flex-col">
-                <button onClick={() => moveOrder(idx, -1)} disabled={idx === 0} className="p-0.5 disabled:opacity-30 hover:text-[#FFB300]"><ChevronUp className="h-3 w-3" /></button>
-                <button onClick={() => moveOrder(idx, 1)} disabled={idx === banners.length - 1} className="p-0.5 disabled:opacity-30 hover:text-[#FFB300]"><ChevronDown className="h-3 w-3" /></button>
+                <button onClick={() => moveOrder(idx, -1)} disabled={idx === 0} className="p-0.5 disabled:opacity-30 hover:text-brand"><ChevronUp className="h-3 w-3" /></button>
+                <button onClick={() => moveOrder(idx, 1)} disabled={idx === banners.length - 1} className="p-0.5 disabled:opacity-30 hover:text-brand"><ChevronDown className="h-3 w-3" /></button>
               </div>
               <div className="w-32 h-16 rounded overflow-hidden bg-muted shrink-0 flex items-center justify-center">
                 {b.banner ? (
@@ -330,8 +330,8 @@ function BannerEditor({ value, onChange, onClose, onSave, saving }: {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-      <div className="bg-zinc-900 border border-zinc-700 rounded-xl w-[95vw] max-w-2xl max-h-[90vh] flex flex-col">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+      <div className="bg-background text-foreground border border-border rounded-xl w-[95vw] max-w-2xl max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
           <h3 className="font-semibold">{value.id ? 'แก้ไข Banner' : 'เพิ่ม Banner'}</h3>
           <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
         </div>
@@ -348,7 +348,7 @@ function BannerEditor({ value, onChange, onClose, onSave, saving }: {
             </div>
             <div>
               <label className="text-xs text-muted-foreground">Active</label>
-              <select value={value.is_active ? '1' : '0'} onChange={e => set({ is_active: e.target.value === '1' })} className="w-full h-10 rounded-md border border-zinc-700 bg-zinc-800 px-3 text-sm">
+              <select value={value.is_active ? '1' : '0'} onChange={e => set({ is_active: e.target.value === '1' })} className="w-full h-10 rounded-md border border-muted-foreground/70 bg-input px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
                 <option value="1">เปิด</option>
                 <option value="0">ปิด</option>
               </select>
@@ -387,7 +387,7 @@ function BannerEditor({ value, onChange, onClose, onSave, saving }: {
               Banner Image <span className="text-[10px] opacity-70">— ใช้ขนาด <b>1200×675 px (16:9)</b> เพื่อให้พอดีกรอบเป๊ะ ไม่โดนตัด</span>
             </label>
             <div className="flex items-center gap-3">
-              <div className="w-40 h-24 rounded border border-zinc-700 bg-zinc-800 overflow-hidden flex items-center justify-center">
+              <div className="w-40 h-24 rounded border border-border bg-muted overflow-hidden flex items-center justify-center">
                 {value.banner ? (
                   <img src={value.banner} alt="" className="w-full h-full object-cover" />
                 ) : (

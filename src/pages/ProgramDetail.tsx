@@ -48,7 +48,7 @@ const ProgramDetail = () => {
         <div className="rounded-2xl border border-gray-800 bg-gray-900/40 overflow-hidden">
           <div className="grid lg:grid-cols-2 gap-0">
             {/* Media — วิดีโอเป็นสื่อหลัก ภาพหน้าจอลดชั้นลงเป็นแถวย่อยด้านล่าง */}
-            <div className="relative bg-[#0d0d14] p-4 lg:p-6 flex flex-col justify-center gap-3">
+            <div className="dark-stage relative bg-[#0d0d14] p-4 lg:p-6 flex flex-col justify-center gap-3">
               <ProgramVideo
                 url={program.videoUrl}
                 title={`วิดีโอตัวอย่าง ${program.name}`}

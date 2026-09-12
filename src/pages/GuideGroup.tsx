@@ -135,7 +135,7 @@ const GuideGroup = () => {
       {/* ปิดป๊อปอัป = iframe ถูกถอด วิดีโอจึงหยุดเองทันที */}
       <Dialog open={!!playing} onOpenChange={(open) => !open && setPlaying(null)}>
         <DialogContent
-          className="max-w-4xl border-zinc-800 bg-zinc-950 p-0 sm:rounded-2xl"
+          className="dark-stage max-w-4xl border-zinc-800 bg-zinc-950 p-0 sm:rounded-2xl"
           // กันโฟกัสวิ่งเข้า iframe ตอนเปิด ไม่งั้น Esc จะไปตกในเฟรมข้ามโดเมนแล้วปิดไม่ได้
           onOpenAutoFocus={(e) => e.preventDefault()}
           aria-describedby={undefined}
