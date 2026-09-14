@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
+import { hasMeaningfulMaterialHtml, sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
 import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
 import { api, type TagDto, type TagKind, type CategoryDto } from '@/lib/api';
 import { sectionLabel } from '@/lib/sectionLabel';
@@ -122,6 +122,8 @@ interface Course {
   content_type?: 'course' | 'tip';
   learning_outcomes?: string[];
   requirements?: string[];
+  /** HTML สำหรับแท็บ "พื้นฐานสำหรับผู้เริ่มต้น" บนหน้ารายละเอียดคอร์ส */
+  beginner_content_html?: string | null;
   tools?: CourseTool[];
   samples?: CourseSample[];
 }
@@ -197,9 +199,14 @@ const initialCourseForm = {
   tip_tag_id: null as number | null,
   learning_outcomes: [] as string[],
   requirements: [] as string[],
+  beginner_content_html: '',
   tools: [] as CourseTool[],
   samples: [] as CourseSample[],
 };
+
+const BEGINNER_CONTENT_HTML_MAX_BYTES = 256 * 1024;
+
+const utf8ByteLength = (value: string) => new TextEncoder().encode(value).byteLength;
 
 const initialLessonForm = {
   title: '',
@@ -409,6 +416,7 @@ const AdminCourses = () => {
   const [courseDialogOpen, setCourseDialogOpen] = useState(false);
   const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [courseForm, setCourseForm] = useState(initialCourseForm);
+  const [showBeginnerContentPreview, setShowBeginnerContentPreview] = useState(false);
 
   // Lesson dialog
   const [lessonDialogOpen, setLessonDialogOpen] = useState(false);
@@ -628,6 +636,7 @@ const AdminCourses = () => {
 
   // Course CRUD
   const handleOpenCourseDialog = (course?: Course) => {
+    setShowBeginnerContentPreview(false);
     if (course) {
       setEditingCourse(course);
       setCourseForm({
@@ -650,6 +659,7 @@ const AdminCourses = () => {
         tip_tag_id: course.tip_tag_id ?? null,
         learning_outcomes: Array.isArray(course.learning_outcomes) ? course.learning_outcomes : [],
         requirements: Array.isArray(course.requirements) ? course.requirements : [],
+        beginner_content_html: course.beginner_content_html || '',
         tools: Array.isArray(course.tools) ? course.tools : [],
         samples: Array.isArray(course.samples) ? course.samples : [],
       });
@@ -660,9 +670,18 @@ const AdminCourses = () => {
     setCourseDialogOpen(true);
   };
 
+  const handleCourseDialogOpenChange = (open: boolean) => {
+    setCourseDialogOpen(open);
+    if (!open) setShowBeginnerContentPreview(false);
+  };
+
   const handleSaveCourse = async () => {
     if (!courseForm.name || !courseForm.slug) {
       toast.error('Error: Name and slug are required');
+      return;
+    }
+    if (utf8ByteLength(courseForm.beginner_content_html) > BEGINNER_CONTENT_HTML_MAX_BYTES) {
+      toast.error('เนื้อหา “พื้นฐานสำหรับผู้เริ่มต้น” ต้องมีขนาดไม่เกิน 256 KiB');
       return;
     }
 
@@ -675,7 +694,7 @@ const AdminCourses = () => {
         await api.createCourse(courseForm);
         toast.success('Success: Course created successfully');
       }
-      setCourseDialogOpen(false);
+      handleCourseDialogOpenChange(false);
       loadCourses();
     } catch (error: any) {
       toast.error(`Error: ${error.message || 'Failed to save course'}`);
@@ -1368,6 +1387,14 @@ const AdminCourses = () => {
       .filter((c) => c.is_active && c.content_type !== 'tip' && Number(c.lesson_count) > 0)
       .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0] ?? null;
   const billboardId = (pinnedBillboard ?? autoBillboard)?.id ?? null;
+  // HTML อาจยาวถึง 256 KiB — ไม่ sanitize ทุกครั้งที่พิมพ์ถ้ายังไม่ได้เปิด preview
+  const beginnerContentPreview = showBeginnerContentPreview
+    ? sanitizeMaterialHtml(courseForm.beginner_content_html)
+    : '';
+  const beginnerContentHasVisibleContent = showBeginnerContentPreview
+    && hasMeaningfulMaterialHtml(beginnerContentPreview);
+  const beginnerContentBytes = utf8ByteLength(courseForm.beginner_content_html);
+  const beginnerContentTooLarge = beginnerContentBytes > BEGINNER_CONTENT_HTML_MAX_BYTES;
 
   if (!user?.isAdmin) {
     return <div className="min-h-screen flex items-center justify-center text-muted-foreground">ไม่มีสิทธิ์เข้าถึง</div>;
@@ -1841,7 +1868,7 @@ const AdminCourses = () => {
         )}
 
         {/* Course Dialog */}
-        <Dialog open={courseDialogOpen} onOpenChange={setCourseDialogOpen}>
+        <Dialog open={courseDialogOpen} onOpenChange={handleCourseDialogOpenChange}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editingCourse ? 'แก้ไขคอร์ส' : 'สร้างคอร์สใหม่'}</DialogTitle>
@@ -1910,6 +1937,49 @@ const AdminCourses = () => {
                   rows={4}
                   placeholder="รายละเอียดเต็มของคอร์ส"
                 />
+              </div>
+              <div>
+                <Label htmlFor="course-beginner-content-html">พื้นฐานสำหรับผู้เริ่มต้น (HTML)</Label>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  วาง HTML โดยตรงสำหรับแท็บแยกบนหน้ารายละเอียดคอร์ส ระบบจะกรองโค้ดที่ไม่ปลอดภัยก่อนแสดงผล
+                </p>
+                <Textarea
+                  id="course-beginner-content-html"
+                  value={courseForm.beginner_content_html}
+                  onChange={(e) => setCourseForm({ ...courseForm, beginner_content_html: e.target.value })}
+                  rows={8}
+                  maxLength={BEGINNER_CONTENT_HTML_MAX_BYTES}
+                  placeholder="<h2>เริ่มต้นจากตรงนี้</h2><p>เนื้อหาสำหรับผู้เริ่มต้น...</p>"
+                  className="mt-2 font-mono text-xs"
+                />
+                <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                  <span className={`text-[11px] ${beginnerContentTooLarge ? 'text-destructive' : 'text-muted-foreground'}`}>
+                    {beginnerContentBytes.toLocaleString()} / {BEGINNER_CONTENT_HTML_MAX_BYTES.toLocaleString()} ไบต์
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-purple-400"
+                    onClick={() => setShowBeginnerContentPreview((visible) => !visible)}
+                  >
+                    <Eye className="h-4 w-4 mr-1" />
+                    {showBeginnerContentPreview ? 'ซ่อนตัวอย่าง' : 'ดูตัวอย่าง (แบบที่นักเรียนเห็น)'}
+                  </Button>
+                </div>
+                {showBeginnerContentPreview && (
+                  <div className="mt-2 rounded-lg border border-gray-700 overflow-hidden">
+                    {beginnerContentHasVisibleContent ? (
+                      <MaterialHtmlFrame
+                        html={beginnerContentPreview}
+                        title="ตัวอย่างพื้นฐานสำหรับผู้เริ่มต้น"
+                        maxHeight={480}
+                      />
+                    ) : (
+                      <p className="text-gray-500 text-sm text-center py-8">ยังไม่มีเนื้อหาให้แสดง</p>
+                    )}
+                  </div>
+                )}
               </div>
               <BulletListEditor
                 label="สิ่งที่จะได้เรียนรู้"
@@ -2237,10 +2307,10 @@ const AdminCourses = () => {
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setCourseDialogOpen(false)}>
+              <Button variant="outline" onClick={() => handleCourseDialogOpenChange(false)}>
                 ยกเลิก
               </Button>
-              <Button onClick={handleSaveCourse} disabled={saving} className="bg-purple-600">
+              <Button onClick={handleSaveCourse} disabled={saving || beginnerContentTooLarge} className="bg-purple-600">
                 {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 บันทึก
               </Button>

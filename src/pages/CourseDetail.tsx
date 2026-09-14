@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
@@ -14,6 +14,8 @@ import CoursePrice from '@/components/CoursePrice';
 import StarRating from '@/components/StarRating';
 import ReviewList, { type Review } from '@/components/ReviewList';
 import WriteReviewForm from '@/components/WriteReviewForm';
+import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
+import { hasMeaningfulMaterialHtml, sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -110,6 +112,8 @@ interface Course {
   // SkillLane-style enrichment fields (see backend contract).
   learning_outcomes?: string[];
   requirements?: string[];
+  /** เนื้อหา rich text สำหรับแท็บพื้นฐานของผู้เริ่มต้น */
+  beginner_content_html?: string | null;
   /** เครื่องมือที่ใช้ในคอร์ส — price เป็นข้อความอิสระ, ราคาคิดตามเครดิต/แพ็กเกจรายเดือน */
   tools?: { name: string; price: string }[];
   /** ตัวอย่างผลงาน (แท็บ "ตัวอย่าง") — รูปอัปโหลด หรือวิดีโอ YouTube */
@@ -173,6 +177,20 @@ const difficultyLabels: Record<string, string> = {
 
 const MAX_SLIP_BYTES = 10 * 1024 * 1024; // 10MB
 
+/** ให้ลิงก์ได้เฉพาะเมื่อค่าทั้งช่องเป็น URL http(s) เต็มรูปแบบเท่านั้น */
+const safeExternalToolUrl = (value: string): string | null => {
+  const candidate = value.trim();
+  if (!/^https?:\/\/\S+$/i.test(candidate)) return null;
+  try {
+    const parsed = new URL(candidate);
+    if (!['http:', 'https:'].includes(parsed.protocol)) return null;
+    if (parsed.username || parsed.password) return null;
+    return parsed.href;
+  } catch {
+    return null;
+  }
+};
+
 const CourseDetail = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -216,8 +234,8 @@ const CourseDetail = () => {
   const [relatedTips, setRelatedTips] = useState<RelatedTip[]>([]);
   const [tipData, setTipData] = useState<Record<number, TipTabData>>({});
 
-  // แท็บใหญ่ของหน้า: ตัวอย่าง / รายละเอียด / เนื้อหา (null = อัตโนมัติ: มีตัวอย่าง→ตัวอย่าง ไม่มี→รายละเอียด)
-  const [pageTab, setPageTab] = useState<'samples' | 'detail' | 'content' | null>(null);
+  // แท็บใหญ่ของหน้า (null = อัตโนมัติ: มีตัวอย่าง→ตัวอย่าง ไม่มี→รายละเอียด)
+  const [pageTab, setPageTab] = useState<'samples' | 'detail' | 'beginner' | 'content' | null>(null);
 
   // แท็บเนื้อหาที่เลือกอยู่ (null = แท็บแรก) — ต้อง controlled เพราะ ?ep= ต้องสลับแท็บ
   // ไปหาบทเป้าหมายให้เองก่อนเลื่อน ไม่งั้นบทที่อยู่แท็บอื่นจะหาไม่เจอ (ไม่ถูก mount)
@@ -411,6 +429,15 @@ const CourseDetail = () => {
 
   // แท็บใหญ่ที่แสดงจริง: ไม่เคยกด → มีตัวอย่างเปิดที่ตัวอย่างก่อน ไม่มีก็รายละเอียด
   const activePageTab = pageTab ?? ((course?.samples?.length ?? 0) > 0 ? 'samples' : 'detail');
+  const sanitizedBeginnerContent = useMemo(
+    () => sanitizeMaterialHtml(course?.beginner_content_html || ''),
+    [course?.beginner_content_html]
+  );
+  const hasBeginnerContent = useMemo(
+    () => hasMeaningfulMaterialHtml(sanitizedBeginnerContent),
+    [sanitizedBeginnerContent]
+  );
+  const hasToolPrice = course?.tools?.some((tool) => Boolean(tool.price?.trim())) ?? false;
 
   // ลิงก์แชร์ = โดเมนจริง (VITE_SITE_URL) ถ้าตั้งไว้ ไม่งั้นใช้โดเมนที่เปิดอยู่
   const SITE_URL = (import.meta.env.VITE_SITE_URL as string | undefined) || window.location.origin;
@@ -803,16 +830,16 @@ const CourseDetail = () => {
       </section>
 
       <div className="max-w-6xl mx-auto px-4 md:px-12 py-6">
-        {/* ---------- แถบหัวข้อใหญ่: ตัวอย่าง / รายละเอียด / เนื้อหา (Tab จริง สลับทีละหัวข้อ) ----------
+        {/* ---------- แถบหัวข้อใหญ่: ตัวอย่าง / รายละเอียด / พื้นฐาน / เนื้อหา ----------
             sticky ใต้ header (h-14 มือถือ / h-16 เดสก์ท็อป + เผื่อความสูงแบนเนอร์เตือน) */}
         <div className="sticky top-[calc(var(--banner-h,0px)+3.5rem)] lg:top-[calc(var(--banner-h,0px)+4rem)] z-30 -mx-4 md:-mx-12 px-4 md:px-12 bg-background/95 backdrop-blur border-b border-border/60 mb-6">
-          <div className="flex gap-1">
+          <div className="flex gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {(course.samples?.length ?? 0) > 0 && (
               <button
                 type="button"
                 onClick={() => setPageTab('samples')}
-                className={`px-4 py-3 text-sm font-semibold border-b-[3px] -mb-px transition-colors ${
-                  activePageTab === 'samples' ? 'text-[#FFB300] border-[#FFB300]' : 'text-gray-400 border-transparent hover:text-white'
+                className={`shrink-0 whitespace-nowrap px-4 py-3 text-sm font-semibold border-b-[3px] -mb-px transition-colors ${
+                  activePageTab === 'samples' ? 'text-brand border-brand' : 'text-muted-foreground border-transparent hover:text-foreground'
                 }`}
               >
                 ตัวอย่าง
@@ -821,17 +848,28 @@ const CourseDetail = () => {
             <button
               type="button"
               onClick={() => setPageTab('detail')}
-              className={`px-4 py-3 text-sm font-semibold border-b-[3px] -mb-px transition-colors ${
-                activePageTab === 'detail' ? 'text-[#FFB300] border-[#FFB300]' : 'text-gray-400 border-transparent hover:text-white'
+              className={`shrink-0 whitespace-nowrap px-4 py-3 text-sm font-semibold border-b-[3px] -mb-px transition-colors ${
+                activePageTab === 'detail' ? 'text-brand border-brand' : 'text-muted-foreground border-transparent hover:text-foreground'
               }`}
             >
               รายละเอียด
             </button>
+            {hasBeginnerContent && (
+              <button
+                type="button"
+                onClick={() => setPageTab('beginner')}
+                className={`shrink-0 whitespace-nowrap px-4 py-3 text-sm font-semibold border-b-[3px] -mb-px transition-colors ${
+                  activePageTab === 'beginner' ? 'text-brand border-brand' : 'text-muted-foreground border-transparent hover:text-foreground'
+                }`}
+              >
+                พื้นฐานสำหรับผู้เริ่มต้น
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setPageTab('content')}
-              className={`px-4 py-3 text-sm font-semibold border-b-[3px] -mb-px transition-colors ${
-                activePageTab === 'content' ? 'text-[#FFB300] border-[#FFB300]' : 'text-gray-400 border-transparent hover:text-white'
+              className={`shrink-0 whitespace-nowrap px-4 py-3 text-sm font-semibold border-b-[3px] -mb-px transition-colors ${
+                activePageTab === 'content' ? 'text-brand border-brand' : 'text-muted-foreground border-transparent hover:text-foreground'
               }`}
             >
               เนื้อหา
@@ -904,21 +942,41 @@ const CourseDetail = () => {
             </CardHeader>
             <CardContent className="px-4 pb-4 pt-0 space-y-3">
               <ul className="space-y-2">
-                {course.tools.map((tool, idx) => (
-                  <li key={idx} className="flex items-center justify-between gap-3 text-sm">
-                    <span className="flex items-start gap-2 text-gray-300 min-w-0">
-                      <span className="text-purple-400 mt-0.5">🛠️</span>
-                      <span>{tool.name}</span>
-                    </span>
-                    {tool.price && (
-                      <span className="text-[#FFB300] font-medium whitespace-nowrap">เริ่มต้น {tool.price}</span>
-                    )}
-                  </li>
-                ))}
+                {course.tools.map((tool, idx) => {
+                  const toolUrl = safeExternalToolUrl(tool.name);
+                  const price = tool.price?.trim();
+                  return (
+                    <li key={idx} className="flex flex-col items-start gap-1.5 text-sm sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                      <span className="flex min-w-0 max-w-full items-start gap-2 text-gray-300">
+                        <span aria-hidden="true" className="text-purple-400 mt-0.5 shrink-0">🛠️</span>
+                        {toolUrl ? (
+                          <a
+                            href={toolUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            referrerPolicy="no-referrer"
+                            className="min-w-0 break-all rounded-sm text-brand underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            {tool.name}
+                          </a>
+                        ) : (
+                          <span className="min-w-0 break-words">{tool.name}</span>
+                        )}
+                      </span>
+                      {price && (
+                        <span className="max-w-full break-words pl-6 font-medium text-brand sm:pl-0 sm:text-right">
+                          {/^(ฟรี|free)(?:\s|$)/i.test(price) ? price : `เริ่มต้น ${price}`}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-2.5 text-xs text-yellow-200/90">
-                ⚠️ หมายเหตุ: ราคาเริ่มต้นคิดตามเครดิต / แพ็กเกจรายเดือนของแต่ละเครื่องมือ
-              </div>
+              {hasToolPrice && (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-2.5 text-xs text-yellow-200/90">
+                  ⚠️ หมายเหตุ: ราคาเริ่มต้นคิดตามเครดิต / แพ็กเกจรายเดือนของแต่ละเครื่องมือ
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
@@ -930,6 +988,25 @@ const CourseDetail = () => {
           </Card>
         )}
         </>)}
+
+        {/* ---------- แท็บ: พื้นฐานสำหรับผู้เริ่มต้น ---------- */}
+        {activePageTab === 'beginner' && hasBeginnerContent && (
+          <Card className="mb-6 overflow-hidden">
+            <CardHeader className="py-3 px-4">
+              <CardTitle className="text-base text-foreground">พื้นฐานสำหรับผู้เริ่มต้น</CardTitle>
+            </CardHeader>
+            <CardContent className="px-4 pb-4 pt-0">
+              <div className="overflow-hidden rounded-lg border border-border bg-white">
+                <MaterialHtmlFrame
+                  key={course.id}
+                  html={sanitizedBeginnerContent}
+                  title="พื้นฐานสำหรับผู้เริ่มต้น"
+                  maxHeight={20000}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* ---------- แท็บ: เนื้อหา (เนื้อหาคอร์สเดิมทั้งก้อน) ---------- */}
         <Card className={activePageTab === 'content' ? '' : 'hidden'}>

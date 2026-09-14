@@ -967,7 +967,9 @@ router.get('/', async (req, res) => {
       : `c.display_order ASC, c.created_at DESC`;
     query += ` ORDER BY ${order}`;
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    // The catalog needs metadata only. Strip the potentially large HTML body
+    // without converting the remaining row through JSONB (which changes timestamp serialization).
+    res.json(result.rows.map(({ beginner_content_html: _omitted, ...course }) => course));
   } catch (error) {
     console.error('Error fetching courses:', error);
     res.status(500).json({ error: 'Failed to fetch courses' });
@@ -1012,6 +1014,25 @@ function sanitizeCourseTools(input: unknown): { name: string; price: string }[] 
     .filter((t) => t.name);
 }
 
+const BEGINNER_CONTENT_HTML_MAX_BYTES = 256 * 1024;
+
+type BeginnerContentHtmlResult =
+  | { ok: true; value: string | null }
+  | { ok: false; error: string };
+
+/** Admin-authored HTML: validate its wire type, cap stored UTF-8 bytes, and normalize blank to NULL. */
+function normalizeBeginnerContentHtml(input: unknown): BeginnerContentHtmlResult {
+  if (input === null || input === undefined) return { ok: true, value: null };
+  if (typeof input !== 'string') {
+    return { ok: false, error: 'beginner_content_html must be a string or null' };
+  }
+  if (Buffer.byteLength(input, 'utf8') > BEGINNER_CONTENT_HTML_MAX_BYTES) {
+    return { ok: false, error: 'beginner_content_html must not exceed 256 KiB' };
+  }
+  const value = input.trim();
+  return { ok: true, value: value || null };
+}
+
 /**
  * รหัสลิงก์สั้นประจำคอร์ส (https://www.triple-school.com/courses/{code})
  * ชุดอักขระเดียวกับ migration 048: ตัด 0/o/1/l/i ที่อ่านสับสน และตัวแรกเป็นตัวอักษร
@@ -1049,9 +1070,11 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-      content_type, tag_id, tip_tag_id, tools, samples, is_free,
+      content_type, tag_id, tip_tag_id, tools, samples, is_free, beginner_content_html,
     } = req.body;
     if (!name || !slug) return res.status(400).json({ error: 'Name and slug are required' });
+    const beginnerContent = normalizeBeginnerContentHtml(beginner_content_html);
+    if (beginnerContent.ok === false) return res.status(400).json({ error: beginnerContent.error });
     const isTip = content_type === 'tip';
     // tag ต้องมาจากถังที่ถูก · คอร์สไม่มี Tag Tip (มีแต่ทิป) จึงบังคับเป็น null
     const tagId = await tagIdOfKind(tag_id, 'course');
@@ -1063,9 +1086,9 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
         name, slug, description, short_description, thumbnail_url,
         instructor_name, instructor_avatar, difficulty, duration_hours,
         is_featured, display_order, price, discount_price, learning_outcomes, requirements,
-        content_type, tag_id, tip_tag_id, tools, samples, is_free, share_code
+        content_type, tag_id, tip_tag_id, tools, samples, is_free, beginner_content_html, share_code
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       RETURNING *
     `, [
       name, slug, description || null, short_description || null, thumbnail_url || null,
@@ -1079,6 +1102,7 @@ router.post('/', authenticate, async (req: AuthRequest, res) => {
       JSON.stringify(sanitizeCourseTools(tools)),
       JSON.stringify(sanitizeCourseSamples(samples)),
       is_free === true,
+      beginnerContent.value,
       await uniqueShareCode(),
     ]);
     const created = result.rows[0];
@@ -1102,9 +1126,9 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
       name, slug, description, short_description, thumbnail_url,
       instructor_name, instructor_avatar, difficulty, duration_hours,
       is_featured, is_active, display_order, price, discount_price, learning_outcomes, requirements,
-      content_type, tag_id, tip_tag_id, tools, samples, is_free,
+      content_type, tag_id, tip_tag_id, tools, samples, is_free, beginner_content_html,
     } = req.body;
-    // tag_id/tip_tag_id/tools/samples/is_free ตั้งเฉพาะเมื่อส่งมา และรองรับส่ง null/'' = ล้างค่า (COALESCE ทำไม่ได้)
+    // Optional fields below update only when sent. beginner_content_html accepts null/blank to clear.
     const extraSets: string[] = [];
     const extraParams: any[] = [];
     if (tag_id !== undefined) {
@@ -1141,6 +1165,12 @@ router.put('/:id', authenticate, async (req: AuthRequest, res) => {
     if (is_free !== undefined) {
       extraParams.push(is_free === true);
       extraSets.push(`is_free = $${18 + extraParams.length}`);
+    }
+    if (beginner_content_html !== undefined) {
+      const beginnerContent = normalizeBeginnerContentHtml(beginner_content_html);
+      if (beginnerContent.ok === false) return res.status(400).json({ error: beginnerContent.error });
+      extraParams.push(beginnerContent.value);
+      extraSets.push(`beginner_content_html = $${18 + extraParams.length}`);
     }
     const tagSet = extraSets.length ? `, ${extraSets.join(', ')}` : '';
     const result = await pool.query(`

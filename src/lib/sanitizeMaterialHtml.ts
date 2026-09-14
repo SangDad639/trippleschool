@@ -30,3 +30,24 @@ export function sanitizeMaterialHtml(html: string): string {
     ? clean.replace(/<head([^>]*)>/i, `<head$1>${MOBILE_DOC_HEAD}`)
     : MOBILE_DOC_HEAD + clean;
 }
+
+/**
+ * `sanitizeMaterialHtml` always adds a head/style block, so a non-empty HTML
+ * string alone does not mean there is anything useful to show in a tab.
+ * Inspect only the sanitized body and keep text or usable visual/audio media.
+ */
+export function hasMeaningfulMaterialHtml(html: string): boolean {
+  if (!html.trim()) return false;
+
+  const parsed = new DOMParser().parseFromString(html, 'text/html');
+  const text = (parsed.body.textContent || '')
+    .replace(/[\s\u00a0\u200b-\u200d\ufeff]/g, '');
+  if (text) return true;
+
+  return Array.from(
+    parsed.body.querySelectorAll('img, picture source, video, video source, audio, audio source, svg')
+  ).some((element) => (
+    (element.tagName.toLowerCase() === 'svg' && element.childElementCount > 0) ||
+    ['src', 'srcset', 'poster'].some((attribute) => Boolean(element.getAttribute(attribute)?.trim()))
+  ));
+}

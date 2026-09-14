@@ -5,6 +5,8 @@ interface MaterialHtmlFrameProps {
   /** Already-sanitized HTML (see sanitizeMaterialHtml). */
   html: string;
   className?: string;
+  /** Accessible name for the isolated document. */
+  title?: string;
   /** Cap on how tall the frame can grow before it scrolls internally. */
   maxHeight?: number;
 }
@@ -16,7 +18,12 @@ interface MaterialHtmlFrameProps {
  * never bleeding into the surrounding page. No `allow-scripts` in the
  * sandbox, so any embedded <script> that survives sanitization can't run.
  */
-export function MaterialHtmlFrame({ html, className, maxHeight = 600 }: MaterialHtmlFrameProps) {
+export function MaterialHtmlFrame({
+  html,
+  className,
+  title = 'เอกสารประกอบ',
+  maxHeight = 600,
+}: MaterialHtmlFrameProps) {
   // Start SMALL and grow to fit. Starting at maxHeight breaks the measurement:
   // scrollHeight can never be less than the frame's own viewport, so a short
   // document inside an already-huge frame "measures" as huge and never shrinks
@@ -37,7 +44,7 @@ export function MaterialHtmlFrame({ html, className, maxHeight = 600 }: Material
       srcDoc={html}
       onLoad={handleLoad}
       sandbox="allow-same-origin"
-      title="เอกสารประกอบ"
+      title={title}
       className={cn('w-full border-0 bg-white', className)}
       style={{ height, maxHeight }}
     />
