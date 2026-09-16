@@ -20,6 +20,15 @@ interface CaptionTrack {
   kind?: string; // 'asr' = auto-generated
 }
 
+/** ซับ 1 ช่วงแบบมีเวลา (วินาที) — ใช้ทำ "บทในคลิป" (072) */
+export interface CaptionSegment {
+  /** เวลาเริ่ม (วินาที, ทศนิยม 1 ตำแหน่ง) */
+  t: number;
+  /** ความยาว (วินาที) */
+  d: number;
+  text: string;
+}
+
 export type CaptionFailReason =
   | 'no_captions' // video has no caption tracks at all
   | 'unavailable' // private / removed / geo-blocked (playabilityStatus ≠ OK)
@@ -34,6 +43,12 @@ export interface CaptionFetchOk {
   /** true when the track is YouTube's own speech recognition */
   auto: boolean;
   text: string;
+  /** ซับแบบมีเวลา (072) — ชุดเดียวกับ text แต่แยกช่วง */
+  segments: CaptionSegment[];
+  /** คำอธิบายคลิปจาก YouTube (videoDetails.shortDescription) — ไว้ parse timestamp เป็นบทในคลิป */
+  description: string;
+  /** ความยาวคลิป (วินาที) จาก videoDetails · 0 = ไม่รู้ */
+  lengthSeconds: number;
 }
 export interface CaptionFetchFail {
   ok: false;
@@ -85,6 +100,30 @@ function xmlToPlainText(xml: string): string {
   return parts.join(' ').replace(/\s{2,}/g, ' ').trim();
 }
 
+/**
+ * srv XML → ช่วงซับแบบมีเวลา (072) · srv3: `<p t="ms" d="ms">` · srv1: `<text start="s" dur="s">`
+ * ช่วงที่ไม่มีข้อความ (ตัวคั่นบรรทัด) ถูกข้าม · เวลาปัดทศนิยม 1 ตำแหน่ง
+ */
+export function xmlToSegments(xml: string): CaptionSegment[] {
+  const out: CaptionSegment[] = [];
+  const re = /<(p|text)\b([^>]*)>([\s\S]*?)<\/\1>/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(xml)) !== null) {
+    const attrs = m[2];
+    const text = decodeEntities(m[3].replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    const t = /\bt="(\d+)"/.exec(attrs);
+    const d = /\bd="(\d+)"/.exec(attrs);
+    const start = /\bstart="([\d.]+)"/.exec(attrs);
+    const dur = /\bdur="([\d.]+)"/.exec(attrs);
+    const sec = t ? Number(t[1]) / 1000 : start ? Number(start[1]) : null;
+    if (sec === null || !Number.isFinite(sec)) continue;
+    const len = d ? Number(d[1]) / 1000 : dur ? Number(dur[1]) : 0;
+    out.push({ t: Math.round(sec * 10) / 10, d: Math.round((Number.isFinite(len) ? len : 0) * 10) / 10, text });
+  }
+  return out;
+}
+
 function httpFail(status: number): CaptionFetchFail {
   const reason: CaptionFailReason = status === 429 || status === 403 ? 'blocked' : 'http_error';
   return { ok: false, reason, detail: `HTTP ${status}` };
@@ -107,6 +146,7 @@ async function attempt(youtubeId: string): Promise<CaptionFetchResult> {
     const data = (await playerRes.json()) as {
       playabilityStatus?: { status?: string; reason?: string };
       captions?: { playerCaptionsTracklistRenderer?: { captionTracks?: CaptionTrack[] } };
+      videoDetails?: { shortDescription?: string; lengthSeconds?: string | number };
     };
     if (data.playabilityStatus?.status !== 'OK') {
       return {
@@ -134,7 +174,15 @@ async function attempt(youtubeId: string): Promise<CaptionFetchResult> {
     const text = xmlToPlainText(body);
     if (!text) return { ok: false, reason: 'empty' };
 
-    return { ok: true, language: track.languageCode, auto: track.kind === 'asr', text };
+    return {
+      ok: true,
+      language: track.languageCode,
+      auto: track.kind === 'asr',
+      text,
+      segments: xmlToSegments(body),
+      description: String(data.videoDetails?.shortDescription ?? ''),
+      lengthSeconds: Math.max(0, Math.floor(Number(data.videoDetails?.lengthSeconds ?? 0) || 0)),
+    };
   } catch (error) {
     const name = (error as Error)?.name;
     if (name === 'TimeoutError' || name === 'AbortError') return { ok: false, reason: 'timeout' };

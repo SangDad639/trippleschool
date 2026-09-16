@@ -12,6 +12,11 @@ import { uploadFile, getFile } from '../utils/s3.js';
 import { makeThumbnailVariant, variantKey, type ThumbVariant } from '../utils/imageResize.js';
 import { hasActiveSubscription } from '../services/stripeService.js';
 import { getPromoSettings, getPromosSeenByUser, preRollPromoId } from '../services/promoSettings.js';
+import {
+  validateChapters, chaptersEqual, normalizeSourceInput, buildChaptersForLesson, queueAutoChapters, getLessonChaptersStatus,
+  invalidateLessonSubtitle, type BuildReason,
+} from '../services/lessonChapters.js';
+import { mergeThumbs, queueChapterThumbs, CHAPTER_THUMB_PREFIX } from '../services/chapterThumbs.js';
 
 const router = Router();
 
@@ -233,7 +238,7 @@ export function extractYoutubeId(url: string): string | null {
 // so old thumbnails keep working until the backfill script has run.
 // prefix ที่ยอมให้ดึงผ่าน proxy สาธารณะนี้ — เดิมรับ key อะไรก็ได้ ทำให้ object อื่น
 // ในบัคเก็ต (เช่นสลิปโอนเงิน payment-slips/…) ถูกดึงได้ถ้ารู้คีย์
-const PUBLIC_IMAGE_PREFIXES = ['course-thumb/', 'course-cover/', 'lesson-cover/', 'lesson-thumb-cache/', 'course-cover-cache/', 'course-sample/'];
+const PUBLIC_IMAGE_PREFIXES = ['course-thumb/', 'course-cover/', 'lesson-cover/', 'lesson-thumb-cache/', 'course-cover-cache/', 'course-sample/', CHAPTER_THUMB_PREFIX];
 
 router.get('/thumbnails/*', async (req: Request, res: Response) => {
   try {
@@ -1444,6 +1449,43 @@ router.put('/lessons/:lessonId/unassign', authenticate, async (req: AuthRequest,
 // โฆษณาก่อนเริ่มคลิป: ไม่มีจุดแทรกรายบทแล้ว (071 ถอด lesson_promos ทิ้ง) — payload คอร์ส (/:slug, /:slug/full) ส่ง
 // `pre_roll_promo_id` จาก promo_settings (services/promoSettings.ts) แล้ว FE เล่นก่อนเริ่มทุกบทที่มีวิดีโอ
 
+/* ---------- บทในคลิป (072 · services/lessonChapters.ts) ---------- */
+const BUILD_STATUS: Record<BuildReason, number> = {
+  manual_kept: 200, no_video: 400, no_captions: 404, unavailable: 404, fetch_failed: 502,
+  too_short: 409, ai_not_configured: 503, ai_failed: 502, not_found: 404,
+};
+/**
+ * POST /lessons/:id/chapters/auto (admin) — ดึงซับมีเวลาจาก YouTube + AI แบ่งบท (ทับของเดิมเสมอ = ปุ่ม 🪄)
+ * body.save=false → คืนผลให้แอดมินแก้ต่อในกล่อง โดยยังไม่บันทึก (บันทึกไปกับ PUT lesson)
+ */
+router.post('/lessons/:id/chapters/auto', authenticate, async (req: AuthRequest, res) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Bad lesson id' });
+    const save = req.body?.save !== false;
+    const r = await buildChaptersForLesson(id, { force: true, save });
+    if (!r.ok) return res.status(BUILD_STATUS[r.reason ?? 'ai_failed'] ?? 500).json({ error: r.message, reason: r.reason });
+    res.json(r);
+  } catch (error) {
+    console.error('[Chapters] auto error:', error);
+    res.status(500).json({ error: 'สร้างบทในคลิปไม่สำเร็จ' });
+  }
+});
+router.get('/lessons/:id/chapters/status', authenticate, async (req: AuthRequest, res) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Bad lesson id' });
+    const s = await getLessonChaptersStatus(id);
+    if (!s) return res.status(404).json({ error: 'ไม่พบบทเรียน' });
+    res.json(s);
+  } catch (error) {
+    console.error('[Chapters] status error:', error);
+    res.status(500).json({ error: 'โหลดสถานะบทในคลิปไม่สำเร็จ' });
+  }
+});
+
 router.get('/:courseId/lessons', optionalAuth, async (req: AuthRequest, res) => {
   try {
     const { courseId } = req.params;
@@ -1455,13 +1497,15 @@ router.get('/:courseId/lessons', optionalAuth, async (req: AuthRequest, res) => 
     const result = await pool.query(`
       SELECT id, course_id, section_id, title, description, youtube_url, youtube_id,
              duration_minutes, lesson_order, is_preview, is_active, created_at, updated_at, cover_url,
-             ${materialsMetaSql('materials')} AS materials
+             chapters_source, chapters_updated_at,
+             ${materialsMetaSql('materials')} AS materials,
+             COALESCE(chapters, '[]'::jsonb) AS chapters
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [courseId]);
     // บทที่ล็อกต้องล้าง materials ด้วย (ลิงก์เอกสาร = เนื้อหาขายเช่นกัน) — ให้เหมือน /:slug/full;
     // แถวที่เข้าถึงได้และไม่ใช่ admin เห็นเฉพาะเอกสารที่เปิดใช้ (enabled !== false)
     const lessons = result.rows.map((l) => {
-      if (!(hasAccess || l.is_preview)) return { ...l, youtube_id: null, youtube_url: null, materials: [] };
+      if (!(hasAccess || l.is_preview)) return { ...l, youtube_id: null, youtube_url: null, materials: [], chapters: [] };
       if (req.isAdmin) return l;
       const mats = Array.isArray(l.materials) ? l.materials.filter((m: any) => m?.enabled !== false) : [];
       return { ...l, materials: mats };
@@ -1504,13 +1548,16 @@ router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) =>
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const { courseId } = req.params;
     // (071) ไม่รับ `promos` รายบทแล้ว — ส่งมาก็เมิน · โฆษณาก่อนเริ่มมาจาก promo_settings ทุกบทอัตโนมัติ
-    const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, section_id, materials } = req.body;
+    // (072) รับ `chapters` (บทในคลิป) — ไม่ส่งมา/ส่งว่าง = ระบบดึงซับ + AI สร้างให้เองเบื้องหลัง (dialog ส่ง [] มาเสมอเมื่อไม่ได้พิมพ์)
+    const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, section_id, materials, chapters, chapters_source } = req.body;
     if (!title || !youtube_url) return res.status(400).json({ error: 'Title and YouTube URL are required' });
     const youtube_id = extractYoutubeId(youtube_url);
     if (!youtube_id) return res.status(400).json({ error: 'ลิงก์ YouTube ไม่ถูกต้อง (รองรับ watch?v=, youtu.be, /embed/, /shorts/, /live/)' });
     const cleanMaterials = sanitizeMaterials(materials);
     const sizeError = validateMaterialsSize(cleanMaterials);
     if (sizeError) return res.status(400).json({ error: sizeError });
+    const chParse = validateChapters(chapters);
+    if (chParse.error) return res.status(400).json({ error: chParse.error });
     // ทุกบทต้องมีหมวด — ไม่ส่งมาก็ลงหมวดหมู่ "พื้นฐาน" ให้ (สร้างกล่องถ้าคอร์สยังไม่มี)
     // UI ไม่มีตัวเลือก "ไม่จัดหมวด" แล้ว อันนี้กันบทหลุดจากทางอื่นที่เรียก API ตรงๆ
     const sectionId = section_id ?? (await basicsSectionId(Number(courseId)));
@@ -1544,7 +1591,19 @@ router.post('/:courseId/lessons', authenticate, async (req: AuthRequest, res) =>
     if (launch?.content_type === 'course' && launch.is_active && launch.n === 1) {
       await pool.query(`UPDATE courses SET is_billboard = false WHERE is_billboard = true`);
     }
-    res.json(result.rows[0]);
+    let created = result.rows[0];
+    if (chParse.list && chParse.list.length > 0) {
+      const up = await pool.query(
+        `UPDATE lessons SET chapters = $1::jsonb, chapters_source = $3, chapters_updated_at = NOW() WHERE id = $2 RETURNING *`,
+        [JSON.stringify(chParse.list), created.id, normalizeSourceInput(chapters_source)]
+      );
+      created = up.rows[0] ?? created;
+      queueChapterThumbs(Number(created.id));
+    } else {
+      // ค่าเริ่มต้น (072): สร้างบทในคลิปให้เองเบื้องหลัง (ดึงซับมีเวลา + AI) — best-effort, คลิปที่ยังไม่มีซับค่อยกด 🪄 ทีหลัง
+      queueAutoChapters(Number(created.id));
+    }
+    res.json({ ...created, chapters: Array.isArray(created.chapters) ? created.chapters : [] });
   } catch (error) {
     console.error('Error creating lesson:', error);
     res.status(500).json({ error: 'Failed to create lesson' });
@@ -1555,7 +1614,7 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
   try {
     if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
     const { id } = req.params;
-    const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, is_active, section_id, materials } = req.body;
+    const { title, description, youtube_url, duration_minutes, lesson_order, is_preview, is_active, section_id, materials, chapters, chapters_source } = req.body;
     const youtube_id = youtube_url ? extractYoutubeId(youtube_url) : undefined;
     // Reject an unparseable URL: the COALESCE below would otherwise store the
     // new youtube_url while keeping the old youtube_id, leaving the player on
@@ -1565,6 +1624,15 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
       const sizeError = validateMaterialsSize(sanitizeMaterials(materials));
       if (sizeError) return res.status(400).json({ error: sizeError });
     }
+    // (072) บทในคลิป: undefined = ไม่แตะ · [] = ล้าง · เท่าเดิม = ไม่สลับแหล่งเป็น manual (FE ส่งมาทุกครั้งที่บันทึก)
+    const chParse = validateChapters(chapters);
+    if (chParse.error) return res.status(400).json({ error: chParse.error });
+    const before = (await pool.query(`SELECT youtube_id, chapters FROM lessons WHERE id = $1`, [id])).rows[0];
+    if (!before) return res.status(404).json({ error: 'Lesson not found' });
+    const chaptersChanged = chParse.list !== undefined && !chaptersEqual(chParse.list, Array.isArray(before.chapters) ? before.chapters : []);
+    // เปลี่ยนคลิป (youtube_id ใหม่) โดยไม่ได้พิมพ์บทใหม่มา (dialog ส่งบทเดิมกลับมาเสมอ) → บทเดิม/ซับเดิมใช้กับคลิปใหม่ไม่ได้
+    const youtubeChanged = !!youtube_id && youtube_id !== before.youtube_id;
+    const resetChapters = youtubeChanged && !chaptersChanged;
     let query = `
       UPDATE lessons SET
         title = COALESCE($1, title),
@@ -1580,6 +1648,15 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
     const params: any[] = [title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, is_active,
       materials !== undefined ? JSON.stringify(sanitizeMaterials(materials)) : null];
     if (section_id !== undefined) { query += `section_id = $10,`; params.push(section_id); }
+    if (chaptersChanged) {
+      // แอดมินบันทึกผล 🪄 โดยไม่แก้ → FE ส่ง chapters_source ai/youtube มาด้วย (คงที่มาให้ถูก) · แก้เอง = manual
+      // ภาพเฟรมของบทที่เวลาเท่าเดิมเก็บไว้ (แก้แค่ชื่อ) · ที่เหลือทำใหม่เบื้องหลัง
+      const merged = youtubeChanged ? chParse.list! : mergeThumbs(chParse.list!, before.chapters, before.youtube_id);
+      query += `chapters = $${params.length + 1}::jsonb, chapters_source = $${params.length + 2}, chapters_updated_at = NOW(),`;
+      params.push(JSON.stringify(merged), normalizeSourceInput(chapters_source));
+    } else if (resetChapters) {
+      query += `chapters = NULL, chapters_source = NULL, chapters_updated_at = NULL,`;
+    }
     query += ` updated_at = CURRENT_TIMESTAMP WHERE id = $${params.length + 1} RETURNING *`;
     params.push(id);
     const result = await pool.query(query, params);
@@ -1588,7 +1665,13 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
     await pool.query(`
       UPDATE courses SET total_lessons = (SELECT COUNT(*) FROM lessons WHERE course_id = $1 AND is_active = true), updated_at = CURRENT_TIMESTAMP WHERE id = $1
     `, [lesson.course_id]);
-    res.json(lesson);
+    if (youtubeChanged) {
+      // ซับมีเวลา/ความยาว/ข้อความของคลิปเก่าใช้ไม่ได้แล้ว → ลบ (ปุ่ม "ดึงซับ" หรือ auto จะดึงของคลิปใหม่)
+      await invalidateLessonSubtitle(Number(lesson.id)).catch((e) => console.error('[Chapters] invalidate subtitle failed:', e));
+      if (resetChapters) queueAutoChapters(Number(lesson.id));
+    }
+    if (chaptersChanged && chParse.list!.length > 0) queueChapterThumbs(Number(lesson.id));
+    res.json({ ...lesson, chapters: Array.isArray(lesson.chapters) ? lesson.chapters : [] });
   } catch (error) {
     console.error('Error updating lesson:', error);
     res.status(500).json({ error: 'Failed to update lesson' });
@@ -1774,11 +1857,12 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
     `, [course.id]);
     const lessonsResult = await pool.query(`
       SELECT id, title, description, youtube_url, youtube_id, duration_minutes, lesson_order, is_preview, section_id, cover_url, share_code,
-             ${materialsMetaSql('materials')} AS materials
+             ${materialsMetaSql('materials')} AS materials,
+             COALESCE(chapters, '[]'::jsonb) AS chapters
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
     const lessons = lessonsResult.rows.map((lesson) => {
-      if (!hasAccess && !lesson.is_preview) return { ...lesson, youtube_url: null, youtube_id: null, materials: [] };
+      if (!hasAccess && !lesson.is_preview) return { ...lesson, youtube_url: null, youtube_id: null, materials: [], chapters: [] };
       // Students only see materials flagged enabled (admin can hide without deleting).
       // Metadata only — inline html content is fetched per-lesson on demand.
       const materials = Array.isArray(lesson.materials) ? lesson.materials.filter((m: any) => m?.enabled !== false) : [];
@@ -1832,7 +1916,8 @@ router.get('/:slug', async (req, res) => {
     `, [course.id]);
     const lessonsResult = await pool.query(`
       SELECT id, title, description, youtube_id, youtube_url, duration_minutes, lesson_order, is_preview, section_id, cover_url, share_code,
-             ${materialsMetaSql('materials')} AS materials
+             ${materialsMetaSql('materials')} AS materials,
+             COALESCE(chapters, '[]'::jsonb) AS chapters
       FROM lessons WHERE course_id = $1 AND is_active = true ORDER BY lesson_order ASC
     `, [course.id]);
     // Public payload: only preview lessons expose youtube + materials; paid lessons
@@ -1840,7 +1925,7 @@ router.get('/:slug', async (req, res) => {
     // คอร์สฟรี (ราคา 0) = ทุกบทเปิดเหมือน preview
     const free = isFreeCourse(course);
     const lessons = lessonsResult.rows.map((l) => {
-      if (!l.is_preview && !free) return { ...l, youtube_id: null, youtube_url: null, materials: [] };
+      if (!l.is_preview && !free) return { ...l, youtube_id: null, youtube_url: null, materials: [], chapters: [] };
       const materials = Array.isArray(l.materials) ? l.materials.filter((m: any) => m?.enabled !== false) : [];
       return { ...l, materials: stripMaterialContent(materials) };
     });

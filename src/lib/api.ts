@@ -2,6 +2,7 @@
 
 import type { PlanPriceSchedule } from '@/types/pricing';
 import type { PromoMeta, PromoAdmin, PromoInput, PromoSettings, PromoSettingsInput } from '@/types/promo';
+import type { AutoChaptersResult, LessonChaptersStatus } from '@/types/lesson';
 
 class ApiClient {
   private token: string | null = null;
@@ -3277,6 +3278,14 @@ class ApiClient {
   }
   async createLesson(courseId: number, data: Record<string, unknown>) {
     return this.request(`/api/courses/${courseId}/lessons`, { method: 'POST', body: JSON.stringify(data) });
+  }
+  /** "บทในคลิป" (072): ดึงซับมีเวลาจาก YouTube + AI แบ่งบท · save=false = คืนผลไว้แก้ต่อโดยยังไม่บันทึก */
+  async autoLessonChapters(lessonId: number, save: boolean): Promise<AutoChaptersResult> {
+    // เซิร์ฟเวอร์จบใน ~90 วิ (YouTube 2×20 + AI 45) → รอ 150 วิ
+    return this.request(`/api/courses/lessons/${lessonId}/chapters/auto`, { method: 'POST', body: JSON.stringify({ save }) }, 0, 150000);
+  }
+  async getLessonChaptersStatus(lessonId: number): Promise<LessonChaptersStatus> {
+    return this.request(`/api/courses/lessons/${lessonId}/chapters/status`);
   }
   async updateLesson(lessonId: number, data: Record<string, unknown>) {
     return this.request(`/api/courses/lessons/${lessonId}`, { method: 'PUT', body: JSON.stringify(data) });

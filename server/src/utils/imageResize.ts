@@ -22,7 +22,7 @@ import ffmpegPath from 'ffmpeg-static';
 // Prod (Railway linux x64) gets the binary from postinstall normally.
 const LOCAL_FFMPEG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../bin/ffmpeg.exe');
 
-function resolveFfmpeg(): string | null {
+export function resolveFfmpeg(): string | null {
   if (ffmpegPath && fs.existsSync(ffmpegPath as unknown as string)) return ffmpegPath as unknown as string;
   if (fs.existsSync(LOCAL_FFMPEG)) return LOCAL_FFMPEG;
   return null;

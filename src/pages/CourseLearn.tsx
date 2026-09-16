@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
 import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
-import { LessonVideoStage } from '@/components/course/LessonVideoStage';
+import { LessonVideoStage, type LessonVideoStageHandle } from '@/components/course/LessonVideoStage';
+import { LessonChaptersPanel } from '@/components/course/LessonChapters';
+import type { LessonChapter } from '@/types/lesson';
 import { isPromoOnCooldown } from '@/lib/promoFrequency';
 import { api } from '@/lib/api';
 import { sectionLabel } from '@/lib/sectionLabel';
@@ -60,6 +62,8 @@ interface Lesson {
   /** รหัสลิงก์สั้นของบทนี้ — ลิงก์แชร์ = /app/courses/{share_code} */
   share_code?: string | null;
   materials?: LessonMaterial[];
+  /** บทในคลิป (072) — ว่าง = ไม่มี · บทล็อกที่ไม่มีสิทธิ์เซิร์ฟเวอร์ส่ง [] */
+  chapters?: LessonChapter[];
 }
 
 interface Section {
@@ -134,6 +138,8 @@ const CourseLearn = () => {
   const [loadError, setLoadError] = useState<{ expired: boolean } | null>(null);
   // token ตายแต่ fallback public สำเร็จ → ดูแบบ guest ได้ + banner บอกให้ login ใหม่
   const [sessionExpired, setSessionExpired] = useState(false);
+  /** player ของบทปัจจุบัน — แผง "บทในคลิป" ใช้ seekTo/getCurrentTime */
+  const stageRef = useRef<LessonVideoStageHandle>(null);
 
   // ติดตามว่าอยู่โหมดมือถือไหมแบบสด (หมุน iPad / ย่อ-ขยายหน้าต่างข้าม 1024 ต้องเปลี่ยนตาม)
   const [isMobileView, setIsMobileView] = useState(() =>
@@ -484,31 +490,24 @@ const CourseLearn = () => {
                   </div>
                 </div>
               ) : currentLesson.youtube_id ? (
-                // โฆษณาก่อนเริ่มทุกคลิป (070/071): มีตั้งค่า + ผู้เรียนคนนี้ยังไม่ติด cooldown (เห็นซ้ำได้เมื่อครบ N วัน — แอดมินตั้ง)
-                // → ปก ▶ → โฆษณา → บทเรียน · ไม่มี/ติดอยู่ → iframe เดิมเป๊ะด้านล่าง
+                // player ทางเดียว (072): โฆษณาก่อนเริ่มทุกคลิป (070/071) เมื่อมีตั้งค่า + ผู้เรียนยังไม่ติด cooldown → ปก ▶ → โฆษณา → บทเรียน
+                // ไม่มีโฆษณา → iframe เดิมเป๊ะ · มี "บทในคลิป" → เปิด IFrame API ให้กดข้ามเวลาได้
                 (() => {
                   const preId = course.pre_roll_promo_id;
                   const cooldown = { cooldownDays: course.promo_cooldown_days, cycleStartedAt: course.promo_cycle_started_at };
                   const showAd = preId != null && !isPromoOnCooldown(preId, course.promos_seen, cooldown);
-                  return showAd ? (
+                  return (
                     <LessonVideoStage
+                      ref={stageRef}
                       key={currentLesson.id}
                       lesson={{ id: currentLesson.id, title: currentLesson.title, youtube_id: currentLesson.youtube_id }}
-                      promoId={preId}
+                      promoId={showAd ? preId : null}
                       posterUrl={api.mediaUrl(`/api/courses/lessons/${currentLesson.id}/thumb`)}
                       paused={sidebarOpen && isMobileView}
+                      chaptersEnabled={(currentLesson.chapters?.length ?? 0) > 0}
                     />
-                  ) : null;
-                })() ?? (
-                  <iframe
-                    key={currentLesson.id}
-                    src={`https://www.youtube.com/embed/${currentLesson.youtube_id}?rel=0`}
-                    title={currentLesson.title}
-                    className="w-full h-full"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowFullScreen
-                  />
-                )
+                  );
+                })()
               ) : (
                 <div className="w-full h-full flex items-center justify-center"><p className="text-gray-400 text-sm">ไม่พบวิดีโอ</p></div>
               )}
@@ -529,6 +528,16 @@ const CourseLearn = () => {
                   )}
                 </div>
                 {currentLesson.description && <p className="text-gray-300 text-sm whitespace-pre-wrap">{currentLesson.description}</p>}
+
+                {/* 📑 บทในคลิป (072) — เฉพาะบทที่ดูวิดีโอได้ · กดแล้ว player ข้ามเวลา */}
+                {(hasAccess || currentLesson.is_preview) && currentLesson.youtube_id && (currentLesson.chapters?.length ?? 0) > 0 && (
+                  <LessonChaptersPanel
+                    key={currentLesson.id}
+                    chapters={currentLesson.chapters!}
+                    stageRef={stageRef}
+                    className="mt-4 pt-4 border-t border-gray-800"
+                  />
+                )}
 
                 {(() => {
                   const source = fullMaterials[currentLesson.id] ?? currentLesson.materials ?? [];

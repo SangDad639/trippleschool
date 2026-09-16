@@ -5,6 +5,9 @@ import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
 import { api, type TagDto, type TagKind, type CategoryDto } from '@/lib/api';
 import { sectionLabel } from '@/lib/sectionLabel';
 import SamplesEditor, { type MediaSample } from '@/components/admin/SamplesEditor';
+import { LessonChaptersEditor } from '@/components/admin/LessonChaptersEditor';
+import { ytIdFromUrl } from '@/lib/chapters';
+import type { ChaptersSource, LessonChapter } from '@/types/lesson';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -177,6 +180,10 @@ interface Lesson {
   is_active: boolean;
   cover_url?: string | null;
   materials?: LessonMaterial[];
+  /** บทในคลิป (072) */
+  chapters?: LessonChapter[];
+  chapters_source?: ChaptersSource | null;
+  chapters_updated_at?: string | null;
 }
 
 const initialCourseForm = {
@@ -216,6 +223,9 @@ const initialLessonForm = {
   is_preview: false,
   section_id: null as number | null,
   materials: [] as LessonMaterial[],
+  chapters: [] as LessonChapter[],
+  /** แหล่งของ chapters ที่จะส่งไปบันทึก: ผล 🪄 ที่ไม่ได้แก้ = ai/youtube · แก้เอง = manual (เซิร์ฟเวอร์เมินถ้าบทไม่เปลี่ยน) */
+  chapters_source: 'manual' as ChaptersSource,
 };
 
 /**
@@ -420,6 +430,8 @@ const AdminCourses = () => {
 
   // Lesson dialog
   const [lessonDialogOpen, setLessonDialogOpen] = useState(false);
+  /** คอร์สที่กำลังสร้าง "บทในคลิป" ให้ทุกบท (072) */
+  const [chaptersBusyCourse, setChaptersBusyCourse] = useState<number | null>(null);
   const [editingLesson, setEditingLesson] = useState<Lesson | null>(null);
   const [lessonForm, setLessonForm] = useState(initialLessonForm);
   const [selectedCourseForLesson, setSelectedCourseForLesson] = useState<Course | null>(null);
@@ -1020,6 +1032,48 @@ const AdminCourses = () => {
     }
   };
 
+  // ===== บทในคลิป (072): สร้างให้ทุกบทของคอร์สที่ยังไม่มี — เรียกทีละบท (ดึงซับ + AI ~10-40 วิ/บท) โชว์ความคืบหน้า =====
+  const handleAutoChaptersForCourse = async (course: Course) => {
+    if (chaptersBusyCourse) {
+      toast.info('กำลังสร้างบทในคลิปให้อีกคอร์สอยู่ — รอให้เสร็จก่อน');
+      return;
+    }
+    setChaptersBusyCourse(course.id);
+    const t = toast.loading('กำลังตรวจว่าบทไหนยังไม่มีบทในคลิป…');
+    try {
+      const all = ((await api.getCourseLessons(course.id)) as Lesson[]) || [];
+      // เฉพาะบทที่ยังไม่มีบทและไม่ใช่ที่แอดมินตั้งใจล้างไว้ (manual + ว่าง)
+      const todo = all.filter((l) => l.youtube_id && !(l.chapters?.length) && l.chapters_source !== 'manual');
+      if (todo.length === 0) {
+        toast.success('ทุกบทมีบทในคลิปครบแล้ว', { id: t });
+        return;
+      }
+      toast.dismiss(t);
+      if (!confirm(`จะสร้างบทในคลิปให้ ${todo.length} บท (ประมาณ ${Math.ceil((todo.length * 25) / 60)} นาที) — อย่าปิดหน้านี้ระหว่างทำ\n\nบทที่มีบทอยู่แล้วไม่ถูกแตะ`)) return;
+      toast.loading('เริ่มสร้าง…', { id: t });
+      let ok = 0;
+      const fails: string[] = [];
+      for (let i = 0; i < todo.length; i++) {
+        const l = todo[i];
+        toast.loading(`บทในคลิป ${i + 1}/${todo.length}: ${l.title.slice(0, 40)}…`, { id: t });
+        try {
+          const r = await api.autoLessonChapters(l.id, true);
+          if (r.chapters.length) ok++;
+        } catch (err: any) {
+          fails.push(`${l.title.slice(0, 30)} — ${err?.message || 'ไม่สำเร็จ'}`);
+        }
+      }
+      const tail = fails.length ? ` · ไม่ได้ ${fails.length} บท (${fails[0]}${fails.length > 1 ? ' …' : ''})` : '';
+      if (ok) toast.success(`สร้างบทในคลิปแล้ว ${ok}/${todo.length} บท${tail}`, { id: t, duration: 9000 });
+      else toast.error(`ไม่ได้บทในคลิปเลย (${todo.length} บท)${tail}`, { id: t, duration: 9000 });
+      await loadCourseData(course.id);
+    } catch (error: any) {
+      toast.error(error?.message || 'สร้างบทในคลิปไม่สำเร็จ', { id: t });
+    } finally {
+      setChaptersBusyCourse(null);
+    }
+  };
+
   // Lesson CRUD
   const handleOpenLessonDialog = async (course: Course, lesson?: Lesson) => {
     setSelectedCourseForLesson(course);
@@ -1048,6 +1102,8 @@ const AdminCourses = () => {
         is_preview: lesson.is_preview,
         section_id: lesson.section_id,
         materials,
+        chapters: Array.isArray(lesson.chapters) ? lesson.chapters : [],
+        chapters_source: lesson.chapters_source ?? 'manual',
       });
       setPendingSectionValue(valueForSection(sections || [], lesson.section_id, defaultSectionValue));
     } else {
@@ -1628,6 +1684,17 @@ const AdminCourses = () => {
                             title="จัดการซับไตเติล (ความรู้ของบอทผู้ช่วยคอร์สนี้) — ดึงจาก YouTube หรืออัปโหลดไฟล์"
                           >
                             🎬 ซับบอท
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleAutoChaptersForCourse(course)}
+                            disabled={chaptersBusyCourse != null}
+                            title={chaptersBusyCourse != null && chaptersBusyCourse !== course.id ? 'กำลังสร้างให้อีกคอร์สอยู่' : "สร้าง 'บทในคลิป' ให้ทุกบทที่ยังไม่มี — ดึงซับจาก YouTube แล้วให้ AI แบ่งบท (แก้ต่อได้ในแต่ละบท)"}
+                            data-testid={`chapters-course-${course.id}`}
+                          >
+                            {chaptersBusyCourse === course.id ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : '📑 '}
+                            บทในคลิป
                           </Button>
                           <Button
                             size="sm"
@@ -2396,6 +2463,19 @@ const AdminCourses = () => {
                   </p>
                 )}
               </div>
+
+              {/* 📑 บทในคลิป (072) — ค่าเริ่มต้นระบบสร้างจากซับ YouTube · แอดมินแก้ต่อ · พรีวิว */}
+              <LessonChaptersEditor
+                key={editingLesson?.id ?? 'new'}
+                lessonId={editingLesson?.id ?? null}
+                youtubeId={ytIdFromUrl(lessonForm.youtube_url) ?? editingLesson?.youtube_id ?? null}
+                savedYoutubeId={editingLesson?.youtube_id ?? null}
+                value={lessonForm.chapters}
+                onChange={(chapters, chapters_source) => setLessonForm((prev) => ({ ...prev, chapters, chapters_source }))}
+                source={editingLesson?.chapters_source ?? null}
+                updatedAt={editingLesson?.chapters_updated_at ?? null}
+              />
+
               <div>
                 <Label>รายละเอียด</Label>
                 <Textarea

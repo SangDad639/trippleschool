@@ -87,14 +87,28 @@ interface SyncResult {
   message?: string;
 }
 
-async function upsertSubtitle(lessonId: number, courseId: number, language: string, text: string) {
+/**
+ * เก็บซับ · (072) แถมซับแบบมีเวลา + คำอธิบายคลิปเมื่อมี (ไว้ทำ "บทในคลิป") — ไม่ส่งมา = คงค่าเดิม
+ * (ปุ่ม "ดึงซับ" ทุกจุดจึงได้ segments มาด้วยอัตโนมัติ · อัปโหลดไฟล์ซับเองไม่มี segments)
+ */
+async function upsertSubtitle(
+  lessonId: number,
+  courseId: number,
+  language: string,
+  text: string,
+  extra?: { segments?: Array<{ t: number; d: number; text: string }>; description?: string }
+) {
+  const segments = extra?.segments && extra.segments.length ? JSON.stringify(extra.segments) : null;
   await pool.query(
-    `INSERT INTO lesson_subtitles (lesson_id, course_id, language, content, fetched_at)
-     VALUES ($1, $2, $3, $4, NOW())
+    `INSERT INTO lesson_subtitles (lesson_id, course_id, language, content, fetched_at, segments, segments_fetched_at, description)
+     VALUES ($1, $2, $3, $4, NOW(), $5::jsonb, CASE WHEN $5::jsonb IS NULL THEN NULL ELSE NOW() END, $6)
      ON CONFLICT (lesson_id) DO UPDATE
        SET course_id = EXCLUDED.course_id, language = EXCLUDED.language,
-           content = EXCLUDED.content, fetched_at = NOW()`,
-    [lessonId, courseId, language, text]
+           content = EXCLUDED.content, fetched_at = NOW(),
+           segments = COALESCE(EXCLUDED.segments, lesson_subtitles.segments),
+           segments_fetched_at = CASE WHEN EXCLUDED.segments IS NULL THEN lesson_subtitles.segments_fetched_at ELSE NOW() END,
+           description = COALESCE(EXCLUDED.description, lesson_subtitles.description)`,
+    [lessonId, courseId, language, text, segments, extra?.description ?? null]
   );
 }
 
@@ -169,7 +183,7 @@ async function syncLessonSubtitle(
     });
   }
   try {
-    await upsertSubtitle(lesson.id, courseId, cap.language, cap.text);
+    await upsertSubtitle(lesson.id, courseId, cap.language, cap.text, { segments: cap.segments, description: cap.description });
   } catch (error) {
     console.error(`[AgentChat] subtitle save failed (lesson ${lesson.id}):`, error);
     return finish({
