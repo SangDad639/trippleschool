@@ -17,6 +17,7 @@ import {
   invalidateLessonSubtitle, type BuildReason,
 } from '../services/lessonChapters.js';
 import { mergeThumbs, queueChapterThumbs, CHAPTER_THUMB_PREFIX } from '../services/chapterThumbs.js';
+import { healEnrollment, detachLessonRefs } from '../services/lessonRefs.js';
 
 const router = Router();
 
@@ -1627,7 +1628,7 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
     // (072) บทในคลิป: undefined = ไม่แตะ · [] = ล้าง · เท่าเดิม = ไม่สลับแหล่งเป็น manual (FE ส่งมาทุกครั้งที่บันทึก)
     const chParse = validateChapters(chapters);
     if (chParse.error) return res.status(400).json({ error: chParse.error });
-    const before = (await pool.query(`SELECT youtube_id, chapters FROM lessons WHERE id = $1`, [id])).rows[0];
+    const before = (await pool.query(`SELECT youtube_id, chapters, is_active FROM lessons WHERE id = $1`, [id])).rows[0];
     if (!before) return res.status(404).json({ error: 'Lesson not found' });
     const chaptersChanged = chParse.list !== undefined && !chaptersEqual(chParse.list, Array.isArray(before.chapters) ? before.chapters : []);
     // เปลี่ยนคลิป (youtube_id ใหม่) โดยไม่ได้พิมพ์บทใหม่มา (dialog ส่งบทเดิมกลับมาเสมอ) → บทเดิม/ซับเดิมใช้กับคลิปใหม่ไม่ได้
@@ -1665,6 +1666,12 @@ router.put('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
     await pool.query(`
       UPDATE courses SET total_lessons = (SELECT COUNT(*) FROM lessons WHERE course_id = $1 AND is_active = true), updated_at = CURRENT_TIMESTAMP WHERE id = $1
     `, [lesson.course_id]);
+    // 074: ปิดบท = ผู้เรียนไม่เห็นเหมือนถูกลบ → เอาออกจากรายการ "เรียนจบ" ของทุกคน + คิด % ใหม่
+    // (ที่คั่นหน้าไม่ต้องย้าย — ตอนอ่านจะพาไปบทตามลำดับเดิมให้เอง: services/lessonRefs.ts)
+    if (is_active === false && before.is_active !== false) {
+      await detachLessonRefs(pool, Number(lesson.id), Number(lesson.course_id))
+        .catch((e) => console.error('[Lessons] detach refs on deactivate failed:', e));
+    }
     if (youtubeChanged) {
       // ซับมีเวลา/ความยาว/ข้อความของคลิปเก่าใช้ไม่ได้แล้ว → ลบ (ปุ่ม "ดึงซับ" หรือ auto จะดึงของคลิปใหม่)
       await invalidateLessonSubtitle(Number(lesson.id)).catch((e) => console.error('[Chapters] invalidate subtitle failed:', e));
@@ -1685,10 +1692,24 @@ router.delete('/lessons/:id', authenticate, async (req: AuthRequest, res) => {
     const lessonResult = await pool.query(`SELECT course_id FROM lessons WHERE id = $1`, [id]);
     if (lessonResult.rows.length === 0) return res.status(404).json({ error: 'Lesson not found' });
     const courseId = lessonResult.rows[0].course_id;
-    await pool.query(`DELETE FROM lessons WHERE id = $1`, [id]);
-    await pool.query(`
-      UPDATE courses SET total_lessons = (SELECT COUNT(*) FROM lessons WHERE course_id = $1 AND is_active = true), updated_at = CURRENT_TIMESTAMP WHERE id = $1
-    `, [courseId]);
+    // 074: ลบใน transaction เดียว — เอาบทออกจากรายการ "เรียนจบ" ของทุกคน (+% ใหม่) ก่อนลบแถว
+    // ที่คั่นหน้า (last_lesson_id) ว่างเองด้วย FK ON DELETE SET NULL แต่ "ลำดับบท" ยังอยู่
+    // → ตอนอ่านพาไปบทที่อยู่ลำดับเดิมแทน ไม่เจอ "ไม่พบบทเรียน" อีก
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await detachLessonRefs(client, Number(id), Number(courseId));
+      await client.query(`DELETE FROM lessons WHERE id = $1`, [id]);
+      await client.query(`
+        UPDATE courses SET total_lessons = (SELECT COUNT(*) FROM lessons WHERE course_id = $1 AND is_active = true), updated_at = CURRENT_TIMESTAMP WHERE id = $1
+      `, [courseId]);
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
     res.json({ message: 'Lesson deleted successfully' });
   } catch (error) {
     console.error('Error deleting lesson:', error);
@@ -1870,6 +1891,16 @@ router.get('/:slug/full', authenticate, async (req: AuthRequest, res) => {
     });
     const sections = sectionsResult.rows.map((section) => ({ ...section, lessons: lessons.filter(l => l.section_id === section.id) }));
     const unassignedLessons = lessons.filter(l => l.section_id === null);
+    // 074: ที่คั่นหน้าชี้บทที่ไม่อยู่ในรายการแล้ว (ถูกลบ/ปิด) → ซ่อมให้ชี้บทที่ควรเรียนต่อ (ลำดับบทเดิม/รายการเรียนจบ)
+    // ก่อนส่ง — ปุ่ม "เรียนต่อ" หน้าคอร์สจะพาไปบทที่มีจริง (แถวที่ไม่เคยเรียนเลย healEnrollment คืนเดิม = "เริ่มเรียน")
+    if (enrollment && !(enrollment.last_lesson_id != null && lessons.some((l) => Number(l.id) === Number(enrollment.last_lesson_id)))) {
+      try {
+        enrollment = await healEnrollment(pool, enrollment, lessons.map((l) => ({ id: Number(l.id), lesson_order: Number(l.lesson_order) })));
+      } catch (e) {
+        console.error('[courses] heal last_lesson failed:', e);
+        enrollment = { ...enrollment, last_lesson_id: null };
+      }
+    }
     // โฆษณาที่ผู้เรียนคนนี้ "เห็นแล้ว" ในรอบปัจจุบันและยังไม่ครบ N วัน (066/070) → FE ไม่แสดงซ้ำ
     // + ส่ง N วัน และเวลาเริ่มรอบ ให้ FE ใช้กับ localStorage แบบเดียวกัน
     let promosSeen: number[] = [];

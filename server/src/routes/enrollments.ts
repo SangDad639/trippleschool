@@ -12,6 +12,7 @@ import { uploadFile, getFile } from '../utils/s3.js';
 import { createAffiliateCommission } from '../services/stripeService.js';
 import { checkCheckoutCode, bindReferrerIfEmpty, applyRefDiscount } from '../services/refcode.js';
 import { cancelCommissionsBySource } from '../services/affiliateRules.js';
+import { healEnrollment, validLessonIds } from '../services/lessonRefs.js';
 
 const router = Router();
 
@@ -236,16 +237,33 @@ router.get('/mine', authenticate, async (req: AuthRequest, res: Response) => {
              c.instructor_name, c.difficulty, c.total_lessons, c.duration_hours,
              -- ปกคอร์ส = ภาพวิดีโอล่าสุด (หรือปกที่แอดมินตั้งเอง) → ส่ง cover_rev ไปให้ FE bust แคชได้ทันทีเหมือนหน้าอื่น
              GREATEST((SELECT GREATEST(MAX(l.created_at), MAX(l.updated_at)) FROM lessons l
-               WHERE l.course_id = c.id AND l.is_active = true), c.cover_set_at) AS cover_rev
+               WHERE l.course_id = c.id AND l.is_active = true), c.cover_set_at) AS cover_rev,
+             -- 074: ที่คั่นหน้ายังใช้ได้ไหม (บทยังอยู่ เปิดอยู่ คอร์สเดียวกัน) — ไม่ได้ → ซ่อมก่อนส่ง
+             -- ไม่งั้นการ์ด "คอร์สของฉัน"/"เรียนต่อของฉัน" พาไป /learn/<id ที่ถูกลบ> แล้วเจอ "ไม่พบบทเรียน"
+             ll.id AS valid_last_lesson_id
       FROM course_enrollments e
       JOIN courses c ON e.course_id = c.id
+      LEFT JOIN lessons ll ON ll.id = e.last_lesson_id AND ll.course_id = e.course_id AND ll.is_active = true
       WHERE e.user_id = $1
     `;
     const params: any[] = [userId];
     if (status) { query += ` AND e.status = $2`; params.push(status); }
     query += ` ORDER BY e.updated_at DESC`;
     const result = await pool.query(query, params);
-    res.json(result.rows);
+    const rows: any[] = [];
+    for (const { valid_last_lesson_id, ...row } of result.rows) {
+      const stale = valid_last_lesson_id == null &&
+        (row.last_lesson_id != null || row.last_lesson_order != null || (Array.isArray(row.completed_lessons) && row.completed_lessons.length > 0));
+      if (!stale) { rows.push(row); continue; }
+      try {
+        rows.push(await healEnrollment(pool, row));
+      } catch (e) {
+        // ซ่อมไม่ได้ก็อย่าส่ง id เน่าออกไป — null = FE พาไปหน้าคอร์ส (ปุ่ม "เริ่มเรียน") แทนจอตัน
+        console.error('[Enrollments] heal last_lesson failed:', e);
+        rows.push({ ...row, last_lesson_id: null });
+      }
+    }
+    res.json(rows);
   } catch (error) {
     console.error('Error fetching enrollments:', error);
     res.status(500).json({ error: 'Failed to fetch enrollments' });
@@ -272,6 +290,15 @@ router.put('/:id/progress', authenticate, async (req: AuthRequest, res: Response
     const { id } = req.params;
     const userId = req.userId!;
     const { completed_lesson_id, last_lesson_id } = req.body;
+    // 074: รับเฉพาะ id ที่เป็นจำนวนเต็มบวก (ไม่ส่ง/ว่าง = ไม่แตะค่าเดิม) — undefined = รูปแบบผิด
+    const toId = (v: unknown): number | null | undefined => {
+      if (v === undefined || v === null || v === '') return null;
+      const n = Number(v);
+      return Number.isInteger(n) && n > 0 ? n : undefined;
+    };
+    const lastId = toId(last_lesson_id);
+    const doneId = toId(completed_lesson_id);
+    if (lastId === undefined || doneId === undefined) return res.status(400).json({ error: 'รหัสบทเรียนไม่ถูกต้อง' });
 
     const enrollmentResult = await pool.query(`
       SELECT e.*, c.total_lessons FROM course_enrollments e
@@ -280,18 +307,29 @@ router.put('/:id/progress', authenticate, async (req: AuthRequest, res: Response
     `, [id, userId, req.isAdmin === true]);
     if (enrollmentResult.rows.length === 0) return res.status(403).json({ error: 'ยังไม่ได้เป็นเจ้าของคอร์สนี้' });
     const enrollment = enrollmentResult.rows[0];
-    const completedLessons: number[] = enrollment.completed_lessons || [];
-    if (completed_lesson_id && !completedLessons.includes(completed_lesson_id)) completedLessons.push(completed_lesson_id);
-    const totalLessons = enrollment.total_lessons || 1;
-    const progressPercent = Math.round((completedLessons.length / totalLessons) * 100);
+    // 074: บทต้องมีจริง เปิดอยู่ และอยู่ในคอร์สนี้ — กันที่คั่นหน้าค้าง/ข้ามคอร์สถูกเขียนกลับเข้ามา
+    const wanted = [...new Set([lastId, doneId].filter((n): n is number => n != null))];
+    if (wanted.length > 0) {
+      const valid = await validLessonIds(pool, Number(enrollment.course_id), wanted);
+      if (!wanted.every((n) => valid.has(n))) {
+        return res.status(400).json({ error: 'ไม่พบบทเรียนนี้ในคอร์ส (อาจถูกลบหรือปิดไปแล้ว)' });
+      }
+    }
+    const completedLessons: number[] = (enrollment.completed_lessons || []).map(Number);
+    if (doneId != null && !completedLessons.includes(doneId)) completedLessons.push(doneId);
+    const totalLessons = Math.max(Number(enrollment.total_lessons) || 0, 1);
+    // ไม่เกิน 100 — บทถูกลบหลังเรียนจบไปแล้ว จำนวนที่จบอาจมากกว่าจำนวนบทปัจจุบัน
+    const progressPercent = Math.min(100, Math.round((completedLessons.length / totalLessons) * 100));
     const result = await pool.query(`
       UPDATE course_enrollments SET
         completed_lessons = $1,
         last_lesson_id = COALESCE($2, last_lesson_id),
+        -- 074: จำ "ลำดับบท" ไว้ด้วย — บทถูกลบ/แทนที่เมื่อไหร่ยังรู้ว่าค้างอยู่บทที่เท่าไหร่
+        last_lesson_order = COALESCE((SELECT lesson_order FROM lessons WHERE id = $2), last_lesson_order),
         progress_percent = $3,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = $4 RETURNING *
-    `, [completedLessons, last_lesson_id, progressPercent, id]);
+    `, [completedLessons, lastId, progressPercent, id]);
     res.json(result.rows[0]);
   } catch (error) {
     console.error('Error updating progress:', error);

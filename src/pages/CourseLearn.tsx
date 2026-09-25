@@ -7,6 +7,7 @@ import { LessonVideoStage, type LessonVideoStageHandle } from '@/components/cour
 import { LessonChaptersPanel } from '@/components/course/LessonChapters';
 import type { LessonChapter } from '@/types/lesson';
 import { isPromoOnCooldown } from '@/lib/promoFrequency';
+import { resumeLessonId } from '@/lib/lessons';
 import { api } from '@/lib/api';
 import { sectionLabel } from '@/lib/sectionLabel';
 import { shareLink, SITE_URL } from '@/lib/shareLink';
@@ -106,15 +107,23 @@ interface Enrollment {
   status: string;
   progress_percent: number;
   completed_lessons: number[];
-  last_lesson_id: number;
+  /** ที่คั่นหน้า — server ซ่อมให้ชี้บทที่มีจริงเสมอ (074) · null = ยังไม่เคยเรียน */
+  last_lesson_id: number | null;
+  /** ลำดับของบทที่คั่นไว้ — ใช้หาบทแทนเมื่อ id หายไป (บทถูกลบ/แทนที่) */
+  last_lesson_order?: number | null;
 }
 
 const CourseLearn = () => {
   const { slug, lessonId } = useParams<{ slug: string; lessonId: string }>();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { language } = useLanguage();
   const [course, setCourse] = useState<Course | null>(null);
+  // payload ปัจจุบันมาจาก endpoint ไหน — ล็อกอินอยู่แต่ได้ของ guest (public) แปลว่า /full กำลังตามมา
+  // (user hydrate หลัง mount) → อย่าเพิ่งตัดสินใจเรื่อง "เรียนต่อบทไหน" จากข้อมูลที่ยังไม่มีสิทธิ์/ความคืบหน้า
+  const [courseSource, setCourseSource] = useState<'public' | 'full' | null>(null);
+  // กันคำตอบเก่าทับคำตอบใหม่เมื่อ loadCourse ยิงซ้อน (public ตอน user ยัง null แล้ว /full ตามมา)
+  const loadSeq = useRef(0);
   const [enrollment, setEnrollment] = useState<Enrollment | null>(null);
   const [currentLesson, setCurrentLesson] = useState<Lesson | null>(null);
   const [loading, setLoading] = useState(true);
@@ -233,26 +242,46 @@ const CourseLearn = () => {
   }, [slug, course?.slug, lessonId]);
 
   useEffect(() => {
-    if (course && lessonId) {
-      const lesson = course.lessons.find((l) => l.id === parseInt(lessonId));
-      if (lesson) {
-        setCurrentLesson(lesson);
-        if (enrollment?.id) {
-          api.updateEnrollmentProgress(enrollment.id, { last_lesson_id: lesson.id });
-        }
+    if (!course || !lessonId) return;
+    const wanted = parseInt(lessonId, 10);
+    const lesson = course.lessons.find((l) => l.id === wanted);
+    if (lesson) {
+      setCurrentLesson(lesson);
+      if (enrollment?.id) {
+        // บันทึกที่คั่นหน้า (server เติม "ลำดับบท" ให้เอง — 074) · ตอบ 400/เน็ตหลุดไม่ต้องเด้งอะไร
+        api.updateEnrollmentProgress(enrollment.id, { last_lesson_id: lesson.id }).catch(() => {});
       }
+      return;
     }
+    // :lessonId ไม่มีในคอร์สแล้ว (บทถูกลบ/ปิด/แทนที่ หรือลิงก์เก่า) → ไม่ค้างจอ "ไม่พบบทเรียน"
+    // แต่พาไปบทที่ควรเรียนต่อ: id ที่ server ซ่อมให้ → บทในลำดับเดิม → บทแรกที่ยังไม่จบ (src/lib/lessons.ts)
+    setCurrentLesson(null);
+    // ต้องใช้ข้อมูลความคืบหน้าจริง: ระหว่าง auth hydrate หรือยังได้แค่ payload guest ทั้งที่ล็อกอิน → รอ /full ก่อน
+    // (ไม่งั้นจะพาไป "บทแรก" แล้วเขียนทับที่คั่นหน้าเดิมของผู้เรียน)
+    if (authLoading) return;
+    if (user && courseSource !== 'full' && !sessionExpired) return;
+    const targetId = resumeLessonId(course.lessons, enrollment);
+    if (targetId == null || String(targetId) === lessonId) return;
+    toast.info('บทที่เคยดูถูกนำออกแล้ว — พาไปบทที่คุณเรียนค้างอยู่แทน', { id: 'lesson-fallback' });
+    // ใช้ slug จาก URL (อาจเป็นรหัสลิงก์สั้น) ไม่ใช่ course.slug → effect [slug] ไม่โหลดคอร์สซ้ำ;
+    // effect ด้านบนจะเขียนแถบที่อยู่เป็น slug เต็มให้เอง
+    navigate(`/app/courses/${slug}/learn/${targetId}`, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [course, lessonId, enrollment?.id]);
+  }, [course, lessonId, enrollment?.id, authLoading, courseSource, sessionExpired]);
 
   const loadCourse = async () => {
+    // ยิงซ้อนได้ (mount ตอน user ยัง null → public, แล้ว user hydrate → /full) — คำตอบที่ไม่ใช่รอบล่าสุดทิ้ง
+    const seq = ++loadSeq.current;
+    const fresh = () => seq === loadSeq.current;
+    const full = !!user;
     try {
       setLoading(true);
       setLoadError(null);
       setSessionExpired(false);
       // Guest ใช้ endpoint public (บทดูฟรียังได้ youtube_id, บทล็อกถูก mask ฝั่ง server) —
       // ดูฟรีจึงไม่ต้อง login; บทล็อกโชว์ overlay ชวนซื้อ/สมัครเหมือนเดิม
-      const data = user ? await api.getCourseFull(slug!) : await api.getCourse(slug!);
+      const data = full ? await api.getCourseFull(slug!) : await api.getCourse(slug!);
+      if (!fresh()) return;
       // hasAccess = active subscription or admin. Non-members are NOT redirected away —
       // they can still watch preview lessons; member-only lessons render a locked
       // overlay with a "subscribe" CTA instead of the video.
@@ -260,10 +289,12 @@ const CourseLearn = () => {
       const access = !!data.isEnrolled || data.is_free === true;
       setHasAccess(access);
       setCourse(data);
+      setCourseSource(full ? 'full' : 'public');
       // data.enrollment is the progress row (or null for non-members). When null we
       // simply skip progress writes — don't crash.
       setEnrollment(data.enrollment ?? null);
     } catch (error) {
+      if (!fresh()) return;
       console.error('Failed to load course:', error);
       // เฉพาะ token ตาย (401) → ลอง public view (คอร์สฟรี/บท preview ยังดูได้แบบ guest)
       // + banner บอกให้ login ใหม่; error อื่น (5xx/timeout) คงจอ "ลองใหม่" เดิม
@@ -271,18 +302,21 @@ const CourseLearn = () => {
       if (user && (error as any)?.status === 401) {
         try {
           const data = await api.getCourse(slug!);
+          if (!fresh()) return;
           setHasAccess(data.is_free === true);
           setCourse(data);
+          setCourseSource('public');
           setEnrollment(null);
           setSessionExpired(true);
           return;
         } catch (fallbackError) {
+          if (!fresh()) return;
           console.error('Public fallback also failed:', fallbackError);
         }
       }
       setLoadError({ expired: (error as any)?.status === 401 });
     } finally {
-      setLoading(false);
+      if (fresh()) setLoading(false);
     }
   };
 
@@ -386,10 +420,42 @@ const CourseLearn = () => {
     );
   }
 
-  if (!course || !currentLesson) {
+  // ไม่ควรถึง (loadError ดักไว้ก่อน) — กันไว้พร้อมทางออก ไม่ค้างจอเปล่า
+  if (!course) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
-        <p className="text-gray-400">ไม่พบบทเรียน</p>
+      <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <p className="text-lg font-semibold text-white">ไม่พบคอร์สเรียน</p>
+        <Button variant="outline" onClick={() => navigate(`/courses/${slug}`)}>กลับหน้าคอร์ส</Button>
+      </div>
+    );
+  }
+
+  // คอร์สไม่เหลือบทให้เรียน (แอดมินกำลังจัดเนื้อหาใหม่) — ต้องมีปุ่มออก
+  if (course.lessons.length === 0) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <BookOpen className="h-12 w-12 text-gray-500" />
+        <div>
+          <p className="text-lg font-semibold text-white">คอร์สนี้ยังไม่มีบทเรียน</p>
+          <p className="mt-1 text-sm text-gray-400">ผู้สอนกำลังอัปเดตเนื้อหา ลองกลับมาใหม่อีกครั้ง</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button onClick={() => navigate(`/courses/${course.slug}`)} className="bg-purple-600 hover:bg-purple-700">
+            กลับหน้าคอร์ส
+          </Button>
+          <Button variant="outline" onClick={() => navigate('/app/my-courses')}>คอร์สของฉัน</Button>
+        </div>
+      </div>
+    );
+  }
+
+  // :lessonId ไม่มีในคอร์ส → effect ด้านบนกำลังพาไปบทที่ควรเรียนต่อ (หรือรอ /full) — ไม่แว้บ "ไม่พบบทเรียน"
+  if (!currentLesson) {
+    return (
+      <div className="min-h-screen bg-background text-foreground flex flex-col items-center justify-center gap-3 px-4 text-center">
+        <Loader2 className="h-8 w-8 animate-spin text-purple-500" />
+        <p className="text-sm text-gray-400">กำลังพาไปบทที่คุณเรียนค้างอยู่…</p>
+        <Button variant="outline" size="sm" onClick={() => navigate(`/courses/${course.slug}`)}>กลับหน้าคอร์ส</Button>
       </div>
     );
   }
