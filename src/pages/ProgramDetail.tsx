@@ -95,6 +95,18 @@ const ProgramDetail = () => {
                 ))}
               </ul>
 
+              {/* เครื่องที่ใช้ได้ — เฉพาะโปรแกรมที่ระบุ (Triple Music ต้องการการ์ดจอ/พื้นที่/Runpod) */}
+              {program.requirements && program.requirements.length > 0 && (
+                <div className="rounded-lg border border-gray-800 bg-black/20 px-3.5 py-3 mb-6" data-testid="program-requirements">
+                  <p className="text-xs font-semibold text-gray-400 mb-1.5">เครื่องที่ใช้ได้</p>
+                  <ul className="list-disc pl-4 space-y-1 text-xs text-gray-300 leading-relaxed">
+                    {program.requirements.map((r) => (
+                      <li key={r}>{r}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {/* Download buttons */}
               <div className="mt-auto">
                 {/* flex-wrap + basis: ปุ่มยืดเต็มแถวเองเมื่อพื้นที่ไม่พอ แทนที่จะล้นออกนอกการ์ด
@@ -137,6 +149,9 @@ const ProgramDetail = () => {
                     ),
                   )}
                 </div>
+                {program.downloadNote && (
+                  <p className="text-[11px] text-gray-500 mt-2" data-testid="program-download-note">{program.downloadNote}</p>
+                )}
               </div>
             </div>
           </div>

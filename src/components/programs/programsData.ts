@@ -4,6 +4,10 @@ import {
   WifiOff,
   Mic,
   Languages,
+  Music,
+  Clock,
+  Cpu,
+  Library,
   Infinity as InfinityIcon,
   type LucideIcon,
 } from 'lucide-react';
@@ -47,6 +51,10 @@ export type Program = {
   features: ProgramFeature[];
   highlights: ProgramHighlight[];
   downloads: ProgramDownload[];
+  /** กล่อง "เครื่องที่ใช้ได้" ในหน้ารายละเอียด (ไม่ใส่ = ไม่แสดง) */
+  requirements?: string[];
+  /** หมายเหตุใต้ปุ่มดาวน์โหลด เช่น มีเฉพาะ Windows */
+  downloadNote?: string;
 };
 
 export const PROGRAMS: Program[] = [
@@ -97,6 +105,57 @@ export const PROGRAMS: Program[] = [
         url:
           import.meta.env.VITE_TRIPLE_VOICE_MAC_URL ||
           'https://www.mediafire.com/file/wb7z1kyeoxujl2n/Triple_Voice.dmg/file',
+      },
+    ],
+  },
+  {
+    // Triple Music (โปรเจกต์ yue-lab) — แอป Windows สร้างเพลงจากเนื้อร้องด้วย YuE2 · เพิ่ม 25 ก.ย. 2026
+    slug: 'triple-music',
+    name: 'Triple Music',
+    tagline: 'โปรแกรมสร้างเพลง AI จากเนื้อร้องของคุณ',
+    version: 'v2.1.0',
+    logo: '/programs/triple-music-mark.svg',
+    thumbnail: '/programs/triple-music-cover.png',
+    // 👇 วางลิงก์วิดีโอตัวอย่างตรงนี้ได้เลย (YouTube / .mp4 / .webm / .mov)
+    videoUrl: import.meta.env.VITE_TRIPLE_MUSIC_VIDEO_URL || '',
+    screenshots: [
+      { src: '/programs/triple-music-create.png', alt: 'หน้าสร้างเพลงของโปรแกรม Triple Music — เนื้อร้อง แนวเพลง ความยาว' },
+      { src: '/programs/triple-music-settings.png', alt: 'หน้าตั้งค่าการประมวลผลของ Triple Music — เครื่องนี้ หรือ GPU บน Runpod' },
+    ],
+    summary:
+      'พิมพ์เนื้อร้องกับแนวเพลงที่อยากได้ แล้วให้ AI แต่งทำนอง ร้อง และเรียบเรียงออกมาเป็นเพลงเต็มเพลงในไฟล์ MP3 ' +
+      'ประมวลผลบนเครื่องของคุณเอง หรือใช้ GPU บน Runpod เมื่อเครื่องไม่แรงพอ ไม่ต้องติดตั้ง ComfyUI ไม่ต้องรู้เรื่อง Python ' +
+      '— เหมาะกับทำเพลงประกอบคลิป เพลงโฆษณา หรือเพลงของตัวเอง',
+    features: [
+      { icon: Music, text: 'เขียนเนื้อร้องแบ่งท่อน [Verse] [Chorus] บอกแนวเพลง เครื่องดนตรี อารมณ์ → ได้เพลงพร้อมเสียงร้องเป็น MP3' },
+      { icon: Clock, text: 'เลือกความยาว 1 / 2 / 3 นาที มี preset แนวเพลง (Acoustic pop, Lo-fi, Cinematic, Indie rock) และตั้งค่าขั้นสูงได้ (Seed, โน้ต ABC) สำหรับคนอยากคุมเอง' },
+      { icon: Cpu, text: 'ประมวลผลบนเครื่อง (Auto / CPU / การ์ดจอ NVIDIA) หรือต่อ GPU บน Runpod — คอมไม่มีการ์ดจอก็ทำเพลงได้' },
+      { icon: Library, text: 'คลังเพลงส่วนตัว ฟัง ค้นหา ดาวน์โหลด มีเครื่องเล่นในตัว และเห็นสถานะงานที่กำลังสร้างครบทุกขั้น' },
+      { icon: InfinityIcon, text: 'ใช้ได้ไม่จำกัดจำนวนเพลง ไม่มีค่าใช้จ่ายรายครั้ง — Login ด้วยบัญชี Triple School ที่เป็นสมาชิก' },
+    ],
+    highlights: [
+      { label: 'เพลงเต็ม 1–3 นาที', sub: 'พร้อมเสียงร้อง ไม่ใช่แค่ดนตรี' },
+      { label: 'เครื่องคุณ หรือ Runpod', sub: 'เลือกที่ประมวลผลได้' },
+      { label: 'ส่งออก MP3', sub: 'เอาไปใช้ในคลิปได้ทันที' },
+      { label: 'ไม่จำกัดจำนวนเพลง', sub: 'ไม่มีค่าใช้จ่ายรายครั้ง' },
+    ],
+    requirements: [
+      'Windows 10 / 11 แบบ 64-bit · ตัวติดตั้ง 30 MB ไม่ต้องลง Python เอง',
+      'สร้างบนเครื่อง: การ์ดจอ NVIDIA ที่รองรับ BF16 (RTX 30 ซีรีส์ขึ้นไป) หรือใช้ CPU ได้แต่ช้ามาก · ครั้งแรกดาวน์โหลดโมเดลประมาณ 7.8 GB (เผื่อพื้นที่ราว 10 GB)',
+      'ไม่มีการ์ดจอ: เช่า GPU บน Runpod แล้วใส่ URL ของ Pod ในแอป (ค่าเช่าคิดกับ Runpod แยกต่างหาก)',
+    ],
+    downloadNote: 'มีเฉพาะ Windows · macOS ยังไม่มีในรุ่นนี้',
+    downloads: [
+      {
+        key: 'windows',
+        label: 'ดาวน์โหลด Windows',
+        platform: 'Windows',
+        icon: Monitor,
+        // โฟลเดอร์ Google Drive ที่ user ให้ (25 ก.ย. 2026) — เป็นหน้าเว็บ ไม่ใช่ไฟล์ตรง → เปิดแท็บใหม่
+        // (ตัด /u/0/ ออก เพื่อให้ลิงก์ไม่ผูกกับบัญชี Google ของคนเปิด)
+        url:
+          import.meta.env.VITE_TRIPLE_MUSIC_WIN_URL ||
+          'https://drive.google.com/drive/folders/1BpFDS0fPPULKq1LtXkTrjF93H4Kn_0Yq',
       },
     ],
   },
