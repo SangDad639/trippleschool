@@ -57,9 +57,11 @@ export type Program = {
   downloadNote?: string;
 };
 
-// ลิงก์ macOS ของ Triple Music — ยังไม่มีตัวติดตั้ง (26 ก.ย. 2026) ได้ลิงก์เมื่อไหร่วางแทน '' ได้เลย
-// ระหว่างนี้ปุ่มจะขึ้นแบบกดไม่ได้ + มีโน้ตบอกใต้ปุ่ม (โน้ตหายเองเมื่อใส่ลิงก์)
-const TRIPLE_MUSIC_MAC_URL = import.meta.env.VITE_TRIPLE_MUSIC_MAC_URL || '';
+// ลิงก์ macOS ของ Triple Music — MediaFire ที่ user ให้ (26 ก.ย. 2026) เป็นหน้าเว็บ ไม่ใช่ไฟล์ตรง → เปิดแท็บใหม่
+// ถ้าเว้นว่าง ปุ่มจะขึ้นแบบกดไม่ได้ + มีโน้ต "macOS เร็วๆ นี้" ใต้ปุ่ม (โน้ตหายเองเมื่อมีลิงก์)
+const TRIPLE_MUSIC_MAC_URL =
+  import.meta.env.VITE_TRIPLE_MUSIC_MAC_URL ||
+  'https://www.mediafire.com/file/yqutomc45ggmnl3/TripleMusic-2.2.0-macOS-arm64.dmg/file';
 
 export const PROGRAMS: Program[] = [
   {
@@ -145,6 +147,8 @@ export const PROGRAMS: Program[] = [
     ],
     requirements: [
       'Windows 10 / 11 แบบ 64-bit · ตัวติดตั้ง 30 MB ไม่ต้องลง Python เอง',
+      // ไฟล์ .dmg เป็น arm64 → รันบน Mac รุ่น Intel ไม่ได้
+      'macOS: เฉพาะ Mac ชิป Apple Silicon (M1 ขึ้นไป) · Mac รุ่น Intel ใช้ไม่ได้',
       'สร้างบนเครื่อง: การ์ดจอ NVIDIA ที่รองรับ BF16 (RTX 30 ซีรีส์ขึ้นไป) หรือใช้ CPU ได้แต่ช้ามาก · ครั้งแรกดาวน์โหลดโมเดลประมาณ 7.8 GB (เผื่อพื้นที่ราว 10 GB)',
       'ไม่มีการ์ดจอ: เช่า GPU บน Runpod แล้วใส่ URL ของ Pod ในแอป (ค่าเช่าคิดกับ Runpod แยกต่างหาก)',
     ],
