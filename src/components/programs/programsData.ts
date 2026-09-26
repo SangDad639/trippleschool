@@ -57,6 +57,10 @@ export type Program = {
   downloadNote?: string;
 };
 
+// ลิงก์ macOS ของ Triple Music — ยังไม่มีตัวติดตั้ง (26 ก.ย. 2026) ได้ลิงก์เมื่อไหร่วางแทน '' ได้เลย
+// ระหว่างนี้ปุ่มจะขึ้นแบบกดไม่ได้ + มีโน้ตบอกใต้ปุ่ม (โน้ตหายเองเมื่อใส่ลิงก์)
+const TRIPLE_MUSIC_MAC_URL = import.meta.env.VITE_TRIPLE_MUSIC_MAC_URL || '';
+
 export const PROGRAMS: Program[] = [
   {
     slug: 'triple-voice',
@@ -144,7 +148,7 @@ export const PROGRAMS: Program[] = [
       'สร้างบนเครื่อง: การ์ดจอ NVIDIA ที่รองรับ BF16 (RTX 30 ซีรีส์ขึ้นไป) หรือใช้ CPU ได้แต่ช้ามาก · ครั้งแรกดาวน์โหลดโมเดลประมาณ 7.8 GB (เผื่อพื้นที่ราว 10 GB)',
       'ไม่มีการ์ดจอ: เช่า GPU บน Runpod แล้วใส่ URL ของ Pod ในแอป (ค่าเช่าคิดกับ Runpod แยกต่างหาก)',
     ],
-    downloadNote: 'มีเฉพาะ Windows · macOS ยังไม่มีในรุ่นนี้',
+    downloadNote: TRIPLE_MUSIC_MAC_URL ? undefined : 'ตอนนี้ดาวน์โหลดได้เฉพาะ Windows · macOS เร็วๆ นี้',
     downloads: [
       {
         key: 'windows',
@@ -156,6 +160,13 @@ export const PROGRAMS: Program[] = [
         url:
           import.meta.env.VITE_TRIPLE_MUSIC_WIN_URL ||
           'https://drive.google.com/drive/folders/1BpFDS0fPPULKq1LtXkTrjF93H4Kn_0Yq',
+      },
+      {
+        key: 'macos',
+        label: 'ดาวน์โหลด macOS',
+        platform: 'macOS',
+        icon: Apple,
+        url: TRIPLE_MUSIC_MAC_URL,
       },
     ],
   },
