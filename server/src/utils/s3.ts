@@ -153,6 +153,24 @@ export async function getFileRange(key: string, range?: string) {
 }
 
 /**
+ * โหลด object ทั้งก้อนเป็น Buffer (ไฟล์เล็ก เช่น manifest ของ desktop auto-update — routes/desktopVersion.ts)
+ * null ถ้า key ไม่มี (NoSuchKey/404 = "ยังไม่เคย publish" ไม่ใช่ error) · อย่าใช้กับไฟล์ใหญ่ (ใช้ getFile/getFileRange)
+ */
+export async function getObjectBuffer(key: string): Promise<Buffer | null> {
+  try {
+    const res = await getS3Client().send(new GetObjectCommand({
+      Bucket: getBucketName(),
+      Key: key,
+    }));
+    if (!res.Body) return null;
+    return Buffer.from(await res.Body.transformToByteArray());
+  } catch (error: any) {
+    if (error?.name === 'NoSuchKey' || error?.$metadata?.httpStatusCode === 404) return null;
+    throw error;
+  }
+}
+
+/**
  * Extract the S3 key from a value that may be a key, our S3 URL, or an external URL.
  * Used on writes: if the frontend round-trips a fresh signed URL, store just the key.
  */
