@@ -3,14 +3,16 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import PublicHeader from '@/components/PublicHeader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import ProgramVideo from '@/components/programs/ProgramVideo';
+import ProgramVideoSection from '@/components/programs/ProgramVideoSection';
 import { getProgram, isDirectFileUrl } from '@/components/programs/programsData';
-import { Crown, ArrowRight, ArrowLeft, CheckCircle2, Download } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { Crown, ArrowRight, ArrowLeft, CheckCircle2, Download, Pencil } from 'lucide-react';
 
 // หน้ารายละเอียดโปรแกรม /programs/:slug — ภาพ + ฟีเจอร์ + ปุ่มดาวน์โหลด
 const ProgramDetail = () => {
   const navigate = useNavigate();
   const { slug } = useParams();
+  const { user } = useAuth();
   const program = getProgram(slug);
 
   // เข้ามาจากการ์ดกลางหน้า /programs ถ้าไม่รีเซ็ต จะเปิดหน้าใหม่ค้างอยู่ตรงกลางหน้า
@@ -37,23 +39,31 @@ const ProgramDetail = () => {
       <PublicHeader />
 
       <div className="max-w-6xl mx-auto px-4 md:px-12 pt-6 pb-16">
-        <Link
-          to="/programs"
-          className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors mb-5"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          กลับไปหน้า Program
-        </Link>
+        <div className="flex items-center gap-3 mb-5">
+          <Link
+            to="/programs"
+            className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            กลับไปหน้า Program
+          </Link>
+          {/* ทางลัดของแอดมิน — ไปใส่/แก้คลิปคู่มือของโปรแกรมนี้ */}
+          {user?.isAdmin && (
+            <Link
+              to={`/admin/programs?slug=${program.slug}`}
+              className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-[#FFB300]/40 px-2.5 py-1 text-xs text-[#FFB300] hover:bg-[#FFB300]/10 transition-colors"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              จัดการคลิปคู่มือ
+            </Link>
+          )}
+        </div>
 
         <div className="rounded-2xl border border-gray-800 bg-gray-900/40 overflow-hidden">
           <div className="grid lg:grid-cols-2 gap-0">
             {/* Media — วิดีโอเป็นสื่อหลัก ภาพหน้าจอลดชั้นลงเป็นแถวย่อยด้านล่าง */}
             <div className="dark-stage relative bg-[#0d0d14] p-4 lg:p-6 flex flex-col justify-center gap-3">
-              <ProgramVideo
-                url={program.videoUrl}
-                title={`วิดีโอตัวอย่าง ${program.name}`}
-                poster={program.thumbnail}
-              />
+              <ProgramVideoSection program={program} />
 
               <div className="grid grid-cols-2 gap-3">
                 {program.screenshots.map((shot) => (

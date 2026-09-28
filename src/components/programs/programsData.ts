@@ -40,8 +40,8 @@ export type Program = {
   /** ภาพหน้าปกบนการ์ดในหน้า /programs */
   thumbnail: string;
   /**
-   * วิดีโอตัวอย่างการใช้งาน — วางลิงก์ YouTube หรือไฟล์ .mp4/.webm/.mov ตรงๆ ก็ได้
-   * เว้นว่างไว้ = หน้ารายละเอียดจะโชว์แค่ภาพหน้าจอเหมือนเดิม
+   * ลิงก์วิดีโอสำรอง — คลิปคู่มือตัวจริงแอดมินใส่ที่ /admin/programs (ตาราง program_videos)
+   * ค่านี้ใช้เฉพาะตอนที่ยังไม่มีคลิปใน DB หรือโหลด API ไม่ได้
    */
   videoUrl?: string;
   /** ภาพประกอบในหน้ารายละเอียด */
@@ -71,7 +71,7 @@ export const PROGRAMS: Program[] = [
     version: 'v1.0.0',
     logo: '/programs/triple-voice-mark.svg',
     thumbnail: '/programs/triple-voice-app.png',
-    // 👇 วางลิงก์วิดีโอตัวอย่างตรงนี้ได้เลย (YouTube / .mp4 / .webm / .mov)
+    // คลิปคู่มือจัดการที่ /admin/programs — env var นี้เป็นแค่ลิงก์สำรอง
     videoUrl: import.meta.env.VITE_TRIPLE_VOICE_VIDEO_URL || '',
     screenshots: [
       { src: '/programs/triple-voice-app.png', alt: 'หน้าจอสร้างเสียงของโปรแกรม Triple Voice' },
@@ -122,7 +122,7 @@ export const PROGRAMS: Program[] = [
     version: 'v2.1.0',
     logo: '/programs/triple-music-mark.svg',
     thumbnail: '/programs/triple-music-cover.png',
-    // 👇 วางลิงก์วิดีโอตัวอย่างตรงนี้ได้เลย (YouTube / .mp4 / .webm / .mov)
+    // คลิปคู่มือจัดการที่ /admin/programs — env var นี้เป็นแค่ลิงก์สำรอง
     videoUrl: import.meta.env.VITE_TRIPLE_MUSIC_VIDEO_URL || '',
     screenshots: [
       { src: '/programs/triple-music-create.png', alt: 'หน้าสร้างเพลงของโปรแกรม Triple Music — เนื้อร้อง แนวเพลง ความยาว' },

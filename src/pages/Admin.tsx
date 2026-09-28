@@ -1004,6 +1004,12 @@ const Admin = () => {
               </Button>
               <Button
                 variant="outline"
+                onClick={() => navigate('/admin/programs')}
+              >
+                คลิปโปรแกรม
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => navigate('/admin/promos')}
               >
                 🎬 โฆษณา
