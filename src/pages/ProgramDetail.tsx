@@ -47,14 +47,15 @@ const ProgramDetail = () => {
             <ArrowLeft className="h-4 w-4" />
             กลับไปหน้า Program
           </Link>
-          {/* ทางลัดของแอดมิน — ไปใส่/แก้คลิปคู่มือของโปรแกรมนี้ */}
+          {/* ทางลัดของแอดมิน — ไปใส่/แก้คลิปของโปรแกรมนี้
+              (ห้ามใช้ชื่อ "จัดการคลิปคู่มือ" ซ้ำ — ชื่อนั้นคือเมนูของ /admin/guide คนละหน้ากัน) */}
           {user?.isAdmin && (
             <Link
               to={`/admin/programs?slug=${program.slug}`}
               className="ml-auto inline-flex items-center gap-1.5 rounded-md border border-[#FFB300]/40 px-2.5 py-1 text-xs text-[#FFB300] hover:bg-[#FFB300]/10 transition-colors"
             >
               <Pencil className="h-3.5 w-3.5" />
-              จัดการคลิปคู่มือ
+              จัดการคลิปโปรแกรม
             </Link>
           )}
         </div>

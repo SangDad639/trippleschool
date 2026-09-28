@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isProgramSlug, readProgramVideoBody, PROGRAM_VIDEO_URL_MAX, PROGRAM_VIDEO_TITLE_MAX } from '../programVideos.js';
+import {
+  isProgramSlug,
+  parseVideoId,
+  readProgramVideoBody,
+  PROGRAM_VIDEO_URL_MAX,
+  PROGRAM_VIDEO_TITLE_MAX,
+} from '../programVideos.js';
 
 test('accepts the slugs used in programsData.ts', () => {
   assert.equal(isProgramSlug('triple-voice'), true);
@@ -42,6 +48,25 @@ test('is_active defaults to true and only an explicit false hides the clip', () 
   assert.equal(readProgramVideoBody({ url: 'https://youtu.be/abcdefghijk' }).values?.is_active, true);
   assert.equal(readProgramVideoBody({ url: 'https://youtu.be/abcdefghijk', is_active: false }).values?.is_active, false);
   assert.equal(readProgramVideoBody({ url: 'https://youtu.be/abcdefghijk', is_active: 'false' }).values?.is_active, true);
+});
+
+test('NUL bytes never reach Postgres (it rejects 0x00 in text with a 500)', () => {
+  assert.match(readProgramVideoBody({ url: 'https://youtu.be/abc\u0000def' }).error ?? '', /ไม่ถูกต้อง/);
+  assert.equal(readProgramVideoBody({ url: 'https://youtu.be/abcdefghijk', title: 'a\u0000b' }).values?.title, 'ab');
+});
+
+test('title is capped by code points so an emoji is never split in half', () => {
+  const { values } = readProgramVideoBody({ url: 'https://youtu.be/abcdefghijk', title: '🎵'.repeat(300) });
+  assert.equal(Array.from(values?.title ?? '').length, PROGRAM_VIDEO_TITLE_MAX);
+  assert.equal(values?.title, '🎵'.repeat(PROGRAM_VIDEO_TITLE_MAX));
+});
+
+test('parseVideoId accepts only ids that fit the SERIAL (int4) column', () => {
+  assert.equal(parseVideoId('1'), 1);
+  assert.equal(parseVideoId(2147483647), 2147483647);
+  for (const bad of ['0', '-1', '1.5', 'abc', '', '99999999999', 2147483648, null, undefined, true]) {
+    assert.equal(parseVideoId(bad), null, `expected ${String(bad)} to be rejected`);
+  }
 });
 
 test('non-string fields are treated as empty instead of throwing', () => {

@@ -9,9 +9,10 @@
  * Writing is admin-only.
  */
 import { Router, Response } from 'express';
+import type { PoolClient } from 'pg';
 import pool from '../db.js';
 import { authenticate, requireAdmin, AuthRequest } from '../middleware/auth.js';
-import { isProgramSlug, readProgramVideoBody, PROGRAM_VIDEOS_MAX } from '../utils/programVideos.js';
+import { isProgramSlug, parseVideoId, readProgramVideoBody, PROGRAM_VIDEOS_MAX } from '../utils/programVideos.js';
 
 const router = Router();
 
@@ -62,34 +63,45 @@ router.post('/:slug/videos', authenticate, requireAdmin, async (req: AuthRequest
   const { error, values } = readProgramVideoBody(req.body);
   if (error || !values) return res.status(400).json({ error });
 
+  let client: PoolClient | undefined;
   try {
-    const stats = await pool.query(
+    client = await pool.connect();
+    await client.query('BEGIN');
+    // Serialise creates per program: without it, two saves at once both pass the
+    // cap check and land on the same display_order.
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`program_videos:${slug}`]);
+    const stats = await client.query(
       `SELECT COUNT(*)::int AS count, COALESCE(MAX(display_order), -1) + 1 AS next
          FROM program_videos WHERE program_slug = $1`,
       [slug]
     );
     if (stats.rows[0].count >= PROGRAM_VIDEOS_MAX) {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: `ใส่คลิปได้สูงสุด ${PROGRAM_VIDEOS_MAX} คลิปต่อโปรแกรม` });
     }
 
     // New clips land at the end of the list.
-    const result = await pool.query(
+    const result = await client.query(
       `INSERT INTO program_videos (program_slug, title, url, is_active, display_order)
        VALUES ($1, $2, $3, $4, $5)
        RETURNING ${VIDEO_COLUMNS}`,
       [slug, values.title, values.url, values.is_active, stats.rows[0].next]
     );
+    await client.query('COMMIT');
     console.log(`[AUDIT] program video ${result.rows[0].id} created for ${slug} by user ${req.userId}`);
     res.status(201).json(result.rows[0]);
   } catch (err: any) {
+    await client?.query('ROLLBACK').catch(() => undefined);
     console.error('[programs] create video failed:', err?.message);
     res.status(500).json({ error: 'Failed to create program video' });
+  } finally {
+    client?.release();
   }
 });
 
 router.put('/videos/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+  const id = parseVideoId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'Invalid id' });
 
   const { error, values } = readProgramVideoBody(req.body);
   if (error || !values) return res.status(400).json({ error });
@@ -111,8 +123,8 @@ router.put('/videos/:id', authenticate, requireAdmin, async (req: AuthRequest, r
 });
 
 router.delete('/videos/:id', authenticate, requireAdmin, async (req: AuthRequest, res: Response) => {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+  const id = parseVideoId(req.params.id);
+  if (id === null) return res.status(400).json({ error: 'Invalid id' });
 
   try {
     const result = await pool.query('DELETE FROM program_videos WHERE id = $1', [id]);
@@ -134,11 +146,17 @@ router.post('/:slug/videos/reorder', authenticate, requireAdmin, async (req: Aut
   const { slug } = req.params;
   if (!isProgramSlug(slug)) return res.status(400).json({ error: 'Invalid program' });
 
-  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
-  if (ids.length === 0) return res.status(400).json({ error: 'ต้องส่งลำดับ id มาด้วย' });
+  const rawIds: unknown[] = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  if (rawIds.length === 0) return res.status(400).json({ error: 'ต้องส่งลำดับ id มาด้วย' });
+  // One bad id rejects the whole list — dropping it would silently shift every position after it.
+  const ids = rawIds.map(parseVideoId);
+  if (ids.some((id) => id === null)) return res.status(400).json({ error: 'ลำดับ id ไม่ถูกต้อง' });
 
-  const client = await pool.connect();
+  let client: PoolClient | undefined;
   try {
+    // connect() inside try: a rejected connect in an async Express 4 handler is
+    // an unhandled rejection, which kills the whole API process.
+    client = await pool.connect();
     await client.query('BEGIN');
     for (let i = 0; i < ids.length; i++) {
       await client.query(
@@ -149,11 +167,12 @@ router.post('/:slug/videos/reorder', authenticate, requireAdmin, async (req: Aut
     await client.query('COMMIT');
     res.json({ ok: true });
   } catch (err: any) {
-    await client.query('ROLLBACK');
+    // ROLLBACK can fail on a dead connection too — it must not throw out of the handler.
+    await client?.query('ROLLBACK').catch(() => undefined);
     console.error('[programs] reorder failed:', err?.message);
     res.status(500).json({ error: 'Failed to reorder program videos' });
   } finally {
-    client.release();
+    client?.release();
   }
 });
 

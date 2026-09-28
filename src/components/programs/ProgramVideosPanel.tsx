@@ -153,6 +153,9 @@ const ProgramVideosPanel = ({ program }: ProgramVideosPanelProps) => {
     }
   };
 
+  // คลิปที่ผู้เข้าชมเห็นก่อน = คลิปแรกที่ไม่ได้ซ่อน (ถ้าคลิปบนสุดถูกซ่อน ป้ายต้องย้ายลงมา)
+  const firstActiveId = videos.find((v) => v.is_active)?.id;
+
   const previewUrl = form.url.trim();
   // ลิงก์ที่ฝังในหน้าไม่ได้ (เช่น หน้าเว็บทั่วไป) หน้าจริงจะขึ้นเป็นปุ่มเปิดลิงก์แทน — เตือนไว้ก่อนบันทึก
   const isEmbeddable = !previewUrl || isEmbeddableVideoUrl(previewUrl);
@@ -223,7 +226,7 @@ const ProgramVideosPanel = ({ program }: ProgramVideosPanelProps) => {
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate font-medium">{video.title || `คลิปที่ ${index + 1}`}</p>
-                      {index === 0 && video.is_active && (
+                      {video.id === firstActiveId && (
                         <Badge variant="outline" className="text-[10px] text-[#FFB300]">
                           เล่นเป็นคลิปแรก
                         </Badge>
