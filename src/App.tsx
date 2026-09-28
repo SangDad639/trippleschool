@@ -72,6 +72,7 @@ const AdminEnrollments = lazy(() => import("@/pages/AdminEnrollments"));
 const AdminChats = lazy(() => import("@/pages/AdminChats"));
 const AdminPromos = lazy(() => import("@/pages/AdminPromos"));
 const AdminCodes = lazy(() => import("@/pages/AdminCodes"));
+const AdminPrograms = lazy(() => import("@/pages/AdminPrograms"));
 // Hidden page (/guide) — no nav tab, fully public. Clips are admin-managed (/admin/guide).
 const Guide = lazy(() => import("@/pages/Guide"));
 
@@ -443,6 +444,7 @@ function AppRoutes() {
       <Route path="/admin/chats" element={<ProtectedRoute><AdminChats /></ProtectedRoute>} />
       <Route path="/admin/promos" element={<ProtectedRoute><AdminPromos /></ProtectedRoute>} />
       <Route path="/admin/codes" element={<ProtectedRoute><AdminCodes /></ProtectedRoute>} />
+      <Route path="/admin/programs" element={<ProtectedRoute><AdminPrograms /></ProtectedRoute>} />
 
       {/* ---------- User ---------- */}
       <Route path="/affiliate" element={<ProtectedRoute><Affiliate /></ProtectedRoute>} />

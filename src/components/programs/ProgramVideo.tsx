@@ -1,4 +1,5 @@
 import { parseVideoUrl } from '@/lib/parseVideoUrl';
+import { driveFileId } from './videoLinks';
 import { PlayCircle, ExternalLink } from 'lucide-react';
 
 interface ProgramVideoProps {
@@ -11,7 +12,7 @@ interface ProgramVideoProps {
 
 const FRAME = 'w-full aspect-video rounded-lg border border-gray-800 bg-black shadow-2xl shadow-black/50';
 
-// วิดีโอตัวอย่างการใช้งานโปรแกรม — รองรับทั้ง YouTube และไฟล์วิดีโอตรง (mp4/webm/mov)
+// วิดีโอตัวอย่างการใช้งานโปรแกรม — รองรับ YouTube, Google Drive และไฟล์วิดีโอตรง (mp4/webm/mov)
 // ตั้งใจไม่ autoplay เพราะเป็นคลิปเดโมเสียงพากย์ ต้องให้ผู้ใช้กดเล่นเองถึงจะได้ยิน
 const ProgramVideo = ({ url, title, poster }: ProgramVideoProps) => {
   // ยังไม่มีลิงก์ — วางกรอบเปล่าไว้แทน ให้เลย์เอาต์นิ่งตั้งแต่วันนี้
@@ -30,6 +31,23 @@ const ProgramVideo = ({ url, title, poster }: ProgramVideoProps) => {
         <p className="text-xs text-gray-500 max-w-[18rem] leading-relaxed">
           กำลังตัดคลิปสาธิตการใช้งานอยู่ — ระหว่างนี้ดูภาพหน้าจอด้านล่างไปก่อนได้เลย
         </p>
+      </div>
+    );
+  }
+
+  // Google Drive: ลิงก์แชร์ /file/d/<id>/view ฝังตรงไม่ได้ ต้องใช้ /preview
+  // (ไฟล์ต้องตั้งแชร์ "ทุกคนที่มีลิงก์" ไม่งั้นผู้เข้าชมจะเห็นหน้าขอสิทธิ์)
+  const driveId = driveFileId(url);
+  if (driveId) {
+    return (
+      <div className={`${FRAME} overflow-hidden`}>
+        <iframe
+          src={`https://drive.google.com/file/d/${driveId}/preview`}
+          title={title}
+          className="w-full h-full"
+          allow="autoplay; fullscreen"
+          allowFullScreen
+        />
       </div>
     );
   }

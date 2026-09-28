@@ -1,4 +1,4 @@
--- 075: desktop_app_versions — บันทึกว่าแต่ละบัญชีใช้โปรแกรม desktop เวอร์ชันไหน (Triple Music auto-update)
+-- 077: desktop_app_versions — บันทึกว่าแต่ละบัญชีใช้โปรแกรม desktop เวอร์ชันไหน (Triple Music auto-update)
 --   เขียนแบบ best-effort จาก GET /api/triplemusic/version (routes/desktopVersion.ts) ทุกครั้งที่แอปเช็คอัปเดต
 --   คีย์ (user_id, app_key): บัญชีเดียวใช้ได้หลายโปรแกรม แถวละโปรแกรม · users.id เป็น INTEGER (SERIAL)
 --   idempotent · additive-only · ดูการใช้งาน: SELECT version, platform, COUNT(*) FROM desktop_app_versions
