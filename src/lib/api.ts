@@ -3673,13 +3673,23 @@ export interface ProgramVideoDto {
   title: string;
   /** ลิงก์ YouTube หรือไฟล์วิดีโอตรง (.mp4/.webm/.mov) */
   url: string;
+  /** ปุ่มลิงก์คู่มือใต้ตัวเล่น (https:// หรือ /path ในเว็บนี้) */
+  links: ProgramVideoLink[];
   is_active: boolean;
   display_order: number;
   created_at?: string;
   updated_at?: string;
 }
 
-export type ProgramVideoInput = Pick<ProgramVideoDto, 'title' | 'url' | 'is_active'>;
+export interface ProgramVideoLink {
+  label: string;
+  url: string;
+}
+
+/** ไม่ส่ง links = server เก็บของเดิมไว้ (กันแท็บที่ข้อมูลเก่าไปลบลิงก์ที่เพิ่งเพิ่ม) */
+export type ProgramVideoInput = Pick<ProgramVideoDto, 'title' | 'url' | 'is_active'> & {
+  links?: ProgramVideoLink[];
+};
 
 export interface ArticleDto {
   id: number;

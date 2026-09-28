@@ -16,7 +16,8 @@ import { isProgramSlug, parseVideoId, readProgramVideoBody, PROGRAM_VIDEOS_MAX }
 
 const router = Router();
 
-const VIDEO_COLUMNS = `id, program_slug, title, url, is_active, display_order`;
+/** links = manual buttons under the clip: [{ label, url }] (migration 076) */
+const VIDEO_COLUMNS = `id, program_slug, title, url, links, is_active, display_order`;
 
 /** Public — active clips for one program, in display order. */
 router.get('/:slug/videos', async (req, res: Response) => {
@@ -82,10 +83,10 @@ router.post('/:slug/videos', authenticate, requireAdmin, async (req: AuthRequest
 
     // New clips land at the end of the list.
     const result = await client.query(
-      `INSERT INTO program_videos (program_slug, title, url, is_active, display_order)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO program_videos (program_slug, title, url, is_active, display_order, links)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb)
        RETURNING ${VIDEO_COLUMNS}`,
-      [slug, values.title, values.url, values.is_active, stats.rows[0].next]
+      [slug, values.title, values.url, values.is_active, stats.rows[0].next, JSON.stringify(values.links ?? [])]
     );
     await client.query('COMMIT');
     console.log(`[AUDIT] program video ${result.rows[0].id} created for ${slug} by user ${req.userId}`);
@@ -109,10 +110,12 @@ router.put('/videos/:id', authenticate, requireAdmin, async (req: AuthRequest, r
   try {
     const result = await pool.query(
       `UPDATE program_videos
-          SET title = $1, url = $2, is_active = $3, updated_at = NOW()
+          SET title = $1, url = $2, is_active = $3, updated_at = NOW(),
+              -- no links in the body (older admin page / other caller) → keep the stored ones
+              links = COALESCE($5::jsonb, links)
         WHERE id = $4
         RETURNING ${VIDEO_COLUMNS}`,
-      [values.title, values.url, values.is_active, id]
+      [values.title, values.url, values.is_active, id, values.links ? JSON.stringify(values.links) : null]
     );
     if (result.rowCount === 0) return res.status(404).json({ error: 'Video not found' });
     res.json(result.rows[0]);
