@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { api, type ProgramVideoDto, type ProgramVideoInput } from '@/lib/api';
+import { api, type ProgramVideoDto, type ProgramVideoInput, type ProgramVideoLink } from '@/lib/api';
 import { parseVideoUrl } from '@/lib/parseVideoUrl';
 import ProgramVideo from './ProgramVideo';
 import { isEmbeddableVideoUrl } from './videoLinks';
@@ -29,7 +29,19 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Plus, Loader2, Film, Pencil, Trash2, Eye, EyeOff, ChevronUp, ChevronDown } from 'lucide-react';
+import {
+  Plus,
+  Loader2,
+  Film,
+  Pencil,
+  Trash2,
+  Eye,
+  EyeOff,
+  ChevronUp,
+  ChevronDown,
+  BookOpen,
+  X,
+} from 'lucide-react';
 
 /** ปกในรายการ — มีเฉพาะคลิป YouTube (Drive / .mp4 ไม่มีภาพปกให้ดึง) */
 const youtubeThumb = (url: string): string | null => {
@@ -37,7 +49,13 @@ const youtubeThumb = (url: string): string | null => {
   return type === 'youtube' && videoId ? `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg` : null;
 };
 
-const emptyForm: ProgramVideoInput = { title: '', url: '', is_active: true };
+type FormState = ProgramVideoInput & { links: ProgramVideoLink[] };
+
+const emptyForm: FormState = { title: '', url: '', is_active: true, links: [] };
+
+/** แถวใหม่ตั้งชื่อปุ่มไว้ให้เลย — ส่วนใหญ่แค่วาง URL ก็จบ */
+const NEW_LINK: ProgramVideoLink = { label: 'คู่มือการใช้งาน', url: '' };
+const LINKS_MAX = 5; // ต้องตรงกับ PROGRAM_VIDEO_LINKS_MAX ฝั่ง server
 
 interface ProgramVideosPanelProps {
   program: Program;
@@ -52,7 +70,7 @@ const ProgramVideosPanel = ({ program }: ProgramVideosPanelProps) => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ProgramVideoDto | null>(null);
-  const [form, setForm] = useState<ProgramVideoInput>(emptyForm);
+  const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [savingOrder, setSavingOrder] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<ProgramVideoDto | null>(null);
@@ -81,12 +99,27 @@ const ProgramVideosPanel = ({ program }: ProgramVideosPanelProps) => {
 
   const openEdit = (video: ProgramVideoDto) => {
     setEditing(video);
-    setForm({ title: video.title || '', url: video.url, is_active: video.is_active });
+    setForm({
+      title: video.title || '',
+      url: video.url,
+      is_active: video.is_active,
+      links: (video.links ?? []).map((l) => ({ ...l })),
+    });
     setDialogOpen(true);
   };
 
   const save = async () => {
-    const payload = { ...form, title: form.title.trim(), url: form.url.trim() };
+    const payload = {
+      ...form,
+      title: form.title.trim(),
+      url: form.url.trim(),
+      // แถวที่ว่างทั้งชื่อและ URL ตัดทิ้ง ไม่ต้องให้แอดมินมาลบเอง
+      links: form.links
+        .map((l) => ({ label: l.label.trim(), url: l.url.trim() }))
+        .filter((l) => l.label || l.url)
+        // ชื่อปุ่มตั้งไว้ให้ตั้งแต่เพิ่มแถว — ถ้ายังไม่ได้ใส่ URL ถือว่าแถวยังไม่ได้ใช้
+        .filter((l) => l.url || l.label !== NEW_LINK.label),
+    };
     if (!payload.url) {
       toast.error('ต้องใส่ลิงก์คลิป');
       return;
@@ -111,6 +144,8 @@ const ProgramVideosPanel = ({ program }: ProgramVideosPanelProps) => {
 
   const toggleActive = async (video: ProgramVideoDto) => {
     try {
+      // ไม่ส่ง links: server เก็บของเดิมไว้ — ถ้าส่งจากข้อมูลบนจอ แท็บที่เปิดค้างไว้
+      // จะเอาลิงก์ชุดเก่าไปทับลิงก์ที่เพิ่งเพิ่มจากอีกแท็บ แถวที่ตอบกลับมามีลิงก์ล่าสุดจาก DB
       const updated = await api.updateProgramVideo(video.id, {
         title: video.title,
         url: video.url,
@@ -155,6 +190,9 @@ const ProgramVideosPanel = ({ program }: ProgramVideosPanelProps) => {
 
   // คลิปที่ผู้เข้าชมเห็นก่อน = คลิปแรกที่ไม่ได้ซ่อน (ถ้าคลิปบนสุดถูกซ่อน ป้ายต้องย้ายลงมา)
   const firstActiveId = videos.find((v) => v.is_active)?.id;
+
+  const updateLink = (index: number, patch: Partial<ProgramVideoLink>) =>
+    setForm((f) => ({ ...f, links: f.links.map((l, i) => (i === index ? { ...l, ...patch } : l)) }));
 
   const previewUrl = form.url.trim();
   // ลิงก์ที่ฝังในหน้าไม่ได้ (เช่น หน้าเว็บทั่วไป) หน้าจริงจะขึ้นเป็นปุ่มเปิดลิงก์แทน — เตือนไว้ก่อนบันทึก
@@ -238,6 +276,15 @@ const ProgramVideosPanel = ({ program }: ProgramVideosPanelProps) => {
                       )}
                     </div>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground/70">{video.url}</p>
+                    {video.links?.length > 0 && (
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {video.links.map((link, i) => (
+                          <Badge key={i} variant="outline" className="gap-1 text-[10px] text-[#FFB300]">
+                            <BookOpen className="h-2.5 w-2.5" /> {link.label}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1">
@@ -318,6 +365,58 @@ const ProgramVideosPanel = ({ program }: ProgramVideosPanelProps) => {
               <p className="mt-1 text-[11px] text-muted-foreground">
                 โชว์ในรายการคลิปใต้ตัวเล่น (เห็นเมื่อมีมากกว่า 1 คลิป)
               </p>
+            </div>
+
+            {/* ลิงก์คู่มือ — ขึ้นเป็นปุ่มใต้ตัวเล่นตอนคลิปนี้กำลังเล่น */}
+            <div className="border-t border-gray-800 pt-4">
+              <div className="flex items-center justify-between">
+                <Label>ลิงก์คู่มือ</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 gap-1 text-xs"
+                  disabled={form.links.length >= LINKS_MAX}
+                  onClick={() => setForm((f) => ({ ...f, links: [...f.links, { ...NEW_LINK }] }))}
+                >
+                  <Plus className="h-3 w-3" /> เพิ่มลิงก์คู่มือ
+                </Button>
+              </div>
+              {form.links.length === 0 ? (
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  ยังไม่มี — เช่น ลิงก์ Google Docs / PDF คู่มือ หรือหน้าในเว็บอย่าง /guide/... (กดแล้วเปิดแท็บใหม่)
+                </p>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {form.links.map((link, i) => (
+                    <div key={i} className="flex gap-2">
+                      <Input
+                        value={link.label}
+                        onChange={(e) => updateLink(i, { label: e.target.value })}
+                        placeholder="ชื่อปุ่ม"
+                        aria-label={`ชื่อปุ่มลิงก์คู่มือ ${i + 1}`}
+                        className="w-36 shrink-0"
+                      />
+                      <Input
+                        value={link.url}
+                        onChange={(e) => updateLink(i, { url: e.target.value })}
+                        placeholder="https://..."
+                        aria-label={`URL ลิงก์คู่มือ ${i + 1}`}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0"
+                        onClick={() => setForm((f) => ({ ...f, links: f.links.filter((_, j) => j !== i) }))}
+                        aria-label={`ลบลิงก์คู่มือ ${i + 1}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <label className="flex cursor-pointer items-center gap-2">

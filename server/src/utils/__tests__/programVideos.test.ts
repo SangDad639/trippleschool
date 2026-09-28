@@ -6,6 +6,7 @@ import {
   readProgramVideoBody,
   PROGRAM_VIDEO_URL_MAX,
   PROGRAM_VIDEO_TITLE_MAX,
+  PROGRAM_VIDEO_LINKS_MAX,
 } from '../programVideos.js';
 
 test('accepts the slugs used in programsData.ts', () => {
@@ -67,6 +68,60 @@ test('parseVideoId accepts only ids that fit the SERIAL (int4) column', () => {
   for (const bad of ['0', '-1', '1.5', 'abc', '', '99999999999', 2147483648, null, undefined, true]) {
     assert.equal(parseVideoId(bad), null, `expected ${String(bad)} to be rejected`);
   }
+});
+
+const CLIP = 'https://youtu.be/abcdefghijk';
+
+test('links are undefined when the field is absent — PUT keeps what is stored', () => {
+  assert.equal(readProgramVideoBody({ url: CLIP }).values?.links, undefined);
+});
+
+test('an explicit empty list clears the links', () => {
+  assert.deepEqual(readProgramVideoBody({ url: CLIP, links: [] }).values?.links, []);
+});
+
+test('manual links are trimmed and kept in order', () => {
+  const { values } = readProgramVideoBody({
+    url: CLIP,
+    links: [
+      { label: '  คู่มือการติดตั้ง ', url: ' https://docs.google.com/document/d/abc ' },
+      { label: 'หน้าคู่มือ', url: '/guide/triple-voice' },
+    ],
+  });
+  assert.deepEqual(values?.links, [
+    { label: 'คู่มือการติดตั้ง', url: 'https://docs.google.com/document/d/abc' },
+    { label: 'หน้าคู่มือ', url: '/guide/triple-voice' },
+  ]);
+});
+
+test('a link without a label gets the default manual label', () => {
+  assert.deepEqual(readProgramVideoBody({ url: CLIP, links: [{ label: ' ', url: 'https://x.com/m.pdf' }] }).values?.links, [
+    { label: 'คู่มือการใช้งาน', url: 'https://x.com/m.pdf' },
+  ]);
+});
+
+test('fully empty link rows are dropped, not rejected', () => {
+  assert.deepEqual(readProgramVideoBody({ url: CLIP, links: [{ label: '', url: '' }, {}] }).values?.links, []);
+});
+
+test('link urls must be http(s) or a site path — they end up in an href', () => {
+  for (const bad of ['javascript:alert(1)', '//evil.example/x', 'guide/x', 'ftp://x/y.pdf', 'https://x.com/\u0000']) {
+    assert.match(readProgramVideoBody({ url: CLIP, links: [{ label: 'x', url: bad }] }).error ?? '', /ลิงก์คู่มือ/, bad);
+  }
+});
+
+test('a label with no url is rejected instead of silently vanishing', () => {
+  assert.match(readProgramVideoBody({ url: CLIP, links: [{ label: 'คู่มือ', url: '' }] }).error ?? '', /ลิงก์คู่มือ/);
+});
+
+test('at most PROGRAM_VIDEO_LINKS_MAX links per clip', () => {
+  const many = Array.from({ length: PROGRAM_VIDEO_LINKS_MAX + 1 }, (_, i) => ({ label: `l${i}`, url: `https://x.com/${i}` }));
+  assert.match(readProgramVideoBody({ url: CLIP, links: many }).error ?? '', /สูงสุด/);
+  assert.equal(readProgramVideoBody({ url: CLIP, links: many.slice(1) }).values?.links?.length, PROGRAM_VIDEO_LINKS_MAX);
+});
+
+test('links that are not an array are rejected', () => {
+  assert.match(readProgramVideoBody({ url: CLIP, links: 'https://x.com' }).error ?? '', /ลิงก์คู่มือ/);
 });
 
 test('non-string fields are treated as empty instead of throwing', () => {
