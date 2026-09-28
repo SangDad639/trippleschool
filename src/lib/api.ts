@@ -3064,6 +3064,30 @@ class ApiClient {
     return this.request('/api/guide/clips/reorder', { method: 'POST', body: JSON.stringify({ ids }) });
   }
 
+  /** Public — active tutorial clips of one program (/programs/:slug), in display order. */
+  async getProgramVideos(slug: string): Promise<ProgramVideoDto[]> {
+    return this.request(`/api/programs/${encodeURIComponent(slug)}/videos`);
+  }
+  async getAdminProgramVideos(slug: string): Promise<ProgramVideoDto[]> {
+    return this.request(`/api/programs/${encodeURIComponent(slug)}/videos/admin`);
+  }
+  async createProgramVideo(slug: string, data: ProgramVideoInput): Promise<ProgramVideoDto> {
+    return this.request(`/api/programs/${encodeURIComponent(slug)}/videos`, { method: 'POST', body: JSON.stringify(data) });
+  }
+  async updateProgramVideo(id: number, data: ProgramVideoInput): Promise<ProgramVideoDto> {
+    return this.request(`/api/programs/videos/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+  }
+  async deleteProgramVideo(id: number): Promise<{ ok: boolean }> {
+    return this.request(`/api/programs/videos/${id}`, { method: 'DELETE' });
+  }
+  /** Persist the clip order of one program — ids in the order they should appear. */
+  async reorderProgramVideos(slug: string, ids: number[]): Promise<{ ok: boolean }> {
+    return this.request(`/api/programs/${encodeURIComponent(slug)}/videos/reorder`, {
+      method: 'POST',
+      body: JSON.stringify({ ids }),
+    });
+  }
+
   /** Guide admins — full admins only; a guide admin cannot appoint anyone. */
   async getGuideAdmins(): Promise<GuideAdminDto[]> {
     return this.request('/api/guide/admins');
@@ -3641,6 +3665,21 @@ export interface GuideClipDto {
   created_at?: string;
   updated_at?: string;
 }
+
+/** คลิปคู่มือของโปรแกรม — ผูกกับ slug ใน programsData.ts */
+export interface ProgramVideoDto {
+  id: number;
+  program_slug: string;
+  title: string;
+  /** ลิงก์ YouTube หรือไฟล์วิดีโอตรง (.mp4/.webm/.mov) */
+  url: string;
+  is_active: boolean;
+  display_order: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type ProgramVideoInput = Pick<ProgramVideoDto, 'title' | 'url' | 'is_active'>;
 
 export interface ArticleDto {
   id: number;
