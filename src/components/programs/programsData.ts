@@ -67,10 +67,12 @@ const TRIPLE_MUSIC_MAC_URL =
   import.meta.env.VITE_TRIPLE_MUSIC_MAC_URL ||
   'https://www.mediafire.com/file/yqutomc45ggmnl3/TripleMusic-2.2.0-macOS-arm64.dmg/file';
 
-// ลิงก์ดาวน์โหลด Triple Idol — ยังไม่มีทั้งคู่ (user จะใส่ทีหลัง: Windows = ไฟล์ .exe จาก GitHub Releases ของแอป,
-// macOS = ยังไม่มี build) วางตรงนี้หรือตั้ง VITE_TRIPLE_IDOL_WIN_URL / VITE_TRIPLE_IDOL_MAC_URL ตอน build
-// ว่าง = ปุ่มกดไม่ได้ + โน้ตใต้ปุ่ม (โน้ตหายเองเมื่อมีลิงก์ครบ)
-const TRIPLE_IDOL_WIN_URL = import.meta.env.VITE_TRIPLE_IDOL_WIN_URL || '';
+// ลิงก์ดาวน์โหลด Triple Idol — Windows = ไฟล์ .exe บน GitHub Releases ของแอป (repo สาธารณะ R0llky/Triple-Idol-releases
+// ที่ตัวอัปเดตในแอปอ่านอยู่แล้ว) ชื่อไฟล์มีเลขรุ่น → ออกรุ่นใหม่ให้แก้ลิงก์นี้ + `version` ของการ์ดพร้อมกัน
+// macOS = ยังไม่มี build · ว่าง = ปุ่มกดไม่ได้ + โน้ตใต้ปุ่ม (โน้ตหายเองเมื่อมีลิงก์ครบ)
+const TRIPLE_IDOL_WIN_URL =
+  import.meta.env.VITE_TRIPLE_IDOL_WIN_URL ||
+  'https://github.com/R0llky/Triple-Idol-releases/releases/download/v1.0.8/Triple-Idol-1.0.8.exe';
 const TRIPLE_IDOL_MAC_URL = import.meta.env.VITE_TRIPLE_IDOL_MAC_URL || '';
 
 export const PROGRAMS: Program[] = [
