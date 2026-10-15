@@ -67,12 +67,12 @@ const TRIPLE_MUSIC_MAC_URL =
   import.meta.env.VITE_TRIPLE_MUSIC_MAC_URL ||
   'https://www.mediafire.com/file/yqutomc45ggmnl3/TripleMusic-2.2.0-macOS-arm64.dmg/file';
 
-// ลิงก์ดาวน์โหลด Triple Idol — Windows = ไฟล์ .exe บน GitHub Releases ของแอป (repo สาธารณะ R0llky/Triple-Idol-releases
-// ที่ตัวอัปเดตในแอปอ่านอยู่แล้ว) ชื่อไฟล์มีเลขรุ่น → ออกรุ่นใหม่ให้แก้ลิงก์นี้ + `version` ของการ์ดพร้อมกัน
-// macOS = ยังไม่มี build · ว่าง = ปุ่มกดไม่ได้ + โน้ตใต้ปุ่ม (โน้ตหายเองเมื่อมีลิงก์ครบ)
-const TRIPLE_IDOL_WIN_URL =
-  import.meta.env.VITE_TRIPLE_IDOL_WIN_URL ||
-  'https://github.com/R0llky/Triple-Idol-releases/releases/download/v1.0.8/Triple-Idol-1.0.8.exe';
+// ลิงก์ดาวน์โหลด Triple Idol — ตั้งผ่าน env บน Railway service frontend แล้ว redeploy (ค่า VITE_* ฝังตอน build):
+//   VITE_TRIPLE_IDOL_WIN_URL = ไฟล์ .exe บน GitHub Releases ของแอป (R0llky/Triple-Idol-releases · ชื่อไฟล์มีเลขรุ่น
+//                              → ออกรุ่นใหม่แก้ env + `version` ของการ์ด)
+//   VITE_TRIPLE_IDOL_MAC_URL = ไฟล์ .dmg เมื่อมี build macOS
+// ไม่ตั้ง = ปุ่มนั้นกดไม่ได้ + โน้ตใต้ปุ่มบอกว่าอันไหนยังไม่มา (โน้ตหายเองเมื่อมีครบ) — ตั้งใจไม่ hardcode ที่นี่
+const TRIPLE_IDOL_WIN_URL = import.meta.env.VITE_TRIPLE_IDOL_WIN_URL || '';
 const TRIPLE_IDOL_MAC_URL = import.meta.env.VITE_TRIPLE_IDOL_MAC_URL || '';
 
 export const PROGRAMS: Program[] = [
