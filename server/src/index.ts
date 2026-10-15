@@ -24,6 +24,7 @@ import promosRoutes from './routes/promos.js';
 import adminCodesRoutes from './routes/adminCodes.js';
 import programsRoutes from './routes/programs.js';
 import triplemusicRoutes from './routes/triplemusic.js';
+import tripleidolRoutes from './routes/tripleidol.js';
 import pool from './db.js';
 import { startSubscriptionNotificationJob } from './jobs/subscriptionNotificationJob.js';
 import { runMigrations } from './migrations/runner.js';
@@ -134,6 +135,7 @@ app.use('/api/promos', promosRoutes);
 app.use('/api/admin-codes', adminCodesRoutes);
 app.use('/api/programs', programsRoutes);
 app.use('/api/triplemusic', triplemusicRoutes); // desktop auto-update feed (yue-lab/docs/auto-update.md)
+app.use('/api/tripleidol', tripleidolRoutes); // desktop login line (บัญชี school + ผูกเครื่อง) — routes/tripleidol.ts
 
 // Initialize database tables
 async function initializeDatabase() {

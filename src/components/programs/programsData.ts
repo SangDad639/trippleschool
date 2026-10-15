@@ -9,6 +9,10 @@ import {
   Cpu,
   Library,
   Infinity as InfinityIcon,
+  Sparkles,
+  CalendarClock,
+  Share2,
+  Users,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -62,6 +66,12 @@ export type Program = {
 const TRIPLE_MUSIC_MAC_URL =
   import.meta.env.VITE_TRIPLE_MUSIC_MAC_URL ||
   'https://www.mediafire.com/file/yqutomc45ggmnl3/TripleMusic-2.2.0-macOS-arm64.dmg/file';
+
+// ลิงก์ดาวน์โหลด Triple Idol — ยังไม่มีทั้งคู่ (user จะใส่ทีหลัง: Windows = ไฟล์ .exe จาก GitHub Releases ของแอป,
+// macOS = ยังไม่มี build) วางตรงนี้หรือตั้ง VITE_TRIPLE_IDOL_WIN_URL / VITE_TRIPLE_IDOL_MAC_URL ตอน build
+// ว่าง = ปุ่มกดไม่ได้ + โน้ตใต้ปุ่ม (โน้ตหายเองเมื่อมีลิงก์ครบ)
+const TRIPLE_IDOL_WIN_URL = import.meta.env.VITE_TRIPLE_IDOL_WIN_URL || '';
+const TRIPLE_IDOL_MAC_URL = import.meta.env.VITE_TRIPLE_IDOL_MAC_URL || '';
 
 export const PROGRAMS: Program[] = [
   {
@@ -171,6 +181,71 @@ export const PROGRAMS: Program[] = [
         platform: 'macOS',
         icon: Apple,
         url: TRIPLE_MUSIC_MAC_URL,
+      },
+    ],
+  },
+  {
+    // Triple Idol (repo Triple-Idol) — แอป Windows สร้าง "ไอดอล AI" แล้วโพสต์ลง Facebook / Instagram / TikTok ตามตารางเอง
+    // ล็อกอินด้วยบัญชี Triple School: ทุกบัญชีใช้ได้ 1 การ์ด · สมาชิกใช้ได้ 100 การ์ด
+    // (server/src/services/tripleidolAccess.ts) · เพิ่ม 15 ต.ค. 2026 · ลิงก์ดาวน์โหลดยังว่าง (ปุ่มกดไม่ได้จนกว่าจะใส่)
+    slug: 'triple-idol',
+    name: 'Triple Idol',
+    tagline: 'ไอดอล AI ที่โพสต์คอนเทนต์ให้คุณทุกวัน',
+    version: 'v1.0.7',
+    logo: '/programs/triple-idol-mark.png',
+    thumbnail: '/programs/triple-idol-cover.png',
+    // คลิปคู่มือจัดการที่ /admin/programs — env var นี้เป็นแค่ลิงก์สำรอง
+    videoUrl: import.meta.env.VITE_TRIPLE_IDOL_VIDEO_URL || '',
+    screenshots: [],
+    summary:
+      'อัปโหลดรูปไอดอลหนึ่งรูป ตั้งวัน-เวลาโพสต์ แล้วปล่อยให้แอปทำที่เหลือ — คิดคอนเซปต์ เขียนแคปชัน ' +
+      'เจนรูปหรือคลิปใหม่ให้ทุกโพสต์ และโพสต์ลง Facebook, Instagram, TikTok ตามตารางโดยอัตโนมัติ ' +
+      'ประมวลผลบนเครื่องของคุณเอง หรือใช้ GPU บน Runpod เมื่อเครื่องไม่แรงพอ',
+    features: [
+      { icon: Sparkles, text: 'สร้างไอดอล AI จากรูปเดียว — ระบบคิดคอนเซปต์ เขียนแคปชัน และเจนรูป/คลิปใหม่ให้ทุกโพสต์' },
+      { icon: CalendarClock, text: 'ตั้งวันและเวลาโพสต์ต่อการ์ด แล้วปล่อยให้แอปโพสต์เองตามตาราง ไม่ต้องเฝ้าหน้าจอ' },
+      { icon: Share2, text: 'โพสต์ลง Facebook (โปรไฟล์ / เพจ / แชร์เข้ากลุ่ม) Instagram และ TikTok จากบัญชีที่เชื่อมไว้ในแอป' },
+      {
+        icon: Users,
+        text:
+          'ล็อกอินด้วยบัญชี Triple School — ทุกบัญชีใช้ได้ 1 การ์ด เชื่อม Facebook / Instagram / TikTok อย่างละ 1 บัญชี · ' +
+          'สมาชิก Triple School ใช้ได้สูงสุด 100 การ์ด ไม่จำกัดบัญชี ปลดล็อกทันทีหลังสมัครสมาชิก',
+      },
+    ],
+    highlights: [
+      { label: 'ฟรี 1 การ์ด', sub: 'ทุกบัญชี Triple School' },
+      { label: 'สมาชิก 100 การ์ด', sub: 'ปลดล็อกทันทีหลังสมัคร' },
+      { label: '3 แพลตฟอร์ม', sub: 'Facebook · Instagram · TikTok' },
+      { label: 'โพสต์อัตโนมัติ', sub: 'ตั้งเวลาแล้วปล่อยให้แอปทำ' },
+    ],
+    requirements: [
+      'Windows 10 / 11 แบบ 64-bit · ไฟล์เดียว ไม่ต้องติดตั้ง Python',
+      'macOS: เร็วๆ นี้',
+      'Google Chrome สำหรับล็อกอินบัญชีโซเชียล (แอปเปิดหน้าต่างให้เอง)',
+      'สร้างรูปบนเครื่อง: การ์ดจอ NVIDIA (แอปติดตั้ง Ollama + ComfyUI ให้ในคลิกเดียว) · ไม่มีการ์ดจอ: ใช้ GPU บน Runpod ผ่านแอป (ค่าเช่าคิดกับ Runpod แยกต่างหาก)',
+    ],
+    downloadNote:
+      TRIPLE_IDOL_WIN_URL && TRIPLE_IDOL_MAC_URL
+        ? undefined
+        : !TRIPLE_IDOL_WIN_URL && !TRIPLE_IDOL_MAC_URL
+          ? 'ลิงก์ดาวน์โหลดจะเปิดเร็ว ๆ นี้'
+          : TRIPLE_IDOL_WIN_URL
+            ? 'ตอนนี้ดาวน์โหลดได้เฉพาะ Windows · macOS เร็วๆ นี้'
+            : 'ตอนนี้ดาวน์โหลดได้เฉพาะ macOS · Windows เร็วๆ นี้',
+    downloads: [
+      {
+        key: 'windows',
+        label: 'ดาวน์โหลด Windows',
+        platform: 'Windows',
+        icon: Monitor,
+        url: TRIPLE_IDOL_WIN_URL,
+      },
+      {
+        key: 'macos',
+        label: 'ดาวน์โหลด macOS',
+        platform: 'macOS',
+        icon: Apple,
+        url: TRIPLE_IDOL_MAC_URL,
       },
     ],
   },

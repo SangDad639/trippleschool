@@ -11,7 +11,8 @@
     "migrate": "node dist/migrations/runner.js",
     "migrate:dev": "tsx src/migrations/runner.ts",
     "test:dryrun": "tsx --test src/services/__tests__/storyAgent.dryrun.test.ts",
-    "test:desktop": "tsx --test src/routes/__tests__/desktopVersion.test.ts"
+    "test:desktop": "tsx --test src/routes/__tests__/desktopVersion.test.ts",
+    "test:tripleidol": "tsx --test src/routes/__tests__/tripleidol.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
