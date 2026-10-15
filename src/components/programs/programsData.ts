@@ -187,11 +187,11 @@ export const PROGRAMS: Program[] = [
   {
     // Triple Idol (repo Triple-Idol) — แอป Windows สร้าง "ไอดอล AI" แล้วโพสต์ลง Facebook / Instagram / TikTok ตามตารางเอง
     // ล็อกอินด้วยบัญชี Triple School: ทุกบัญชีใช้ได้ 1 การ์ด · สมาชิกใช้ได้ 100 การ์ด
-    // (server/src/services/tripleidolAccess.ts) · เพิ่ม 15 ต.ค. 2026 · ลิงก์ดาวน์โหลดยังว่าง (ปุ่มกดไม่ได้จนกว่าจะใส่)
+    // (server/src/services/tripleidolAccess.ts) · เพิ่ม 15 ต.ค. 2026
     slug: 'triple-idol',
     name: 'Triple Idol',
     tagline: 'ไอดอล AI ที่โพสต์คอนเทนต์ให้คุณทุกวัน',
-    version: 'v1.0.7',
+    version: 'v1.0.8',
     logo: '/programs/triple-idol-mark.png',
     thumbnail: '/programs/triple-idol-cover.png',
     // คลิปคู่มือจัดการที่ /admin/programs — env var นี้เป็นแค่ลิงก์สำรอง
