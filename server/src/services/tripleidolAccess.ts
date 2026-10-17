@@ -7,6 +7,7 @@
 //   ตาราง desktop_app_access (migration 078) เก็บเครื่องที่ถือเซสชัน + card_limit_override ของแอดมิน
 //
 //   ฟังก์ชันที่รับ `db` ทดสอบได้โดยไม่ต่อ DB (routes/__tests__/tripleidol.test.ts ยัด DB ปลอม)
+import crypto from 'crypto';
 import type { Pool } from 'pg';
 import { getMembership } from './membership.js';
 
@@ -142,6 +143,46 @@ export async function releaseIdolDevice(db: Db, userId: number, deviceId: string
 /** เครื่องที่ถามมาไม่ใช่เครื่องที่ถือเซสชัน — เฉพาะเมื่อรู้ทั้งสองฝั่ง (คำขอที่ไม่ส่ง header ไม่ถูกเตะ) */
 export function deviceMismatch(bound: string | null | undefined, presented: string | undefined): boolean {
   return !!bound && !!presented && bound !== presented;
+}
+
+/**
+ * บัญชีจาก Google ID token (ปุ่ม "เข้าสู่ระบบด้วย Google" ในแอป): อีเมลมีอยู่แล้ว → ผูก google_id (ถ้ายังไม่มี)
+ * + approve · ยังไม่มี → สร้างบัญชีแบบเดียวกับ POST /api/auth/google ของเว็บ (routes/auth.ts: เครดิตเริ่มต้นจาก
+ * system_settings, commission จาก tier แรก, refcode สุ่ม 8 ตัว, ไม่มีรหัสผ่าน) — คืน users.id
+ */
+export async function ensureGoogleUser(db: Db, email: string, googleId: string): Promise<number> {
+  const found = await db.query('SELECT id FROM users WHERE email = $1', [email]);
+  if (found.rows[0]) {
+    await db.query(
+      'UPDATE users SET google_id = COALESCE(google_id, $1), is_approved = true WHERE id = $2',
+      [googleId, found.rows[0].id]
+    );
+    return Number(found.rows[0].id);
+  }
+  const settings = await db.query(
+    `SELECT setting_value FROM system_settings WHERE setting_key = 'default_credits'`
+  );
+  const parsed = settings.rows[0] ? parseInt(settings.rows[0].setting_value, 10) : 100;
+  const credits = Number.isFinite(parsed) ? parsed : 100;
+  const tier = await db.query(
+    `SELECT commission_percent FROM affiliate_tiers WHERE is_active = true ORDER BY display_order ASC, id ASC LIMIT 1`
+  );
+  let commission: number;
+  if (tier.rows[0]?.commission_percent != null) {
+    commission = parseFloat(tier.rows[0].commission_percent);
+  } else {
+    const legacy = await db.query(`SELECT tier1_percent FROM affiliate_settings WHERE id = 1`);
+    commission = parseFloat(legacy.rows[0]?.tier1_percent) || 20;
+  }
+  const refcode = crypto.randomUUID().slice(0, 8).toLowerCase();
+  const inserted = await db.query(
+    `INSERT INTO users (email, password_hash, google_id, credits, is_approved, refcode, referrer_id,
+                        commission_rate, commission_percent)
+     VALUES ($1, NULL, $2, $3, true, $4, NULL, $5, $5)
+     RETURNING id`,
+    [email, googleId, credits, refcode, commission]
+  );
+  return Number(inserted.rows[0].id);
 }
 
 export async function buildIdolUser(db: Db, row: IdolUserRow, access?: IdolAccessRow | null) {

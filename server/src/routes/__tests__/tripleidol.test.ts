@@ -51,6 +51,15 @@ function fakeDb(state: State) {
       if (/^\s*INSERT INTO desktop_app_access/.test(sql)) return { rows: [] };
       if (/^\s*UPDATE desktop_app_access/.test(sql)) return { rows: [] };
       if (/^\s*UPDATE users SET is_approved/.test(sql)) return { rows: [] };
+      // services/tripleidolAccess.ensureGoogleUser
+      if (/^\s*UPDATE users SET google_id/.test(sql)) return { rows: [] };
+      if (sql.includes('FROM system_settings') || sql.includes('FROM affiliate_tiers') || sql.includes('FROM affiliate_settings')) {
+        return { rows: [] };
+      }
+      if (/^\s*INSERT INTO users/.test(sql)) {
+        state.user = { ...user(), id: 99, email: params[0], password_hash: null, google_id: params[1] };
+        return { rows: [{ id: 99 }] };
+      }
       throw new Error('unexpected sql: ' + sql.slice(0, 60));
     },
   };
@@ -262,14 +271,83 @@ test('logout: ปล่อยเครื่องด้วย device ที่�
   assert.match(rel!.sql, /device_id = \$3/);
 });
 
+// ---- Google (ปุ่มในแอป: แอปส่ง ID token มา) ---------------------------------------------------
+
+const GOOGLE_OK = { verifyGoogle: async (credential: string) => {
+  if (credential !== 'good-id-token') throw new Error('bad token');
+  return { email: 'aet@example.com', googleId: 'sub-1' };
+} };
+
+test('google: token ปลอม/หมดอายุ → 401 GOOGLE_INVALID · ไม่ส่งมา → 400', async () => {
+  const { db, calls } = fakeDb({ user: user() });
+  const h = idolHandlers(db, GOOGLE_OK);
+  const orig = console.warn;
+  console.warn = () => {};
+  try {
+    const bad = res();
+    await h.google(req({ credential: 'forged', device_id: 'dev-1' }), bad.res);
+    assert.equal(bad.state.statusCode, 401);
+    assert.equal((bad.state.body as { code: string }).code, 'GOOGLE_INVALID');
+  } finally {
+    console.warn = orig;
+  }
+  const none = res();
+  await h.google(req({ device_id: 'dev-1' }), none.res);
+  assert.equal(none.state.statusCode, 400);
+  assert.equal(calls.filter((c) => /INSERT INTO users/.test(c.sql)).length, 0, 'ต้องไม่สร้างบัญชีจาก token ที่ไม่ผ่าน');
+});
+
+test('google: อีเมลมีบัญชีอยู่แล้ว (แม้สมัครด้วยรหัสผ่าน) → ล็อกอินเข้าบัญชีนั้น ผูก google_id + ผูกเครื่อง', async () => {
+  const { db, calls } = fakeDb({ user: user(), access: null });
+  const r = res();
+  await idolHandlers(db, GOOGLE_OK).google(req({ credential: 'good-id-token', device_id: 'dev-G' }), r.res);
+  assert.equal(r.state.statusCode, 200);
+  const body = r.state.body as { token: string; user: { id: number; appAllowed: boolean; permissions: { tier: string } } };
+  assert.equal((jwt.verify(body.token, 'test-secret') as { userId: number }).userId, 42);
+  assert.equal(body.user.id, 42);
+  assert.equal(body.user.appAllowed, true);
+  assert.equal(body.user.permissions.tier, 'free');
+  assert.ok(calls.some((c) => /UPDATE users SET google_id/.test(c.sql) && c.params[0] === 'sub-1' && c.params[1] === 42));
+  assert.ok(calls.some((c) => /INSERT INTO users/.test(c.sql)) === false, 'ไม่สร้างซ้ำ');
+  const bind = calls.find((c) => /INSERT INTO desktop_app_access/.test(c.sql));
+  assert.deepEqual(bind!.params, [42, 'tripleidol', 'dev-G']);
+});
+
+test('google: ยังไม่มีบัญชี → สร้างให้แบบเดียวกับเว็บ (ไม่มีรหัสผ่าน, approve) แล้วล็อกอิน', async () => {
+  const { db, calls } = fakeDb({ user: undefined, access: null });
+  const r = res();
+  await idolHandlers(db, GOOGLE_OK).google(req({ credential: 'good-id-token', device_id: 'dev-G' }), r.res);
+  assert.equal(r.state.statusCode, 200);
+  const body = r.state.body as { token: string; user: { id: number; email: string; permissions: { cardLimit: number } } };
+  assert.equal(body.user.id, 99);
+  assert.equal(body.user.email, 'aet@example.com');
+  assert.equal(body.user.permissions.cardLimit, 1);
+  const ins = calls.find((c) => /INSERT INTO users/.test(c.sql));
+  assert.ok(ins);
+  assert.equal(ins!.params[0], 'aet@example.com');
+  assert.equal(ins!.params[1], 'sub-1');
+  assert.match(ins!.sql, /password_hash, google_id/);
+  assert.match(ins!.sql, /NULL, \$2/, 'บัญชี Google ไม่มีรหัสผ่าน');
+  assert.equal((jwt.verify(body.token, 'test-secret') as { userId: number }).userId, 99);
+});
+
+test('login ด้วยรหัสผ่านบนบัญชี Google → GOOGLE_ONLY ชี้ไปปุ่ม Google', async () => {
+  const { db } = fakeDb({ user: user({ password_hash: null }) });
+  const r = res();
+  await idolHandlers(db).login(req({ email: 'aet@example.com', password: 'x' }), r.res);
+  assert.equal((r.state.body as { code: string; error: string }).code, 'GOOGLE_ONLY');
+  assert.match((r.state.body as { error: string }).error, /Google/);
+});
+
 test('ทุก handler ตอบ 500 แทนที่จะพัง เมื่อ DB ล้ม', async () => {
   const db = { async query() { throw new Error('db down'); } };
-  const h = idolHandlers(db);
+  const h = idolHandlers(db, GOOGLE_OK);
   const orig = console.error;
   console.error = () => {};
   try {
     for (const run of [
       () => h.login(req({ email: 'aet@example.com', password: 'x' }), res().res),
+      () => h.google(req({ credential: 'good-id-token' }), res().res),
       () => h.me(req({}, {}, 42), res().res),
       () => h.refresh(req({}, {}, 42), res().res),
       () => h.logout(req({}, {}, 42), res().res),
