@@ -13,6 +13,9 @@ import {
   CalendarClock,
   Share2,
   Users,
+  Image as ImageIcon,
+  Pencil,
+  Lock,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -57,8 +60,26 @@ export type Program = {
   downloads: ProgramDownload[];
   /** กล่อง "เครื่องที่ใช้ได้" ในหน้ารายละเอียด (ไม่ใส่ = ไม่แสดง) */
   requirements?: string[];
-  /** หมายเหตุใต้ปุ่มดาวน์โหลด เช่น มีเฉพาะ Windows */
-  downloadNote?: string;
+  /** หมายเหตุใต้ปุ่มดาวน์โหลด เช่น มีเฉพาะ Windows — ใส่เป็น array ได้ถ้าต้องการหลายบรรทัด */
+  downloadNote?: string | string[];
+  /**
+   * ใครโหลดได้: ไม่ใส่ = 'member' (แจกเฉพาะสมาชิก ป้าย 👑) · 'free' = ทุกคนโหลดได้ (ป้าย 🎁 แจกฟรี)
+   * มีผลกับป้ายบนการ์ด/หน้ารายละเอียด บรรทัดรอง (เติม "ฟรี") และแถบล่างเริ่มต้น
+   */
+  access?: 'member' | 'free';
+  /**
+   * แถบล่างของหน้ารายละเอียด: ไม่ใส่ = member→'member' (ชวนสมัครสมาชิก → /pricing), free→'course'
+   * 'course' = ชวนดูคอร์ส (ข้อความ/ปุ่มจาก footerText/footerCta) · 'specs' = ชวนเช็กสเปก (ปุ่มเลื่อนไปส่วน #specs)
+   */
+  footer?: 'member' | 'course' | 'specs';
+  footerText?: string;
+  footerCta?: { label: string; to: string };
+  /** ส่วน "สเปกเครื่องที่รองรับ" ใต้การ์ด 4 ใบ (warn = แถว "ไม่รองรับ" ขึ้นสีเตือน) */
+  specs?: { label: string; value: string; warn?: boolean }[];
+  /** ส่วน "วิธีติดตั้ง" (เรียงลำดับ) */
+  installSteps?: string[];
+  /** ส่วน "ข้อควรรู้" */
+  notes?: string[];
 };
 
 // ลิงก์ macOS ของ Triple Music — MediaFire ที่ user ให้ (26 ก.ย. 2026) เป็นหน้าเว็บ ไม่ใช่ไฟล์ตรง → เปิดแท็บใหม่
@@ -74,6 +95,14 @@ const TRIPLE_MUSIC_MAC_URL =
 // ไม่ตั้ง = ปุ่มนั้นกดไม่ได้ + โน้ตใต้ปุ่มบอกว่าอันไหนยังไม่มา (โน้ตหายเองเมื่อมีครบ) — ตั้งใจไม่ hardcode ที่นี่
 const TRIPLE_IDOL_WIN_URL = import.meta.env.VITE_TRIPLE_IDOL_WIN_URL || '';
 const TRIPLE_IDOL_MAC_URL = import.meta.env.VITE_TRIPLE_IDOL_MAC_URL || '';
+
+// ลิงก์ดาวน์โหลด Klein Studio — ตั้งผ่าน env บน Railway service frontend แล้ว redeploy (ค่า VITE_* ฝังตอน build):
+//   VITE_KLEIN_STUDIO_WIN_URL = โฟลเดอร์ Google Drive / ไฟล์ .exe (ตั้งใจไม่ hardcode ที่นี่ — เปลี่ยนลิงก์ได้โดยไม่แตะโค้ด)
+//   VITE_KLEIN_STUDIO_MAC_URL = ไฟล์ .dmg เมื่อมี build macOS → ตั้งค่าแล้วปุ่ม macOS + ชิปบนการ์ดโผล่เอง (ไม่ตั้ง = ไม่แสดงปุ่ม
+//                               เพราะสเปกปัจจุบันระบุว่าไม่รองรับ macOS — อย่าลืมแก้ข้อความ "ไม่รองรับ" ในสเปกด้วย)
+// Windows ไม่ตั้ง = ปุ่มกดไม่ได้ + โน้ตใต้ปุ่มบอกว่าลิงก์จะเปิดเร็ว ๆ นี้ (โน้ตหายเองเมื่อตั้งค่า)
+const KLEIN_STUDIO_WIN_URL = import.meta.env.VITE_KLEIN_STUDIO_WIN_URL || '';
+const KLEIN_STUDIO_MAC_URL = import.meta.env.VITE_KLEIN_STUDIO_MAC_URL || '';
 
 export const PROGRAMS: Program[] = [
   {
@@ -249,6 +278,80 @@ export const PROGRAMS: Program[] = [
         icon: Apple,
         url: TRIPLE_IDOL_MAC_URL,
       },
+    ],
+  },
+  {
+    // Klein Studio — แอป Windows สร้าง/แก้ภาพด้วย FLUX.3 Klein บนการ์ดจอของผู้ใช้เอง
+    // โปรแกรม "แจกฟรี" ตัวแรกในคลัง (access: 'free') · เพิ่ม 21 ต.ค. 2026
+    // โลโก้/ภาพหน้าจอ/ปก ตอนนี้เป็นภาพจำลองที่วาดไว้ — มีไฟล์จริงเมื่อไหร่แทนที่ไฟล์ใน public/programs/ ได้เลย
+    slug: 'klein-studio',
+    name: 'Klein Studio',
+    tagline: 'โปรแกรมสร้างและแก้ภาพด้วย AI บนเครื่องของคุณ',
+    version: 'v0.1.0',
+    access: 'free',
+    footer: 'course',
+    footerText: '💡 อยากเขียน Prompt ให้ได้ภาพสวยแบบมือโปร? ดูคอร์สสอนใช้ AI ทำคอนเทนต์ได้ที่ Triple School',
+    footerCta: { label: 'ดูคอร์ส', to: '/courses' },
+    logo: '/programs/klein-studio-mark.svg',
+    thumbnail: '/programs/klein-studio-cover.png',
+    // คลิปคู่มือจัดการที่ /admin/programs — env var นี้เป็นแค่ลิงก์สำรอง
+    videoUrl: import.meta.env.VITE_KLEIN_STUDIO_VIDEO_URL || '',
+    screenshots: [
+      { src: '/programs/klein-studio-create.png', alt: 'หน้าสร้างภาพจากข้อความของโปรแกรม Klein Studio' },
+      { src: '/programs/klein-studio-edit.png', alt: 'หน้าแก้ภาพจากภาพอ้างอิงของโปรแกรม Klein Studio' },
+    ],
+    summary:
+      'โปรแกรมสร้างภาพด้วย AI แจกฟรีสำหรับครีเอเตอร์ ใช้โมเดล FLUX.3 Klein จาก Black Forest Labs ' +
+      'พิมพ์บรรยายภาพที่อยากได้ แล้วได้ภาพคุณภาพสูงภายในไม่ถึงนาที จะทำภาพปกคลิป ภาพโฆษณาสินค้า หรือแก้ภาพเดิมให้เป็นฉากใหม่ก็ได้ ' +
+      'ประมวลผลบนการ์ดจอของคุณเองทั้งหมด ไม่ต้องสมัครสมาชิก ไม่ต้องเปิด ComfyUI ไม่ต้องรู้เรื่อง Python และไม่มีค่าใช้จ่ายรายภาพ',
+    features: [
+      { icon: ImageIcon, text: 'สร้างภาพจากข้อความ (Text-to-Image): ได้ภาพคมชัดราว 1 ล้านพิกเซล เลือกสัดส่วนได้ทั้ง 1:1, 16:9, 9:16, 4:3 และอื่น ๆ สั่งได้ครั้งละ 1–4 ภาพ' },
+      { icon: Pencil, text: 'แก้ภาพจากภาพอ้างอิง: ใส่ภาพได้สูงสุด 10 ภาพ แล้วบรรยายผลลัพธ์ที่อยากได้ เช่น เปลี่ยนกลางวันเป็นกลางคืน หรือรวมหลายภาพเป็นภาพเดียว' },
+      { icon: Lock, text: 'ทำงานบนเครื่องคุณ 100%: ภาพ, Prompt และภาพอ้างอิงไม่ถูกส่งออกนอกเครื่อง ส่วนอินเทอร์เน็ตใช้แค่ตอนดาวน์โหลดโมเดลครั้งแรก' },
+      { icon: InfinityIcon, text: 'ฟรี สร้างได้ไม่จำกัด: ไม่ต้องสมัครสมาชิก ไม่มีค่ารายเดือน และไม่ต้องซื้อเครดิต' },
+    ],
+    highlights: [
+      { label: 'สร้างภาพจากข้อความ', sub: 'ภาพคมชัด หลายสัดส่วน' },
+      { label: 'แก้ภาพจากภาพอ้างอิง', sub: 'ใส่ได้สูงสุด 10 ภาพ' },
+      { label: 'ออฟไลน์ 100%', sub: 'ภาพไม่ถูกส่งออกนอกเครื่อง' },
+      { label: 'ฟรี ไม่จำกัด', sub: 'ไม่ต้องสมัครสมาชิก' },
+    ],
+    specs: [
+      { label: 'ระบบ', value: 'Windows 10/11 64-bit' },
+      { label: 'การ์ดจอ', value: 'NVIDIA RTX 20 series ขึ้นไป, VRAM 10 GB ขึ้นไป เช่น RTX 3060 12GB, 4070, 5070' },
+      { label: 'ไดรเวอร์ NVIDIA', value: 'เวอร์ชัน 580 ขึ้นไป' },
+      { label: 'RAM', value: '16 GB ขึ้นไป' },
+      { label: 'พื้นที่ว่าง', value: 'ประมาณ 16 GB ขึ้นไป (เอนจิน 3.6 GB และโมเดล 12 GB ขึ้นไป)' },
+      { label: 'ความเร็ว', value: 'บน RTX 5070 ใช้ประมาณ 30 วินาทีต่อภาพ' },
+      { label: 'ไม่รองรับ', value: 'การ์ด AMD หรือ Intel, โน้ตบุ๊กที่ไม่มีการ์ดจอแยก, macOS', warn: true },
+    ],
+    installSteps: [
+      'ดาวน์โหลดและติดตั้งโปรแกรม (ไฟล์ขนาด 121 MB)',
+      'เปิดโปรแกรม แล้วโปรแกรมจะตรวจสเปกเครื่องให้อัตโนมัติ จากนั้นกด "ติดตั้งเอนจิน"',
+      'เลือกรุ่นโมเดลแล้วกด "ดาวน์โหลด" (แนะนำรุ่น GGUF Q4 เพราะไม่ต้องสมัครบัญชีใด ๆ) เสร็จแล้วเริ่มสร้างภาพได้เลย',
+    ],
+    notes: [
+      'แนะนำให้พิมพ์ Prompt เป็นภาษาอังกฤษ และบรรยายให้ละเอียด ทั้งวัตถุ แสง มุมกล้อง และสไตล์',
+      'ภาพที่สร้างจากโปรแกรมใช้ตามใบอนุญาต FLUX Kommunity License ถ้าจะใช้เชิงพาณิชย์ ต้องเป็นผู้ที่มีรายได้ไม่ถึง 5 ล้านดอลลาร์ต่อปี และต้องตรวจภาพก่อนเผยแพร่',
+    ],
+    downloadNote: [
+      ...(KLEIN_STUDIO_WIN_URL ? [] : ['ลิงก์ดาวน์โหลดจะเปิดเร็ว ๆ นี้']),
+      'ต้องใช้การ์ดจอ NVIDIA RTX ที่มี VRAM 10 GB ขึ้นไป · Windows 10/11 64-bit',
+      'ถ้า Windows ขึ้นคำเตือน ให้กด More info → Run anyway',
+    ],
+    downloads: [
+      {
+        key: 'windows',
+        label: 'ดาวน์โหลดฟรี (Windows)',
+        platform: 'Windows',
+        icon: Monitor,
+        // ลิงก์มาจาก env เท่านั้น (ดู KLEIN_STUDIO_WIN_URL ด้านบน) — โฟลเดอร์ Drive เป็นหน้าเว็บ ไม่ใช่ไฟล์ตรง → เปิดแท็บใหม่
+        url: KLEIN_STUDIO_WIN_URL,
+      },
+      // macOS: โผล่เฉพาะเมื่อตั้ง VITE_KLEIN_STUDIO_MAC_URL แล้ว (ตอนนี้โปรแกรมยังไม่รองรับ)
+      ...(KLEIN_STUDIO_MAC_URL
+        ? [{ key: 'macos', label: 'ดาวน์โหลดฟรี (macOS)', platform: 'macOS', icon: Apple, url: KLEIN_STUDIO_MAC_URL }]
+        : []),
     ],
   },
 ];

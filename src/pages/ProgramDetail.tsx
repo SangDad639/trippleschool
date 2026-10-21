@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { Fragment, useEffect } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import PublicHeader from '@/components/PublicHeader';
 import { Button } from '@/components/ui/button';
@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import ProgramVideoSection from '@/components/programs/ProgramVideoSection';
 import { getProgram, isDirectFileUrl } from '@/components/programs/programsData';
 import { useAuth } from '@/contexts/AuthContext';
-import { Crown, ArrowRight, ArrowLeft, CheckCircle2, Download, Pencil } from 'lucide-react';
+import { Crown, Gift, ArrowRight, ArrowLeft, CheckCircle2, Download, Pencil, Cpu, ListChecks, Info } from 'lucide-react';
 
 // หน้ารายละเอียดโปรแกรม /programs/:slug — ภาพ + ฟีเจอร์ + ปุ่มดาวน์โหลด
 const ProgramDetail = () => {
@@ -33,6 +33,16 @@ const ProgramDetail = () => {
       </div>
     );
   }
+
+  // โปรแกรมแจกฟรี (access: 'free') ป้าย/แถบล่างต่างจากโปรแกรมสมาชิก — ค่าเริ่มต้นของแถบล่างตามประเภท
+  const isFree = program.access === 'free';
+  const footer = program.footer ?? (isFree ? 'course' : 'member');
+  const downloadNotes = Array.isArray(program.downloadNote)
+    ? program.downloadNote
+    : program.downloadNote
+      ? [program.downloadNote]
+      : [];
+  const hasExtraSections = !!(program.specs?.length || program.installSteps?.length || program.notes?.length);
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -81,16 +91,22 @@ const ProgramDetail = () => {
 
             {/* Info — min-w-0 กัน grid column ถูกดันกว้างตามเนื้อหาที่ไม่ยอมหด */}
             <div className="p-6 lg:p-8 flex flex-col min-w-0">
-              <Badge className="self-start bg-[#FFB300]/15 text-[#FFB300] border border-[#FFB300]/30 mb-4">
-                <Crown className="h-3.5 w-3.5 mr-1" /> สิทธิพิเศษสมาชิก
-              </Badge>
+              {isFree ? (
+                <Badge className="self-start bg-emerald-400/15 text-emerald-300 border border-emerald-400/30 mb-4" data-testid="program-access-badge">
+                  <Gift className="h-3.5 w-3.5 mr-1" /> แจกฟรี
+                </Badge>
+              ) : (
+                <Badge className="self-start bg-[#FFB300]/15 text-[#FFB300] border border-[#FFB300]/30 mb-4" data-testid="program-access-badge">
+                  <Crown className="h-3.5 w-3.5 mr-1" /> สิทธิพิเศษสมาชิก
+                </Badge>
+              )}
 
               <div className="flex items-center gap-3 mb-3">
                 <img src={program.logo} alt="" className="h-12 w-auto" />
                 <div>
                   <h1 className="text-2xl font-bold text-white leading-tight">{program.name}</h1>
                   <p className="text-gray-500 text-xs">
-                    {program.tagline} · {program.version}
+                    {program.tagline}{isFree ? ' · ฟรี' : ''} · {program.version}
                   </p>
                 </div>
               </div>
@@ -160,24 +176,54 @@ const ProgramDetail = () => {
                     ),
                   )}
                 </div>
-                {program.downloadNote && (
-                  <p className="text-[11px] text-gray-500 mt-2" data-testid="program-download-note">{program.downloadNote}</p>
+                {downloadNotes.length > 0 && (
+                  <div className="text-[11px] text-gray-500 mt-2 space-y-0.5" data-testid="program-download-note">
+                    {downloadNotes.map((line) => (
+                      <p key={line}>{line}</p>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Member gate strip */}
-          <div className="border-t border-gray-800 bg-[#FFB300]/5 px-6 py-4 flex flex-col sm:flex-row items-center gap-3">
-            <p className="flex-1 text-sm text-yellow-200/90 text-center sm:text-left">
-              <Crown className="inline h-4 w-4 mr-1.5 text-[#FFB300]" />
-              โปรแกรมนี้แจกเฉพาะสมาชิกรายเดือนและรายปีเท่านั้น — สมัครวันนี้ เข้าเรียนได้ทุกคอร์สพร้อมรับโปรแกรมฟรี
-            </p>
-            <Button size="sm" onClick={() => navigate('/pricing')} className="bg-purple-600 hover:bg-purple-700 shrink-0">
-              ดูแพ็กเกจสมาชิก
-              <ArrowRight className="h-4 w-4 ml-1.5" />
-            </Button>
-          </div>
+          {/* แถบล่าง: สมาชิก = ชวนสมัคร · course = ชวนดูคอร์ส (โปรแกรมฟรี) · specs = ชวนเช็กสเปกก่อนโหลด */}
+          {footer === 'member' ? (
+            <div className="border-t border-gray-800 bg-[#FFB300]/5 px-6 py-4 flex flex-col sm:flex-row items-center gap-3" data-testid="program-footer-member">
+              <p className="flex-1 text-sm text-yellow-200/90 text-center sm:text-left">
+                <Crown className="inline h-4 w-4 mr-1.5 text-[#FFB300]" />
+                โปรแกรมนี้แจกเฉพาะสมาชิกรายเดือนและรายปีเท่านั้น — สมัครวันนี้ เข้าเรียนได้ทุกคอร์สพร้อมรับโปรแกรมฟรี
+              </p>
+              <Button size="sm" onClick={() => navigate('/pricing')} className="bg-purple-600 hover:bg-purple-700 shrink-0">
+                ดูแพ็กเกจสมาชิก
+                <ArrowRight className="h-4 w-4 ml-1.5" />
+              </Button>
+            </div>
+          ) : footer === 'course' ? (
+            <div className="border-t border-gray-800 bg-[#FFB300]/5 px-6 py-4 flex flex-col sm:flex-row items-center gap-3" data-testid="program-footer-course">
+              <p className="flex-1 text-sm text-yellow-200/90 text-center sm:text-left">
+                {program.footerText ?? '💡 อยากต่อยอดทักษะ AI ให้ไกลกว่านี้? ดูคอร์สทั้งหมดได้ที่ Triple School'}
+              </p>
+              <Button size="sm" onClick={() => navigate(program.footerCta?.to ?? '/courses')} className="bg-purple-600 hover:bg-purple-700 shrink-0">
+                {program.footerCta?.label ?? 'ดูคอร์ส'}
+                <ArrowRight className="h-4 w-4 ml-1.5" />
+              </Button>
+            </div>
+          ) : (
+            <div className="border-t border-gray-800 bg-[#FFB300]/5 px-6 py-4 flex flex-col sm:flex-row items-center gap-3" data-testid="program-footer-specs">
+              <p className="flex-1 text-sm text-yellow-200/90 text-center sm:text-left">
+                {program.footerText ?? '⚙️ ก่อนดาวน์โหลด เช็กสเปกเครื่องให้ชัวร์ว่ารองรับ'}
+              </p>
+              <Button
+                size="sm"
+                onClick={() => document.getElementById('program-specs')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="bg-purple-600 hover:bg-purple-700 shrink-0"
+              >
+                {program.footerCta?.label ?? 'ดูสเปกที่รองรับ'}
+                <ArrowRight className="h-4 w-4 ml-1.5" />
+              </Button>
+            </div>
+          )}
         </div>
 
         {/* Highlights row */}
@@ -191,6 +237,60 @@ const ProgramDetail = () => {
             </div>
           ))}
         </div>
+
+        {/* สเปกเครื่อง / วิธีติดตั้ง / ข้อควรรู้ — เฉพาะโปรแกรมที่ให้ข้อมูลมา (Klein Studio) มือถือเรียง 1 คอลัมน์ */}
+        {hasExtraSections && (
+          <div className="grid lg:grid-cols-[1.15fr_1fr_1fr] gap-3 mt-6" data-testid="program-extra-sections">
+            {program.specs && program.specs.length > 0 && (
+              <section
+                id="program-specs"
+                className="rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-4 min-w-0 scroll-mt-24"
+                data-testid="program-specs"
+              >
+                <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
+                  <Cpu className="h-4 w-4 text-[#FFB300]" /> สเปกเครื่องที่รองรับ
+                </h2>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs leading-relaxed">
+                  {program.specs.map((s) => (
+                    <Fragment key={s.label}>
+                      <dt className="text-gray-400 whitespace-nowrap">{s.label}</dt>
+                      <dd className={`m-0 min-w-0 ${s.warn ? 'text-red-300' : 'text-gray-300'}`}>{s.value}</dd>
+                    </Fragment>
+                  ))}
+                </dl>
+              </section>
+            )}
+            {program.installSteps && program.installSteps.length > 0 && (
+              <section className="rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-4 min-w-0" data-testid="program-install-steps">
+                <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
+                  <ListChecks className="h-4 w-4 text-[#FFB300]" /> วิธีติดตั้ง {program.installSteps.length} ขั้น
+                </h2>
+                <ol className="space-y-2.5 text-xs text-gray-300">
+                  {program.installSteps.map((step, i) => (
+                    <li key={step} className="flex gap-2.5">
+                      <span className="shrink-0 h-5 w-5 rounded-full bg-purple-600/25 border border-purple-700 text-purple-200 text-[11px] font-medium flex items-center justify-center">
+                        {i + 1}
+                      </span>
+                      <span className="leading-relaxed">{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
+            {program.notes && program.notes.length > 0 && (
+              <section className="rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-4 min-w-0" data-testid="program-notes">
+                <h2 className="text-sm font-semibold text-white flex items-center gap-2 mb-3">
+                  <Info className="h-4 w-4 text-[#FFB300]" /> ข้อควรรู้
+                </h2>
+                <ul className="list-disc pl-4 space-y-2 text-xs text-gray-300 leading-relaxed">
+                  {program.notes.map((n) => (
+                    <li key={n}>{n}</li>
+                  ))}
+                </ul>
+              </section>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

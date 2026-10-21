@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Klein Studio">
+  <defs>
+    <linearGradient id="kg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#a855f7"/>
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="56" height="56" rx="16" fill="url(#kg)"/>
+  <rect x="16" y="18" width="32" height="28" rx="4" fill="none" stroke="#0b0b12" stroke-width="3.5"/>
+  <path d="M20 40l7-9 6 7 5-5 6 7" fill="none" stroke="#0b0b12" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M44 12l1.6 4.4L50 18l-4.4 1.6L44 24l-1.6-4.4L38 18l4.4-1.6z" fill="#0b0b12"/>
+</svg>

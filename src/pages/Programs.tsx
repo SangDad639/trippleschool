@@ -18,9 +18,9 @@ const Programs = () => {
       {/* Top bar: title + member badge */}
       <div className="px-4 md:px-12 pt-8 pb-5 flex flex-col sm:flex-row sm:items-center gap-3">
         <div className="flex-1">
-          <h1 className="text-2xl md:text-3xl font-bold">Program สำหรับสมาชิก</h1>
+          <h1 className="text-2xl md:text-3xl font-bold">Program สำหรับครีเอเตอร์</h1>
           <p className="text-gray-400 text-sm mt-1">
-            แอปและเครื่องมือพิเศษ ดาวน์โหลดใช้ได้ฟรีสำหรับสมาชิก Triple School
+            แอปและเครื่องมือพิเศษ — สมาชิก Triple School ดาวน์โหลดได้ทุกตัว บางตัวแจกฟรีสำหรับทุกคน
           </p>
         </div>
         <Badge className="self-start sm:self-auto bg-[#FFB300]/15 text-[#FFB300] border border-[#FFB300]/30 shrink-0">
@@ -45,7 +45,7 @@ const Programs = () => {
         <div className="mt-8 rounded-2xl border border-gray-800 bg-[#FFB300]/5 px-6 py-4 flex flex-col sm:flex-row items-center gap-3">
           <p className="flex-1 text-sm text-yellow-200/90 text-center sm:text-left">
             <Crown className="inline h-4 w-4 mr-1.5 text-[#FFB300]" />
-            โปรแกรมเหล่านี้แจกเฉพาะสมาชิกรายเดือนและรายปีเท่านั้น — สมัครวันนี้ เข้าเรียนได้ทุกคอร์สพร้อมรับโปรแกรมฟรี
+            โปรแกรมที่ติดป้าย 👑 แจกเฉพาะสมาชิกรายเดือนและรายปี ส่วนป้าย 🎁 ทุกคนดาวน์โหลดได้ — สมัครวันนี้ เข้าเรียนได้ทุกคอร์สพร้อมรับโปรแกรมครบทุกตัว
           </p>
           <Button size="sm" onClick={() => navigate('/pricing')} className="bg-purple-600 hover:bg-purple-700 shrink-0">
             ดูแพ็กเกจสมาชิก

@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { Badge } from '@/components/ui/badge';
-import { Crown, ArrowRight, Download } from 'lucide-react';
+import { Crown, Gift, ArrowRight, Download } from 'lucide-react';
 import type { Program } from './programsData';
 
 interface ProgramCardProps {
@@ -54,9 +54,16 @@ const ProgramCard = ({ program }: ProgramCardProps) => (
       <Download className="h-10 w-10 text-white/90 drop-shadow-lg -translate-y-4" />
     </div>
 
-    <Badge className="absolute top-2 left-2 bg-black/60 backdrop-blur text-[#FFB300] border border-[#FFB300]/40 text-[10px] px-1.5 py-0.5">
-      <Crown className="h-2.5 w-2.5 mr-1" /> สมาชิก
-    </Badge>
+    {/* ป้ายมุมการ์ด: แจกฟรี (เขียว) แยกจากสมาชิก (ทอง) ให้เห็นตั้งแต่ในตะแกรง */}
+    {program.access === 'free' ? (
+      <Badge className="absolute top-2 left-2 bg-black/60 backdrop-blur text-emerald-400 border border-emerald-400/50 text-[10px] px-1.5 py-0.5">
+        <Gift className="h-2.5 w-2.5 mr-1" /> แจกฟรี
+      </Badge>
+    ) : (
+      <Badge className="absolute top-2 left-2 bg-black/60 backdrop-blur text-[#FFB300] border border-[#FFB300]/40 text-[10px] px-1.5 py-0.5">
+        <Crown className="h-2.5 w-2.5 mr-1" /> สมาชิก
+      </Badge>
+    )}
   </Link>
 );
 
