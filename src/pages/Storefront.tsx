@@ -191,11 +191,15 @@ const Storefront = () => {
           </NetflixRow>
         )}
 
-        {/* หมวด 1: มาใหม่ล่าสุด — mosaic ใบใหม่สุดเป็นการ์ดใหญ่ซ้าย ที่เหลือกริดเล็กขวา */}
+        {/* หมวด 1: มาใหม่ล่าสุด — mosaic ใบใหม่สุดเป็นการ์ดใหญ่ซ้าย ที่เหลือกริดเล็กขวา
+            ปกใช้กติกาพิเศษเฉพาะบล็อกนี้ (coverPick="lesson"): ภาพบทล่าสุด (ปกบท → YouTube) → ปกตั้งเอง → ปกสำรอง
+            คือการ์ดโชว์ "สถานะจริง" ของคอร์ส ปกตั้งเองใช้แค่ตอนเริ่มแรกที่ยังไม่มีบทที่มีภาพ
+            หน้า /courses และการ์ดอื่นทั้งเว็บไม่ส่ง coverPick จึงยังใช้กติกาเดิม */}
         <FeaturedRow
           title="มาใหม่ล่าสุด"
           action={seeAllButton}
           courses={newest5}
+          coverPick="lesson"
           onOpen={(course) => navigate(`/courses/${course.slug}?ep=latest`)}
         />
 

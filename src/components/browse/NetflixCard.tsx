@@ -25,11 +25,13 @@ interface NetflixCardProps {
   hidePrice?: boolean;
   /** Mosaic hero cell: stretch to wrapper height instead of fixed 16:9. */
   fill?: boolean;
+  /** กติกาเลือกปก: 'lesson' = ภาพของบทล่าสุด (ปกบท → YouTube) มาก่อนปกตั้งเอง (ใช้เฉพาะ Mosaic หน้า Home) · ไม่ส่ง = กติกาเดิม */
+  coverPick?: 'lesson';
 }
 
 // 16:9 Netflix-style card. Title sits on a permanent bottom gradient; hover
 // scales the card up and reveals meta (rating / lessons / level / price).
-const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statusBadge, hidePrice, fill }: NetflixCardProps) => {
+const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statusBadge, hidePrice, fill, coverPick }: NetflixCardProps) => {
   const reviewCount = Number(course.review_count) || 0;
   // COUNT() จาก pg มาเป็น string — ต้องแปลงเป็นตัวเลข ไม่งั้น "0" เป็น truthy
   // แล้วเงื่อนไข Coming Soon (=== 0) ไม่ทำงาน
@@ -66,7 +68,7 @@ const NetflixCard = ({ course, onClick, variant = 'rail', progressPercent, statu
         </div>
       )}
       <img
-        src={api.courseCoverUrl(course, 'card')}
+        src={api.courseCoverUrl(course, 'card', coverPick ? { pick: coverPick } : undefined)}
         alt={course.name}
         loading="lazy"
         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

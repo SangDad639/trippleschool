@@ -73,14 +73,20 @@ class ApiClient {
    *   ปกที่แอดมินตั้งเอง (courses.cover_url) → ปกบทล่าสุด → ภาพจาก YouTube → ปกสำรอง (thumbnail_url)
    * FE จึงไม่ผูกกับ thumbnail_url · r=cover_rev (รวมเวลาที่ตั้ง/ล้างปกเอง) ทำให้ภาพเปลี่ยนทันที
    * เมื่อเพิ่ม/แก้วิดีโอหรือแอดมินเปลี่ยนปก โดยไม่ต้องรอแคชหมดอายุ
+   * opts.pick = 'lesson' (เฉพาะ Mosaic "มาใหม่ล่าสุด" หน้า Home): ภาพของบทล่าสุด (ปกบท → YouTube) มาก่อนปกตั้งเอง
+   *   ปกตั้งเองจึงโชว์แค่ตอนคอร์สยังไม่มีบทที่มีภาพ
+   * ไม่ส่ง opts = ลำดับเดิมทุกประการ
    */
   courseCoverUrl(
     course: { id?: number; cover_rev?: string | null; thumbnail_url?: string | null } | null | undefined,
-    variant?: 'card' | 'hero'
+    variant?: 'card' | 'hero',
+    opts?: { pick?: 'lesson' }
   ): string {
     if (!course?.id) return this.mediaUrl(course?.thumbnail_url, variant);
     const rev = course.cover_rev ? Date.parse(course.cover_rev) || 0 : 0;
-    const qs = [variant ? `v=${variant}` : '', rev ? `r=${rev}` : ''].filter(Boolean).join('&');
+    const qs = [variant ? `v=${variant}` : '', rev ? `r=${rev}` : '', opts?.pick ? `pick=${opts.pick}` : '']
+      .filter(Boolean)
+      .join('&');
     return `${this.apiUrl}/api/courses/${course.id}/cover${qs ? `?${qs}` : ''}`;
   }
 

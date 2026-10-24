@@ -8,6 +8,8 @@ interface FeaturedRowProps {
   onOpen: (course: BrowseCourse) => void;
   /** ตัวควบคุมขวาของหัวข้อ เช่น ปุ่ม "ดูทั้งหมด" (ไม่ส่ง = หน้าตาเดิม) */
   action?: ReactNode;
+  /** ส่งต่อให้การ์ดทุกใบ: 'lesson' = ภาพของบทล่าสุด (ปกบท → YouTube) มาก่อนปกตั้งเอง (Mosaic หน้า Home เท่านั้น) · ไม่ส่ง = กติกาเดิม */
+  coverPick?: 'lesson';
 }
 
 /**
@@ -16,7 +18,7 @@ interface FeaturedRowProps {
  * remaining columns — the small cards' aspect ratio defines the row heights and
  * the hero cell stretches to match (NetflixCard fill).
  */
-const FeaturedRow = ({ title, courses, onOpen, action }: FeaturedRowProps) => {
+const FeaturedRow = ({ title, courses, onOpen, action, coverPick }: FeaturedRowProps) => {
   if (courses.length === 0) return null;
   return (
     <section className="mb-7 px-4 md:px-12">
@@ -37,6 +39,7 @@ const FeaturedRow = ({ title, courses, onOpen, action }: FeaturedRowProps) => {
                 course={course}
                 variant="grid"
                 fill={isHero}
+                coverPick={coverPick}
                 onClick={() => onOpen(course)}
               />
             </div>

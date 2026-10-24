@@ -338,6 +338,9 @@ router.get('/lessons/:lessonId/thumb', async (req: Request, res: Response) => {
 //   2. ไม่มี → ดึงจาก YouTube (maxresdefault 1280x720 → hqdefault) แคชลง S3 + ทำ variant
 //   3. คอร์สยังไม่มีวิดีโอเลย → ใช้ courses.thumbnail_url ที่อัปไว้เป็น "ปกสำรอง"
 //   4. ไม่มีอะไรเลย → 404 ให้ FE วาดไอคอนแทน
+// ?pick=lesson (ใช้เฉพาะ Mosaic "มาใหม่ล่าสุด" หน้า Home): ย้ายข้อ 0 ไปอยู่หลังข้อ 1-2
+//   = ปกตั้งเองใช้แค่ "ตอนเริ่มแรก" ที่คอร์สยังไม่มีบทที่มีภาพ พอมีบทแล้วใช้ภาพของบทล่าสุด (ปกบทที่อัป → YouTube)
+//   ไม่ส่ง pick = ลำดับเดิมทุกประการ
 // ไม่เผย youtube_id ให้ client เหมือน /lessons/:id/thumb
 router.get('/:courseId/cover', async (req: Request, res: Response) => {
   try {
@@ -361,80 +364,101 @@ router.get('/:courseId/cover', async (req: Request, res: Response) => {
     ).rows[0];
 
     // 0) ปกที่แอดมินตั้งเองให้คอร์ส — ค้างไว้จนกด "ใช้ปกอัตโนมัติ" (เพิ่มคลิปใหม่ไม่ทับ)
-    if (course?.cover_url && typeof course.cover_url === 'string') {
+    const tryManualCover = async (): Promise<boolean> => {
+      if (!(course?.cover_url && typeof course.cover_url === 'string')) return false;
       const key = course.cover_url.replace('/api/courses/thumbnails/', '');
       const setAt = course.cover_set_at ? new Date(course.cover_set_at).getTime() || 0 : 0;
       const etag = `c${courseId}-manual-${setAt}-${variant || 'orig'}`;
       try {
         const obj = await getFile(variant ? variantKey(key, variant) : key);
-        return sendImage(obj.Body as any, variant ? 'image/webp' : obj.ContentType || 'image/jpeg', etag);
+        sendImage(obj.Body as any, variant ? 'image/webp' : obj.ContentType || 'image/jpeg', etag);
+        return true;
       } catch {
         try {
           const obj = await getFile(key);
-          return sendImage(obj.Body as any, obj.ContentType || 'image/jpeg', `${etag}-orig`);
+          sendImage(obj.Body as any, obj.ContentType || 'image/jpeg', `${etag}-orig`);
+          return true;
         } catch {
-          /* ไฟล์หายจาก S3 — ตกไปใช้ปกอัตโนมัติเงียบๆ */
+          return false; /* ไฟล์หายจาก S3 — ตกไปใช้ปกอัตโนมัติเงียบๆ */
         }
       }
-    }
+    };
 
-    const lesson = (
-      await pool.query(
-        `SELECT id, youtube_id, cover_url FROM lessons
-          WHERE course_id = $1 AND is_active = true
-            AND (cover_url IS NOT NULL OR (youtube_id IS NOT NULL AND youtube_id <> ''))
-          ORDER BY created_at DESC NULLS LAST, lesson_order DESC, id DESC
-          LIMIT 1`,
-        [courseId]
-      )
-    ).rows[0];
+    // 1)+2) ภาพของ "บทล่าสุดที่มีภาพ" — ปกบทที่แอดมินอัป ไม่มีก็ดึง YouTube
+    const tryLatestLessonCover = async (): Promise<boolean> => {
+      const lesson = (
+        await pool.query(
+          `SELECT id, youtube_id, cover_url FROM lessons
+            WHERE course_id = $1 AND is_active = true
+              AND (cover_url IS NOT NULL OR (youtube_id IS NOT NULL AND youtube_id <> ''))
+            ORDER BY created_at DESC NULLS LAST, lesson_order DESC, id DESC
+            LIMIT 1`,
+          [courseId]
+        )
+      ).rows[0];
 
-    // 1) ปกที่แอดมินอัปให้บทล่าสุด (ย่อเป็น webp ตั้งแต่ตอนอัปแล้ว)
-    if (lesson?.cover_url && typeof lesson.cover_url === 'string') {
-      const key = lesson.cover_url.replace('/api/courses/thumbnails/', '');
-      try {
-        const obj = await getFile(key);
-        return sendImage(obj.Body as any, obj.ContentType || 'image/webp', `c${courseId}-l${lesson.id}-cover`);
-      } catch {
-        /* ตัวชี้ค้าง — ตกไปใช้ YouTube */
-      }
-    }
-
-    // 2) ภาพจาก YouTube ของบทล่าสุด (แคชต้นฉบับ + variant ไว้ที่ S3 ครั้งเดียว)
-    if (lesson?.youtube_id) {
-      const hash = crypto.createHash('md5').update(String(lesson.youtube_id)).digest('hex').slice(0, 8);
-      const baseKey = `course-cover-cache/${courseId}-${lesson.id}-${hash}.jpg`;
-      const etag = `c${courseId}-l${lesson.id}-${hash}-${variant || 'orig'}`;
-      const wantKey = variant ? variantKey(baseKey, variant) : baseKey;
-      try {
-        const cached = await getFile(wantKey);
-        return sendImage(cached.Body as any, variant ? 'image/webp' : 'image/jpeg', etag);
-      } catch {
-        /* ยังไม่แคช */
-      }
-      // maxresdefault คมพอสำหรับ hero (1280x720); คลิปเก่าบางตัวไม่มี → hqdefault
-      let buf: Buffer | null = null;
-      for (const name of ['maxresdefault', 'hqdefault']) {
-        const yt = await fetch(`https://i.ytimg.com/vi/${encodeURIComponent(lesson.youtube_id)}/${name}.jpg`, {
-          signal: AbortSignal.timeout(10000),
-        }).catch(() => null);
-        if (yt?.ok) {
-          const b = Buffer.from(await yt.arrayBuffer());
-          // YouTube คืนภาพ placeholder เทาขนาดเล็กเมื่อไม่มีความละเอียดนั้น
-          if (b.length > 3000) { buf = b; break; }
+      // 1) ปกที่แอดมินอัปให้บทล่าสุด (ย่อเป็น webp ตั้งแต่ตอนอัปแล้ว)
+      if (lesson?.cover_url && typeof lesson.cover_url === 'string') {
+        const key = lesson.cover_url.replace('/api/courses/thumbnails/', '');
+        try {
+          const obj = await getFile(key);
+          sendImage(obj.Body as any, obj.ContentType || 'image/webp', `c${courseId}-l${lesson.id}-cover`);
+          return true;
+        } catch {
+          /* ตัวชี้ค้าง — ตกไปใช้ YouTube */
         }
       }
-      if (buf) {
-        uploadFile(buf, baseKey, 'image/jpeg', { contentDisposition: 'inline' }).catch(() => {});
-        if (variant) {
-          const resized = await makeThumbnailVariant(buf, variant);
-          if (resized) {
-            uploadFile(resized, wantKey, 'image/webp', { contentDisposition: 'inline' }).catch(() => {});
-            return sendImage(resized, 'image/webp', etag);
+
+      // 2) ภาพจาก YouTube ของบทล่าสุด (แคชต้นฉบับ + variant ไว้ที่ S3 ครั้งเดียว)
+      if (lesson?.youtube_id) {
+        const hash = crypto.createHash('md5').update(String(lesson.youtube_id)).digest('hex').slice(0, 8);
+        const baseKey = `course-cover-cache/${courseId}-${lesson.id}-${hash}.jpg`;
+        const etag = `c${courseId}-l${lesson.id}-${hash}-${variant || 'orig'}`;
+        const wantKey = variant ? variantKey(baseKey, variant) : baseKey;
+        try {
+          const cached = await getFile(wantKey);
+          sendImage(cached.Body as any, variant ? 'image/webp' : 'image/jpeg', etag);
+          return true;
+        } catch {
+          /* ยังไม่แคช */
+        }
+        // maxresdefault คมพอสำหรับ hero (1280x720); คลิปเก่าบางตัวไม่มี → hqdefault
+        let buf: Buffer | null = null;
+        for (const name of ['maxresdefault', 'hqdefault']) {
+          const yt = await fetch(`https://i.ytimg.com/vi/${encodeURIComponent(lesson.youtube_id)}/${name}.jpg`, {
+            signal: AbortSignal.timeout(10000),
+          }).catch(() => null);
+          if (yt?.ok) {
+            const b = Buffer.from(await yt.arrayBuffer());
+            // YouTube คืนภาพ placeholder เทาขนาดเล็กเมื่อไม่มีความละเอียดนั้น
+            if (b.length > 3000) { buf = b; break; }
           }
         }
-        return sendImage(buf, 'image/jpeg', etag);
+        if (buf) {
+          uploadFile(buf, baseKey, 'image/jpeg', { contentDisposition: 'inline' }).catch(() => {});
+          if (variant) {
+            const resized = await makeThumbnailVariant(buf, variant);
+            if (resized) {
+              uploadFile(resized, wantKey, 'image/webp', { contentDisposition: 'inline' }).catch(() => {});
+              sendImage(resized, 'image/webp', etag);
+              return true;
+            }
+          }
+          sendImage(buf, 'image/jpeg', etag);
+          return true;
+        }
       }
+      return false;
+    };
+
+    // ลำดับปกติ: 0 → 1-2 · ?pick=lesson (Mosaic "มาใหม่ล่าสุด" หน้า Home เท่านั้น): 1-2 → 0
+    // คือปกตั้งเองใช้แค่ตอนคอร์สยังไม่มีบทที่มีภาพ พอมีบทแล้วการ์ดโชว์ภาพบทล่าสุดเสมอ
+    if (req.query.pick === 'lesson') {
+      if (await tryLatestLessonCover()) return;
+      if (await tryManualCover()) return;
+    } else {
+      if (await tryManualCover()) return;
+      if (await tryLatestLessonCover()) return;
     }
 
     // 3) ปกสำรองที่แอดมินอัปให้คอร์ส (คอร์สที่ยังไม่มีวิดีโอ และไม่ได้ตั้งปกเอง)
