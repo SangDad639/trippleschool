@@ -965,7 +965,8 @@ const Admin = () => {
                 <p className="text-muted-foreground">Manage users and subscriptions</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            {/* ปุ่มเมนูแอดมิน — ให้ขึ้นบรรทัดใหม่ได้ (จอ 1366 ปุ่มท้าย ๆ เคยล้นขอบขวาจนกดไม่ถึง) */}
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <Button
                 variant="outline"
                 onClick={() => navigate('/admin/affiliate')}
@@ -1031,6 +1032,12 @@ const Admin = () => {
                 onClick={() => navigate('/admin/chats')}
               >
                 แชทลูกค้า
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/admin/reviews')}
+              >
+                ⭐ รีวิว
               </Button>
             </div>
           </div>

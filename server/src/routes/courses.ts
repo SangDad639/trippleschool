@@ -1795,6 +1795,26 @@ router.get('/:slug/lessons/:lessonId/video', optionalAuth, async (req: AuthReque
 });
 
 // ============ Reviews (public list / owner upsert / admin delete) ============
+// แอดมิน: รีวิวทุกคอร์สรวมในหน้าเดียว เรียงใหม่ → เก่า (หน้า /admin/reviews) — ต้องอยู่ก่อน '/:slug/reviews' ไม่งั้น "admin" จะถูกอ่านเป็น slug
+router.get('/admin/reviews', authenticate, async (req: AuthRequest, res) => {
+  try {
+    if (!req.isAdmin) return res.status(403).json({ error: 'Admin access required' });
+    const result = await pool.query(`
+      SELECT rv.id, rv.rating, rv.comment, rv.created_at, rv.updated_at,
+        rv.user_id, u.email AS reviewer_email, SPLIT_PART(u.email, '@', 1) AS reviewer,
+        c.id AS course_id, c.name AS course_name, c.slug AS course_slug, c.is_active AS course_is_active
+      FROM course_reviews rv
+      JOIN users u ON u.id = rv.user_id
+      JOIN courses c ON c.id = rv.course_id
+      ORDER BY rv.created_at DESC, rv.id DESC
+    `);
+    res.json({ reviews: result.rows });
+  } catch (error) {
+    console.error('Error fetching admin reviews:', error);
+    res.status(500).json({ error: 'Failed to fetch reviews' });
+  }
+});
+
 router.get('/:slug/reviews', async (req, res) => {
   try {
     const { slug } = req.params;

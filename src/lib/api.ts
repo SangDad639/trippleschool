@@ -3340,6 +3340,10 @@ class ApiClient {
   async deleteReview(id: number) {
     return this.request(`/api/courses/reviews/${id}`, { method: 'DELETE' });
   }
+  /** แอดมิน: รีวิวทุกคอร์สในหน้าเดียว เรียงใหม่ → เก่า (หน้า /admin/reviews) */
+  async listAdminReviews(): Promise<{ reviews: import('@/types/review').AdminReview[] }> {
+    return this.request('/api/courses/admin/reviews');
+  }
   // Enrollments — per-course purchase (slip → admin approval) + progress records.
   // Subscribers also get an auto 'approved' enrollment (source='subscription') for progress.
   // POST a buy request for a course. Optional payment slip (image, ≤10MB) + โค้ดผู้แนะนำ (ส่วนลด)

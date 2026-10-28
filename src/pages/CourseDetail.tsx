@@ -1320,7 +1320,18 @@ const CourseDetail = () => {
             {(hasAccess || status === 'approved') && (
               <WriteReviewForm courseId={course.id} onSubmitted={loadReviews} />
             )}
-            <ReviewList reviews={reviews} />
+            {/* แอดมินลบรีวิวได้จากตรงนี้ (ปุ่ม 🗑 + กล่องยืนยัน) — คนทั่วไปไม่เห็นปุ่ม */}
+            <ReviewList
+              reviews={reviews}
+              onDelete={
+                user?.isAdmin
+                  ? async (r) => {
+                      await api.deleteReview(r.id);
+                      await loadReviews();
+                    }
+                  : undefined
+              }
+            />
           </CardContent>
         </Card>
       </div>
