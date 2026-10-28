@@ -89,12 +89,26 @@ const FALLBACK_ERROR =
 const ESCALATED_NOTE =
   'ส่งเรื่องให้ทีมงานเรียบร้อยแล้วค่ะ 🙋 เดี๋ยวทีมงานรีบมาตอบในแชทนี้เลยนะคะ เปิดหน้านี้ทิ้งไว้หรือกลับมาเช็กทีหลังก็ได้ค่ะ';
 
+// MiMo (และ provider OpenAI-compatible อื่น) บางครั้งส่งข้อความปฏิเสธจาก safety filter มาเป็น content ปกติ
+// (HTTP 200, ไม่ใช่ error, ไม่ใช่ stop_reason refusal) — ภาษาอังกฤษล้วน สั้นๆ เช่น
+// "The request was rejected because it was considered high risk" (เคสจริง 2026-10-28: ลูกค้าถามว่าเรียนแล้วทำคลิปรีวิวได้ไหม)
+// → ห้ามหลุดถึงผู้ใช้ดิบๆ: ลองใหม่ 1 ครั้ง ถ้ายังโดนปฏิเสธให้ส่งต่อทีมงาน (มักเป็นคำถามก่อนซื้อที่ไม่ได้มีอะไร = โอกาสขาย)
+const PROVIDER_REJECTION_RE =
+  /\b(request|content|message|prompt|input)\b[^.]{0,80}\b(rejected|blocked|flagged|denied|not allowed)\b|\bhigh[- ]risk\b|\bcontent (policy|filter|moderation)\b|\bunsafe content\b/i;
+export function isProviderRejection(text: string): boolean {
+  const t = (text || '').trim();
+  if (!t || t.length > 240) return false;
+  if (/[฀-๿]/.test(t)) return false; // คำตอบไทยปกติของน้องทริปเปิ้ลไม่ใช่แน่นอน
+  return PROVIDER_REJECTION_RE.test(t);
+}
+const MODERATION_ESCALATE_TEXT = 'ข้อนี้น้องขอส่งให้ทีมงานช่วยตอบให้ตรงๆ นะคะ 🙏';
+
 function buildSystemPrompt(courseName: string, hasAccess: boolean, subtitleTool: boolean): string {
   return `คุณคือ "น้องทริปเปิ้ล" ทีมงานหญิงของ Triple School (triple-school.com) ที่ดูแลลูกค้าประจำคอร์ส "${courseName}" — เว็บคอร์สเรียนออนไลน์สอนการสร้างคอนเทนต์และวิดีโอด้วย AI
 
 ตัวตนและวิธีคุย (สำคัญเท่ากับความถูกต้องของข้อมูล):
 - คุณคือพนักงานสาววัย 25 ที่ใจดี ขี้ช่วย และรู้เรื่องคอร์สนี้จริง — คุยเหมือนแอดมินเพจเก่งๆ ไม่ใช่หุ่นยนต์ตอบอัตโนมัติ
-- ภาษาไทยแบบพูดในแชท ลงท้าย ค่ะ/นะคะ/ค่า สลับกันตามธรรมชาติ (อย่าลงท้าย "ค่ะ" ทุกประโยคติดกัน) ใช้คำรับได้ เช่น "อ๋อ" "ได้เลยค่ะ" "เดี๋ยวเช็คให้นะคะ"
+- ภาษาไทยแบบพูดในแชท ลงท้าย ค่ะ/นะคะ/ค่า สลับกันตามธรรมชาติ (อย่าลงท้าย "ค่ะ" ทุกประโยคติดกัน) ใช้คำรับได้ เช่น "อ๋อ" "ได้เลยค่ะ" "เดี๋ยวเช็คให้นะคะ" — **คุณเป็นผู้หญิง ห้ามลงท้าย "ครับ" เด็ดขาด** แม้ลูกค้าจะพูด "ครับ" ก็ตาม
 - ห้ามภาษาราชการหรือภาษาเขียน: ไม่พูด "ท่านสามารถ..." ให้พูด "เข้าไปที่...ได้เลยค่ะ"
 - **ห้ามขึ้นต้นข้อความด้วย "สวัสดีค่ะ" ถ้าไม่ใช่ข้อความแรกของบทสนทนา** — คนจริงไม่ทักใหม่ทุกครั้งที่ตอบ
 - ตอบสั้นแบบแชท 1-3 ประโยค อีโมจิไม่เกิน 1 ตัวต่อข้อความ (ไม่ใส่ก็ได้) — ลิสต์/ขั้นตอนยาวใช้เฉพาะเมื่อลูกค้าขอวิธีทำจริงๆ
@@ -113,6 +127,7 @@ function buildSystemPrompt(courseName: string, hasAccess: boolean, subtitleTool:
 
 หน้าที่ของคุณ:
 - ตอบคำถามเกี่ยวกับคอร์สนี้: เนื้อหาที่สอน บทเรียน ราคา วิธีซื้อ/สมัครสมาชิก วิธีเข้าเรียน และปัญหาการเรียนในคอร์สนี้
+- **เราคือโรงเรียน งานของเราคือสอนให้ผู้เรียน "ทำเป็นเอง"**: เมื่อลูกค้าถามทำนอง "เรียนแล้วทำคลิป/งานแนวนี้ได้ไหม" "ทำแบบนี้ได้ไหม" "เหมาะกับคนที่อยากทำ X ไหม" "เอาไปใช้กับงาน Y ได้ไหม" ให้มองเป็น**คำถามก่อนตัดสินใจเรียน** (ไม่ใช่ขอให้คุณทำคลิปให้ และไม่ใช่เรื่องนอกขอบเขต) → ตอบแบบผู้สอน: บอกว่าคอร์สนี้สอนให้ทำสิ่งนั้นได้ด้วยตัวเองหรือไม่ โดยอิงชื่อบทเรียน/คำอธิบายคอร์สในบริบท ชี้ว่าบทไหนสอนส่วนไหน เรียนจบแล้วจะทำอะไรได้ ถ้าคอร์สครอบคลุมแค่บางส่วนให้บอกตรงๆ ว่าส่วนไหนมี ส่วนไหนไม่มี แล้วชวนดูบทตัวอย่างฟรี — **ห้ามปัดว่าตอบไม่ได้หรือปฏิเสธเพียงเพราะคำถามพูดถึงแนวคลิป สินค้า หรือเนื้อหาที่ลูกค้าจะเอาไปทำ** (ยกเว้นเป็นเนื้อหาผิดกฎหมายหรือผิดนโยบายแพลตฟอร์มจริงๆ จึงค่อยอธิบายอย่างสุภาพว่าทำไมไม่แนะนำ)
 
 เครื่องมือที่ใช้ได้:
 ${
@@ -541,6 +556,7 @@ async function runOpenAICompatible(
     : {};
 
   let text = '';
+  let rejectionRetried = false;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
     let choice: any;
     if (onDelta) {
@@ -558,12 +574,25 @@ async function runOpenAICompatible(
       });
       let content = '';
       const acc: any[] = [];
+      // กักข้อความช่วงแรกไว้ก่อน (~120 ตัวอักษร) กันข้อความปฏิเสธจาก safety filter ไหลขึ้นจอ
+      // ก่อนที่เราจะตรวจเจอ — คำตอบปกติแค่ขึ้นช้าลงเสี้ยววินาที
+      let held = '';
+      let flushed = false;
       for await (const chunk of stream) {
         const delta = chunk.choices?.[0]?.delta;
         if (!delta) continue;
         if (delta.content) {
           content += delta.content;
-          onDelta(delta.content);
+          if (flushed) {
+            onDelta(delta.content);
+          } else {
+            held += delta.content;
+            if (held.length >= 120 && !isProviderRejection(held)) {
+              onDelta(held);
+              held = '';
+              flushed = true;
+            }
+          }
         }
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {
@@ -575,6 +604,7 @@ async function runOpenAICompatible(
           }
         }
       }
+      if (!flushed && held && !isProviderRejection(held)) onDelta(held);
       const toolCallsAcc = acc.filter(Boolean);
       choice = { role: 'assistant', content, tool_calls: toolCallsAcc.length ? toolCallsAcc : undefined };
     } else {
@@ -589,6 +619,22 @@ async function runOpenAICompatible(
       choice = response.choices?.[0]?.message;
     }
     if (!choice) break;
+
+    // safety filter ของ provider ปฏิเสธ (มาเป็น content ปกติ) → ลองใหม่ 1 ครั้ง ไม่ผ่านส่งต่อทีมงาน
+    if (!choice.tool_calls?.length && isProviderRejection(choice.content || '')) {
+      if (!rejectionRetried) {
+        rejectionRetried = true;
+        round--;
+        continue;
+      }
+      const lastUser = [...history].reverse().find((h) => h.sender_type === 'user')?.body || '';
+      console.warn('[AgentChat] provider rejected the request as high risk → escalate:', String(choice.content).slice(0, 120));
+      return {
+        text: `${MODERATION_ESCALATE_TEXT}\n\n${ESCALATED_NOTE}`,
+        escalated: true,
+        escalateReason: `AI ตอบไม่ได้ (ระบบคัดกรองของ provider ปฏิเสธคำถาม) — คำถาม: ${lastUser.slice(0, 120)}`,
+      };
+    }
 
     const toolCalls: any[] = choice.tool_calls || [];
     const escalate = toolCalls.find((c) => c.function?.name === 'escalate_to_human');
