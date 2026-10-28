@@ -769,6 +769,8 @@ class ApiClient {
     amountPaid?: number;
     commissionCreated?: boolean;
     transRef?: string;
+    /** 079: id รายการต่ออายุ — หน้า checkout-complete ส่งต่อให้แบบสอบถามหลังซื้อ (?log=) */
+    extensionLogId?: number;
     error?: string;
     errorCode?: string;
     /** เมื่อ INVALID_AMOUNT — ยอดที่รับได้ตอนนี้ (thrown error ก็มีที่ err.data.accepted) */
@@ -2929,13 +2931,16 @@ class ApiClient {
   // Courses (Course Learning System)
   // ============================================
 
-  async getCourses(params?: { featured?: boolean; difficulty?: string; search?: string; sort?: string; type?: 'course' | 'tip' }) {
+  // limit/offset (optional, limit ≤ 50): โหลดทีละหน้าสำหรับ CourseMultiSelect — ไม่ส่ง = ได้ทั้งหมดเหมือนเดิม
+  async getCourses(params?: { featured?: boolean; difficulty?: string; search?: string; sort?: string; type?: 'course' | 'tip'; limit?: number; offset?: number }) {
     const qs = new URLSearchParams();
     if (params?.featured) qs.set('featured', 'true');
     if (params?.difficulty) qs.set('difficulty', params.difficulty);
     if (params?.search) qs.set('search', params.search);
     if (params?.sort) qs.set('sort', params.sort);
     if (params?.type) qs.set('type', params.type);
+    if (params?.limit) qs.set('limit', String(params.limit));
+    if (params?.offset) qs.set('offset', String(params.offset));
     const q = qs.toString();
     return this.request(`/api/courses${q ? `?${q}` : ''}`);
   }
@@ -3343,6 +3348,21 @@ class ApiClient {
   /** แอดมิน: รีวิวทุกคอร์สในหน้าเดียว เรียงใหม่ → เก่า (หน้า /admin/reviews) */
   async listAdminReviews(): Promise<{ reviews: import('@/types/review').AdminReview[] }> {
     return this.request('/api/courses/admin/reviews');
+  }
+  // Purchase surveys — แบบสอบถามหลังซื้อ (079 · routes/purchaseSurveys.ts): สมาชิก + คอร์สเดี่ยว · ข้ามได้ · 1 แถวต่อการซื้อ
+  async submitPurchaseSurvey(body: import('@/types/purchaseSurvey').PurchaseSurveyInput): Promise<{ id: number; skipped: boolean; course_ids?: number[]; unchanged?: boolean }> {
+    return this.request('/api/purchase-surveys', { method: 'POST', body: JSON.stringify(body) });
+  }
+  /** เคยตอบ/ข้ามการซื้อนี้แล้วหรือยัง — กันถามซ้ำตอนรีเฟรชหน้า */
+  async getPurchaseSurveyStatus(q: { extension_log_id?: number; course_id?: number }): Promise<{ answered: boolean; eligible?: boolean; skipped?: boolean }> {
+    const qs = new URLSearchParams();
+    if (q.extension_log_id) qs.set('extension_log_id', String(q.extension_log_id));
+    if (q.course_id) qs.set('course_id', String(q.course_id));
+    return this.request(`/api/purchase-surveys/mine?${qs.toString()}`);
+  }
+  /** แอดมิน: คำตอบทุกคน เรียงใหม่ → เก่า + คอร์สที่คนสนใจมากสุด + ยอดรวม (หน้า /admin/purchase-surveys) */
+  async listAdminPurchaseSurveys(): Promise<import('@/types/purchaseSurvey').AdminPurchaseSurveyList> {
+    return this.request('/api/purchase-surveys/admin/all');
   }
   // Enrollments — per-course purchase (slip → admin approval) + progress records.
   // Subscribers also get an auto 'approved' enrollment (source='subscription') for progress.

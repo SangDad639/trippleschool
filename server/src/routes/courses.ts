@@ -996,6 +996,15 @@ router.get('/', async (req, res) => {
       : sort === 'price_desc' ? `COALESCE(c.discount_price, c.price) DESC`
       : `c.display_order ASC, c.created_at DESC`;
     query += ` ORDER BY ${order}`;
+    // limit/offset (optional, limit ≤ 50): ใช้กับ picker เลือกคอร์สแบบโหลดเพิ่มทีละหน้า (CourseMultiSelect)
+    // ไม่ส่ง limit = คืนทั้งหมดเหมือนเดิม
+    const rawLimit = parseInt(String(req.query.limit ?? ''), 10);
+    if (Number.isFinite(rawLimit) && rawLimit > 0) {
+      const rawOffset = parseInt(String(req.query.offset ?? ''), 10);
+      query += ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      params.push(Math.min(50, rawLimit), Number.isFinite(rawOffset) && rawOffset > 0 ? rawOffset : 0);
+      paramIndex += 2;
+    }
     const result = await pool.query(query, params);
     // The catalog needs metadata only. Strip the potentially large HTML body
     // without converting the remaining row through JSONB (which changes timestamp serialization).

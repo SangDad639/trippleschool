@@ -270,7 +270,9 @@ const SubscriptionTransferV2 = () => {
       const result = await api.verifyAndApproveSlip(slipFile, selectedPlan, refValid ? refCheck!.code : undefined);
       if (result.success) {
         await refreshUser();
-        navigate(`/subscription/checkout-complete?plan=${selectedPlan}&amount=${result.amountPaid ?? price}`);
+        // 079: ส่ง id รายการต่ออายุไปด้วย → หน้าสำเร็จถามแบบสอบถามหลังซื้อ
+        const logQ = result.extensionLogId ? `&log=${result.extensionLogId}` : '';
+        navigate(`/subscription/checkout-complete?plan=${selectedPlan}&amount=${result.amountPaid ?? price}${logQ}`);
       } else {
         showError(result.errorCode || '', result.accepted);
       }

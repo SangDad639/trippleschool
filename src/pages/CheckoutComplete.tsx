@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import type { AffiliateStats } from '@/types/affiliate';
 import { isTaxInfoIncomplete } from '@/components/profile/TaxInfoSection';
+import PurchaseSurvey from '@/components/PurchaseSurvey';
 
 const COUNTDOWN_SECONDS = 3;
 
@@ -19,6 +20,9 @@ const CheckoutComplete = () => {
   const { language } = useLanguage();
   const [countdown, setCountdown] = useState(COUNTDOWN_SECONDS);
   const [showTaxPrompt, setShowTaxPrompt] = useState(false);
+  // 079: แบบสอบถามหลังซื้อ — ?log=<extension_log_id> มาจาก SubscriptionTransferV2 หลังสลิปผ่าน
+  // แสดงเฉพาะยังไม่เคยตอบ/ข้ามรายการนี้ (รีเฟรชแล้วไม่ถามซ้ำ) · ระหว่างแสดง countdown หยุด เหมือนกล่องภาษี
+  const [survey, setSurvey] = useState<{ extensionLogId: number; planSlug: 'monthly' | 'yearly' } | null>(null);
 
   const l = (th: string, en: string) => language === 'th' ? th : en;
 
@@ -29,6 +33,20 @@ const CheckoutComplete = () => {
     window.ttq?.track('Purchase', { value: purchaseValue, currency: 'THB' });
     window.fbq?.('track', 'Purchase', { value: purchaseValue, currency: 'THB' });
     window.gtag?.('event', 'purchase', { value: purchaseValue, currency: 'THB' });
+  }, []);
+
+  // 079: เช็กว่าการซื้อนี้ตอบแบบสอบถามแล้วหรือยัง — เช็กไม่ได้ = ไม่ถาม ไม่บล็อกหน้า
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const log = Number(params.get('log'));
+    if (!Number.isInteger(log) || log <= 0) return;
+    const planSlug: 'monthly' | 'yearly' = params.get('plan') === 'yearly' ? 'yearly' : 'monthly';
+    let cancelled = false;
+    api.getPurchaseSurveyStatus({ extension_log_id: log })
+      // eligible=false = log ไม่ใช่ของผู้ใช้นี้ (เช่น แก้ URL เอง) → ไม่โชว์
+      .then((r) => { if (!cancelled && !r.answered && r.eligible !== false) setSurvey({ extensionLogId: log, planSlug }); })
+      .catch((err) => console.error('Purchase survey status check failed:', err));
+    return () => { cancelled = true; };
   }, []);
 
   // Check user's tax info — if incomplete + not dismissed this cycle, show prompt
@@ -54,9 +72,9 @@ const CheckoutComplete = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Auto-redirect countdown — paused while the tax prompt is visible
+  // Auto-redirect countdown — paused while the tax prompt or the purchase survey is visible
   useEffect(() => {
-    if (showTaxPrompt) return;
+    if (showTaxPrompt || survey) return;
     const timer = setInterval(() => {
       setCountdown(prev => {
         if (prev <= 1) {
@@ -68,7 +86,7 @@ const CheckoutComplete = () => {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [navigate, showTaxPrompt]);
+  }, [navigate, showTaxPrompt, survey]);
 
   const handleSkipTaxPrompt = () => {
     localStorage.setItem(DISMISS_KEY, String(Date.now()));
@@ -123,9 +141,19 @@ const CheckoutComplete = () => {
             </ul>
           </div>
 
+          {/* 079: แบบสอบถามหลังซื้อ — มาก่อนกล่องภาษี · ตอบ/ข้ามแล้ว countdown เดินต่อ */}
+          {survey && (
+            <div className="animate-scale-in" style={{ animationDelay: '250ms' }}>
+              <PurchaseSurvey
+                purchase={{ type: 'subscription', extensionLogId: survey.extensionLogId, planSlug: survey.planSlug }}
+                onDone={() => setSurvey(null)}
+              />
+            </div>
+          )}
+
           {/* Tax info prompt — only when info incomplete + not dismissed this cycle.
               When visible, pauses the auto-redirect so user can choose. */}
-          {showTaxPrompt && (
+          {!survey && showTaxPrompt && (
             <div
               className="bg-card p-5 rounded-2xl border border-[#FFB300]/30 text-left animate-scale-in space-y-3"
               style={{ animationDelay: '250ms' }}
@@ -163,8 +191,8 @@ const CheckoutComplete = () => {
             </div>
           )}
 
-          {/* Countdown + redirect — hidden while prompt is open */}
-          {!showTaxPrompt && (
+          {/* Countdown + redirect — hidden while a prompt is open */}
+          {!survey && !showTaxPrompt && (
             <div className="space-y-4 animate-scale-in" style={{ animationDelay: '300ms' }}>
               <p className="text-sm text-muted-foreground">
                 {l(

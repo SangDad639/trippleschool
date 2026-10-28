@@ -1039,6 +1039,12 @@ const Admin = () => {
               >
                 ⭐ รีวิว
               </Button>
+              <Button
+                variant="outline"
+                onClick={() => navigate('/admin/purchase-surveys')}
+              >
+                📋 แบบสอบถาม
+              </Button>
             </div>
           </div>
 

@@ -14,6 +14,7 @@ import CoursePrice from '@/components/CoursePrice';
 import StarRating from '@/components/StarRating';
 import ReviewList, { type Review } from '@/components/ReviewList';
 import WriteReviewForm from '@/components/WriteReviewForm';
+import PurchaseSurvey from '@/components/PurchaseSurvey';
 import { MaterialHtmlFrame } from '@/components/MaterialHtmlFrame';
 import { hasMeaningfulMaterialHtml, sanitizeMaterialHtml } from '@/lib/sanitizeMaterialHtml';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
+  DialogDescription,
 } from '@/components/ui/dialog';
 import {
   Loader2,
@@ -211,6 +213,8 @@ const CourseDetail = () => {
 
   // Slip-upload (buy) dialog state
   const [buyDialogOpen, setBuyDialogOpen] = useState(false);
+  // 079: แบบสอบถามหลังซื้อ — เด้งทันทีหลังส่งสลิปซื้อครั้งแรก (ไม่ถาม: resubmit, คอร์สฟรี)
+  const [surveyOpen, setSurveyOpen] = useState(false);
   const [slipFile, setSlipFile] = useState<File | null>(null);
   const [slipPreview, setSlipPreview] = useState<string>('');
   const [submitting, setSubmitting] = useState(false);
@@ -527,12 +531,15 @@ const CourseDetail = () => {
       toast.error('กดปุ่ม "ใช้โค้ด" เพื่อตรวจสอบโค้ดก่อน หรือลบโค้ดออกจากช่อง');
       return;
     }
+    // ส่งสลิปซ้ำ (เคย pending/rejected) = ไม่ถามแบบสอบถามอีก
+    const wasResubmit = enrollment?.status === 'pending' || enrollment?.status === 'rejected';
     try {
       setSubmitting(true);
       await api.enrollCourse(course.id, slipFile ?? undefined, refCheck?.valid ? refCheck.code : undefined);
       toast.success('ส่งคำขอแล้ว รอแอดมินอนุมัติ');
       setBuyDialogOpen(false);
       await loadCourse();
+      if (buyAmount > 0 && !wasResubmit) setSurveyOpen(true);
     } catch (error: any) {
       console.error('Failed to enroll:', error);
       // โค้ดใช้ไม่ได้/สลับโค้ดไม่ได้ → เคลียร์สถานะ ✅ ค้าง ไม่ให้ราคาลดโชว์ผิดๆ
@@ -1443,6 +1450,35 @@ const CourseDetail = () => {
               ยืนยัน
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 079: แบบสอบถามหลังซื้อ — เด้งหลังส่งสลิปสำเร็จ · ปิดกล่องทางไหนก็ตาม = ข้าม (server ไม่ทับคำตอบที่ส่งแล้ว) */}
+      <Dialog
+        open={surveyOpen}
+        onOpenChange={(o) => {
+          if (o) return;
+          setSurveyOpen(false);
+          if (course) api.submitPurchaseSurvey({ purchase_type: 'course', course_id: course.id, skipped: true }).catch(() => {});
+        }}
+      >
+        <DialogContent className="sm:max-w-lg max-h-[92vh] overflow-y-auto" data-testid="purchase-survey-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-[#FFB300]" />
+              ส่งคำขอแล้ว รอแอดมินอนุมัติ ⏳
+            </DialogTitle>
+            <DialogDescription>
+              แอดมินจะตรวจสลิปและเปิดคอร์สให้ ระหว่างรอ ช่วยตอบ 2 ข้อสั้น ๆ เพื่อให้เราทำคอร์สให้ตรงใจขึ้น 🙏
+            </DialogDescription>
+          </DialogHeader>
+          {course && (
+            <PurchaseSurvey
+              embedded
+              purchase={{ type: 'course', courseId: course.id, courseName: course.name }}
+              onDone={() => setSurveyOpen(false)}
+            />
+          )}
         </DialogContent>
       </Dialog>
 

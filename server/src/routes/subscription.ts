@@ -634,6 +634,8 @@ router.post('/v2/verify-and-approve', authenticate, verifyRateLimit, slipUpload.
       commissionSkipReason,
       tierPromotion,
       transRef: thunderData.rawSlip.transRef,
+      // 079: id รายการต่ออายุ → หน้า checkout-complete ใช้ผูกแบบสอบถามหลังซื้อ
+      extensionLogId,
     });
   } catch (error: any) {
     try { await client.query('ROLLBACK'); } catch {}
