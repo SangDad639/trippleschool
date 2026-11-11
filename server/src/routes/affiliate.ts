@@ -4,7 +4,7 @@ import pool from '../db.js';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
-import { getBucketName, uploadFile, getSignedFileUrl, getFile } from '../utils/s3.js';
+import { getBucketName, uploadFile, getSignedFileUrl, getFile, streamToResponse } from '../utils/s3.js';
 import { getCommissionPercentSetting } from '../services/commissionService.js';
 import { cancelCommissionById } from '../services/affiliateRules.js';
 import { checkCheckoutCode, setUserRefcode, RefcodeError } from '../services/refcode.js';
@@ -1353,8 +1353,7 @@ router.get('/id-card/:userId', authenticate, async (req: AuthRequest, res: Respo
     // Bandwidth cost is tiny (≤ 5 MB) vs. the headache of caching a stale
     // preview after user re-uploads.
     res.setHeader('Cache-Control', 'no-store');
-    const stream = obs.Body as any;
-    stream.pipe(res);
+    streamToResponse(obs.Body, res);
   } catch (err: any) {
     console.error('[id-card proxy] failed:', err);
     res.status(500).json({ error: err?.message || 'Failed to stream' });
@@ -1400,8 +1399,7 @@ router.get('/proofs/*', authenticateQueryOrHeader, async (req: AuthRequest, res:
     // เอกสารภาษี/สลิปมี PII — ห้ามให้ proxy/CDN ระหว่างทางแคช
     res.setHeader('Cache-Control', 'private, no-store');
 
-    const stream = response.Body as any;
-    stream.pipe(res);
+    streamToResponse(response.Body, res);
   } catch (error: any) {
     console.error('Proof proxy error:', error.message);
     res.status(404).json({ error: 'Not found' });

@@ -6,7 +6,7 @@ import { authenticate, requireAdmin, requireSuperAdmin, AuthRequest } from '../m
 import { rateLimit } from '../middleware/rateLimit.js';
 import { createAffiliateCommission } from '../services/stripeService.js';
 import pool from '../db.js';
-import { getBucketName, uploadFile, getSignedFileUrl, getFile } from '../utils/s3.js';
+import { getBucketName, uploadFile, getSignedFileUrl, getFile, streamToResponse } from '../utils/s3.js';
 import { uploadBufferToDropbox } from '../utils/dropbox.js';
 import { verifySlipImage, ThunderError } from '../utils/thunderApi.js';
 import { PRICING, VAT_RATE, pricingFromDays, planFromDays } from '../config/pricing.js';
@@ -2881,7 +2881,7 @@ router.get(
         res.setHeader('Content-Type', mime);
         res.setHeader('Content-Disposition', dispositionHeader);
         res.setHeader('Cache-Control', 'no-store');
-        fs.createReadStream(localPath).pipe(res);
+        streamToResponse(fs.createReadStream(localPath), res);
         return;
       }
 
@@ -2890,7 +2890,7 @@ router.get(
       res.setHeader('Content-Type', fileStream.ContentType || 'application/octet-stream');
       res.setHeader('Content-Disposition', dispositionHeader);
       res.setHeader('Cache-Control', 'no-store');
-      (fileStream.Body as any)?.pipe(res);
+      streamToResponse(fileStream.Body, res);
     } catch (err: any) {
       console.error('[admin/tax-invoices file] failed:', err);
       res.status(500).json({ error: err?.message || 'Failed to stream invoice' });

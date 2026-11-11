@@ -21,7 +21,7 @@ import fs from 'fs';
 import pool from '../db.js';
 import { authenticate, optionalAuth, optionalAuthQueryOrHeader, requireAdmin, JWT_SECRET, AuthRequest } from '../middleware/auth.js';
 import { getMembership } from '../services/membership.js';
-import { getFile, uploadFile, uploadFileFromPath, getFileSize } from '../utils/s3.js';
+import { getFile, uploadFile, uploadFileFromPath, getFileSize, streamToResponse } from '../utils/s3.js';
 import { makePreviewPdf, countPdfPages } from '../utils/pdfPreview.js';
 import { sanitizeCourseSamples } from './courses.js';
 
@@ -399,7 +399,7 @@ router.get('/:slug/file', optionalAuthQueryOrHeader, async (req: AuthRequest, re
     );
     // Access is re-checked per request (membership can expire) — never cache.
     res.setHeader('Cache-Control', 'private, no-store');
-    (obj.Body as any).pipe(res);
+    streamToResponse(obj.Body, res);
   } catch (error) {
     console.error('Error streaming ebook file:', error);
     res.status(500).json({ error: 'โหลดไฟล์ไม่สำเร็จ' });
@@ -428,7 +428,7 @@ router.get('/:slug/preview-file', async (req, res: Response) => {
       res.setHeader('Cache-Control', 'public, max-age=300, must-revalidate');
       res.setHeader('ETag', etag);
       if (Buffer.isBuffer(body)) res.end(body);
-      else (body as any).pipe(res);
+      else streamToResponse(body, res);
     };
 
     // ① ไฟล์ตัวอย่างที่แอดมินอัพเอง — ใช้แทนการตัดอัตโนมัติเสมอ

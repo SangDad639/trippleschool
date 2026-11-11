@@ -14,7 +14,7 @@ import { maybePromoteOnPurchase } from '../services/tierAssignmentService.js';
 import { checkCheckoutCode, bindReferrerIfEmpty, applyRefDiscount } from '../services/refcode.js';
 import { hasSubscriptionHistory } from '../services/affiliateRules.js';
 import * as taxInvoiceService from '../services/taxInvoiceService.js';
-import { getBucketName, getFile } from '../utils/s3.js';
+import { getBucketName, getFile, streamToResponse } from '../utils/s3.js';
 
 // Configure S3 client for payment slip uploads (HWC OBS — virtual-host style)
 const s3 = new S3Client({
@@ -330,8 +330,7 @@ router.get('/slips/*', authenticateQueryOrHeader, requireAdmin, async (req: Auth
     // Payment slips contain PII — never cache in shared/public caches.
     res.setHeader('Cache-Control', 'private, no-store');
 
-    const stream = response.Body as any;
-    stream.pipe(res);
+    streamToResponse(response.Body, res);
   } catch (error: any) {
     console.error('Slip proxy error:', error.message);
     res.status(404).json({ error: 'Not found' });
@@ -732,7 +731,7 @@ router.get('/tax-invoice/:requestId/file', authenticate, async (req: AuthRequest
       res.setHeader('Content-Type', mime);
       res.setHeader('Content-Disposition', dispositionHeader);
       res.setHeader('Cache-Control', 'no-store');
-      fs.createReadStream(localPath).pipe(res);
+      streamToResponse(fs.createReadStream(localPath), res);
       return;
     }
 
@@ -742,7 +741,7 @@ router.get('/tax-invoice/:requestId/file', authenticate, async (req: AuthRequest
     res.setHeader('Content-Type', fileStream.ContentType || 'application/octet-stream');
     res.setHeader('Content-Disposition', dispositionHeader);
     res.setHeader('Cache-Control', 'no-store');
-    (fileStream.Body as any)?.pipe(res);
+    streamToResponse(fileStream.Body, res);
   } catch (err: any) {
     console.error('[tax-invoice file] failed:', err);
     res.status(500).json({ error: err?.message || 'Failed to stream invoice' });

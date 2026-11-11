@@ -8,7 +8,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import pool from '../db.js';
 import { authenticate, authenticateQueryOrHeader, AuthRequest } from '../middleware/auth.js';
-import { uploadFile, getFile } from '../utils/s3.js';
+import { uploadFile, getFile, streamToResponse } from '../utils/s3.js';
 import { createAffiliateCommission } from '../services/stripeService.js';
 import { checkCheckoutCode, bindReferrerIfEmpty, applyRefDiscount } from '../services/refcode.js';
 import { cancelCommissionsBySource } from '../services/affiliateRules.js';
@@ -127,7 +127,7 @@ router.get('/slips/*', authenticateQueryOrHeader, async (req: AuthRequest, res: 
     const obj = await getFile(key);
     if (obj.ContentType) res.setHeader('Content-Type', obj.ContentType);
     res.setHeader('Cache-Control', 'private, no-store');
-    (obj.Body as any).pipe(res);
+    streamToResponse(obj.Body, res);
   } catch (error) {
     res.status(404).json({ error: 'Not found' });
   }

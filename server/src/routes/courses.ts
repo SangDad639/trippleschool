@@ -8,7 +8,7 @@ import crypto from 'crypto';
 import multer from 'multer';
 import pool from '../db.js';
 import { authenticate, optionalAuth, AuthRequest } from '../middleware/auth.js';
-import { uploadFile, getFile } from '../utils/s3.js';
+import { uploadFile, getFile, streamToResponse } from '../utils/s3.js';
 import { makeThumbnailVariant, variantKey, type ThumbVariant } from '../utils/imageResize.js';
 import { hasActiveSubscription } from '../services/stripeService.js';
 import { getPromoSettings, getPromosSeenByUser, preRollPromoId } from '../services/promoSettings.js';
@@ -253,7 +253,7 @@ router.get('/thumbnails/*', async (req: Request, res: Response) => {
         const varObj = await getFile(variantKey(key, v));
         res.setHeader('Content-Type', 'image/webp');
         res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-        (varObj.Body as any).pipe(res);
+        streamToResponse(varObj.Body, res);
         return;
       } catch {
         /* variant not generated yet — fall back to original below */
@@ -262,7 +262,7 @@ router.get('/thumbnails/*', async (req: Request, res: Response) => {
     const obj = await getFile(key);
     if (obj.ContentType) res.setHeader('Content-Type', obj.ContentType);
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    (obj.Body as any).pipe(res);
+    streamToResponse(obj.Body, res);
   } catch (error) {
     res.status(404).json({ error: 'Not found' });
   }
@@ -286,7 +286,7 @@ router.get('/lessons/:lessonId/thumb', async (req: Request, res: Response) => {
     const serve = (body: any, contentType: string) => {
       res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'public, max-age=86400');
-      body.pipe(res);
+      streamToResponse(body, res);
     };
 
     // 1) custom cover
@@ -355,7 +355,7 @@ router.get('/:courseId/cover', async (req: Request, res: Response) => {
       res.setHeader('Cache-Control', 'public, max-age=300');
       res.setHeader('ETag', `"${etag}"`);
       if (Buffer.isBuffer(body)) return res.end(body);
-      (body as any).pipe(res);
+      streamToResponse(body, res);
     };
 
     // อ่านแถวคอร์สครั้งเดียว — ใช้ทั้งข้อ 0 (ปกตั้งเอง) และข้อ 3 (ปกสำรอง)
@@ -655,7 +655,7 @@ router.get('/materials/*', async (req: Request, res: Response) => {
       safeName ? `${dispositionType}; filename*=UTF-8''${encodeURIComponent(safeName)}` : dispositionType
     );
     res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-    (obj.Body as any).pipe(res);
+    streamToResponse(obj.Body, res);
   } catch (error) {
     res.status(404).json({ error: 'Not found' });
   }

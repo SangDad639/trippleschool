@@ -1,6 +1,7 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createReadStream } from 'fs';
+import type { Response } from 'express';
 
 // Lazy initialize S3 client to ensure env vars are loaded
 let s3Client: S3Client | null = null;
@@ -25,6 +26,15 @@ export function getS3Client(): S3Client {
       // was built against.
       requestChecksumCalculation: 'WHEN_REQUIRED',
       responseChecksumValidation: 'WHEN_REQUIRED',
+      // ค่าเริ่มต้นของ SDK: maxSockets 50 และ "ไม่มี" timeout เลย → ถ้า socket ค้าง (Tigris ไม่ตอบ
+      // หรือ stream ที่ pipe ให้ browser ถูกทิ้งไว้ไม่ปิด) จะสะสมจนเต็ม 50 แล้วทุก request ที่แตะ S3
+      // เข้าคิวรอตลอดกาล — อาการ 11 พ.ย. 2026: /courses ไม่มีรูปเลย, proxy รูปค้างแม้ key ไม่มี
+      // ขณะที่ endpoint ที่ใช้แค่ DB ตอบปกติ · คู่กับ streamToResponse() ด้านล่างที่ปิด stream เมื่อ client ตัด
+      requestHandler: {
+        connectionTimeout: 5000, // ต่อ TCP/TLS ไม่ติดใน 5 วิ → error ทันที ไม่แขวน
+        requestTimeout: 120000, // socket นิ่ง (ไม่มี byte วิ่ง) 2 นาที → ตัด (ไฟล์ใหญ่ที่ยังไหลอยู่ไม่โดน)
+        httpsAgent: { keepAlive: true, maxSockets: 200 },
+      },
     });
   }
   return s3Client;
@@ -133,6 +143,31 @@ export async function deleteFile(key: string): Promise<void> {
  * Get file from S3 (for proxy endpoints)
  * @param key The S3 key
  */
+/**
+ * ส่ง Body ของ GetObject (หรือ readable ใดๆ) ให้ client แบบปลอดภัย:
+ * - client ตัดการเชื่อมต่อ/ยกเลิกโหลดรูป (`res` close) → destroy stream ต้นทางทันที คืน socket ให้ pool
+ *   (เดิม pipe เฉยๆ: เมื่อปลายทางปิด stream ต้นทางหยุดไหลแต่ socket ยังถูกจองค้างจนเต็ม 50 → S3 ทุก request แขวน)
+ * - stream ต้นทาง error กลางทาง → ตอบ 502 ถ้ายังไม่ส่ง header ไม่งั้นปิดการเชื่อมต่อ
+ * ใช้แทน `(obj.Body as any).pipe(res)` ทุกจุด · ตั้ง header ให้เสร็จก่อนเรียก
+ */
+export function streamToResponse(body: unknown, res: Response): void {
+  const stream = body as (NodeJS.ReadableStream & { destroy?: (err?: Error) => void }) | undefined;
+  if (!stream || typeof stream.pipe !== 'function') {
+    if (!res.headersSent) res.status(502);
+    res.end();
+    return;
+  }
+  res.on('close', () => {
+    try { stream.destroy?.(); } catch { /* noop */ }
+  });
+  stream.on('error', (err: any) => {
+    console.error('[s3] stream error:', err?.message || err);
+    if (!res.headersSent) res.status(502);
+    res.end();
+  });
+  stream.pipe(res);
+}
+
 export async function getFile(key: string) {
   return getS3Client().send(new GetObjectCommand({
     Bucket: getBucketName(),

@@ -16,7 +16,7 @@ import { runAgentTurn } from '../services/agentChatService.js';
 import { hasActiveSubscription } from '../services/stripeService.js';
 import { fetchAutoCaptions, captionFailMessage, type CaptionFailReason } from '../utils/youtubeCaptions.js';
 import { parseSubtitleFile } from '../utils/subtitleParser.js';
-import { uploadFile, getFile } from '../utils/s3.js';
+import { uploadFile, getFile, streamToResponse } from '../utils/s3.js';
 import crypto from 'crypto';
 
 const router = Router();
@@ -305,7 +305,7 @@ router.get('/images/*', async (req: Request, res: Response) => {
     const obj = await getFile(key);
     if (obj.ContentType) res.setHeader('Content-Type', obj.ContentType);
     res.setHeader('Cache-Control', 'private, max-age=86400');
-    (obj.Body as any).pipe(res);
+    streamToResponse(obj.Body, res);
   } catch {
     res.status(404).end();
   }
